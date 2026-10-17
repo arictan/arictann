@@ -1,8 +1,8 @@
-# Privacy Policy — Orbit Hop
+# Privacy Policy — Sushi Stack
 
 _Last updated: 2026-10-17_
 
-Orbit Hop does not collect, store, or share any personal information.
+Sushi Stack does not collect, store, or share any personal information.
 
 - The game works fully offline. It makes no network requests.
 - Your best score, coin balance, and sound setting are stored **only on your device** and are deleted when you uninstall the app.

@@ -1,14 +1,14 @@
-# Orbit Hop
+# Sushi Stack
 
-A one-tap arcade game for iOS and Android. Orbit a planet, tap to launch, and land on the next one.
-Hit the centre of a planet for a **PERFECT** and chain perfects into combos.
+A one-tap stacking game for iOS and Android. A layer of rice, fish or nori slides back and forth; tap to drop it.
+Overhang gets sliced off, perfect drops build combos, and every finished roll serves a customer's order.
 
 The game is written in TypeScript on an HTML5 canvas and packaged as a native app with
 [Capacitor](https://capacitorjs.com). One codebase produces both the App Store build (`ios/`) and the Play Store build (`android/`).
 See [GAME_DESIGN.md](GAME_DESIGN.md) for the design, and [PRIVACY.md](PRIVACY.md) for a privacy policy you can host.
 
 ```
-src/game.ts      game logic + rendering
+src/game.ts      stacking, orders, rendering
 src/audio.ts     synthesized sound effects (no audio files)
 src/platform.ts  haptics, status bar, Android back button, saved data
 assets/          source icon + splash (generate native sizes with `npm run assets`)
@@ -33,7 +33,7 @@ After changing anything in `src/`, run `npm run sync`. To change the icon or spl
 ## Publishing checklist
 
 ### 0. Before your first upload
-- [ ] **Pick your app ID.** Set `appId` in `capacitor.config.ts`, for example `com.yourname.orbithop`. Also change it in
+- [ ] **Pick your app ID.** Set `appId` in `capacitor.config.ts`, for example `com.yourname.sushistack`. Also change it in
       `android/app/build.gradle` (`namespace` and `applicationId`), in `android/app/src/main/res/values/strings.xml`, and in the iOS
       bundle identifier in Xcode. Once you publish, the ID **cannot be changed**.
 - [ ] **Host the privacy policy.** Both stores require a public URL. GitHub Pages works: publish `PRIVACY.md` and add your email to it.
@@ -44,7 +44,7 @@ After changing anything in `src/`, run `npm run sync`. To change the icon or spl
 1. Create a [Play Console](https://play.google.com/console) developer account. There is a one-time $25 fee and an identity check.
 2. Create an upload key. Do this once, and **back the key up**, because losing it makes updates painful:
    ```bash
-   keytool -genkey -v -keystore orbit-hop-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   keytool -genkey -v -keystore sushi-stack-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
    ```
 3. In Android Studio, go to **Build → Generate Signed App Bundle → Android App Bundle (.aab)** and use that key.
 4. In the Play Console, create the app, then fill in the store listing (icon 512×512, feature graphic 1024×500, phone
@@ -63,8 +63,8 @@ Apple builds require a Mac with Xcode.
 5. Test the build through TestFlight, then submit it for review.
 
 ### Store listing copy (starter)
-**Subtitle:** One tap. Infinite space.
-**Description:** Orbit a planet. Tap to launch. Land on the next one, and don't drift into the void.
-Hit dead centre for a PERFECT and chain combos for huge scores. Simple to learn, hard to master, and
-fully offline with no account needed.
-**Keywords:** arcade, one tap, space, orbit, planet, casual, reflex, endless, hyper casual
+**Subtitle:** Stack it. Slice it. Serve it.
+**Description:** Drop each layer of rice, salmon, tuna and nori onto your roll, and line it up perfectly or watch the edges
+get sliced away. Chain PERFECT drops to grow your stack, fill customer orders, and climb to a new best.
+One tap to play, endlessly satisfying, and fully offline.
+**Keywords:** sushi, stack, one tap, tower, food, casual, satisfying, arcade, cooking

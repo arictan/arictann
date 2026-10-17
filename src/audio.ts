@@ -1,5 +1,6 @@
 // Tiny synthesized sound effects: no audio files to license or ship.
 let ctx: AudioContext | null = null;
+let noise: AudioBuffer | null = null;
 let muted = false;
 
 export function unlockAudio(): void {
@@ -7,6 +8,9 @@ export function unlockAudio(): void {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     ctx = new Ctor();
+    noise = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+    const data = noise.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === 'suspended') void ctx.resume();
 }
@@ -30,10 +34,34 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
   osc.stop(t + dur + 0.02);
 }
 
+// Filtered noise burst: the "crunch" of a knife or a soft landing.
+function hiss(dur: number, vol: number, freq: number, q = 1): void {
+  if (!ctx || !noise || muted) return;
+  const t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = freq;
+  filter.Q.value = q;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.start(t);
+  src.stop(t + dur);
+}
+
+// C major pentatonic, so rising combos always sound pleasant.
+const SCALE = [523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760];
+
 export const sfx = {
-  launch: () => tone(320, 0.12, 'triangle', 0.18, 640),
-  land: (combo: number) => tone(440 * Math.pow(1.06, Math.min(combo, 12)), 0.1, 'sine', 0.22),
-  perfect: () => { tone(880, 0.08, 'sine', 0.15); tone(1320, 0.12, 'sine', 0.15, undefined, 0.06); },
-  coin: () => tone(1200, 0.08, 'square', 0.07, 1800),
-  die: () => tone(260, 0.5, 'sawtooth', 0.15, 40),
+  drop: () => { hiss(0.08, 0.25, 400); tone(160, 0.08, 'sine', 0.2, 90); },
+  slice: () => { hiss(0.12, 0.35, 3200, 0.8); tone(1800, 0.05, 'triangle', 0.05, 900); },
+  perfect: (combo: number) => {
+    tone(SCALE[Math.min(combo, SCALE.length - 1)], 0.18, 'sine', 0.2);
+    hiss(0.05, 0.15, 5000, 2);
+  },
+  serve: () => [659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.16, 'triangle', 0.14, undefined, i * 0.07)),
+  die: () => { tone(220, 0.45, 'sawtooth', 0.12, 55); hiss(0.3, 0.2, 300); },
 };

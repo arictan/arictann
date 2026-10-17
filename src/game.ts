@@ -2,33 +2,51 @@ import { sfx, unlockAudio, setMuted } from './audio';
 import { haptic, save } from './platform';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
+// World y grows downward; the plate sits at y = 0 and the stack grows toward negative y.
 const WORLD_W = 400;
-const ORBIT_GAP = 16; // distance between a planet's surface and the player's orbit
-const LAUNCH_SPEED = 620;
-const MAX_FLIGHT = 1.4; // seconds in open space before the player is lost
-const PLAYER_R = 7;
-const COIN_R = 9;
+const LAYER_H = 24;
+const BASE_W = 200;
+const PERFECT_TOL = 5; // drops this close to the layer below snap into place
+const REGROW = 8; // width regained per perfect once a streak reaches 3
+const GRAVITY = 1400;
 
-const PLANET_HUES = [190, 280, 330, 30, 150, 220, 50];
+type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg';
 
-interface Planet {
-  baseX: number;
-  x: number;
-  y: number;
-  r: number;
-  hue: number;
-  spin: number; // angular speed multiplier
-  moveAmp: number;
-  moveFreq: number;
-  phase: number;
-  visited: boolean;
+const COLORS: Record<Ingredient, string> = {
+  rice: '#f6f1e4',
+  nori: '#24321f',
+  salmon: '#ff8a5b',
+  tuna: '#d7263d',
+  avocado: '#9bc53d',
+  cucumber: '#3f8f4a',
+  egg: '#ffcf3f',
+};
+
+interface Recipe { name: string; pattern: Ingredient[] }
+
+const RECIPES: Recipe[] = [
+  { name: 'Salmon Maki', pattern: ['rice', 'nori', 'salmon'] },
+  { name: 'Tamago Tower', pattern: ['rice', 'egg', 'nori'] },
+  { name: 'Tuna Classic', pattern: ['rice', 'tuna', 'avocado'] },
+  { name: 'Green Roll', pattern: ['rice', 'cucumber', 'avocado', 'nori'] },
+  { name: 'Rainbow Roll', pattern: ['rice', 'salmon', 'tuna', 'egg', 'avocado', 'cucumber'] },
+];
+
+interface Layer {
+  x: number; // left edge
+  y: number; // top edge
+  w: number;
+  kind: Ingredient;
+  origin: number; // world x where this layer's texture is anchored, so trimming never shifts it
 }
 
-interface Coin { x: number; y: number; taken: boolean }
+interface Piece extends Layer { vx: number; vy: number; rot: number; spin: number }
 
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; hue: number; size: number }
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
 
-interface Popup { x: number; y: number; text: string; life: number; hue: number }
+interface Popup { x: number; y: number; text: string; life: number; color: string; size: number }
+
+interface Order { recipe: Recipe; length: number; start: number; reward: number }
 
 type Mode = 'title' | 'playing' | 'dead';
 
@@ -45,26 +63,20 @@ export class Game {
   private paused = false;
   private time = 0;
 
-  private planets: Planet[] = [];
-  private coins: Coin[] = [];
+  private stack: Layer[] = [];
+  private moving: Layer | null = null;
+  private moveDir = 1;
+  private pieces: Piece[] = [];
   private particles: Particle[] = [];
   private popups: Popup[] = [];
-  private stars: { x: number; y: number; z: number }[] = [];
-  private trail: { x: number; y: number }[] = [];
+  private flags: { x: number; y: number; hue: number }[] = []; // picks marking each served order
+  private lanterns: { x: number; y: number; z: number; hue: number }[] = [];
 
-  private current: Planet | null = null;
-  private lastPlanet: Planet | null = null; // planet the player most recently launched from
-  private angle = 0;
-  private dir = 1;
-  private px = 0;
-  private py = 0;
-  private vx = 0;
-  private vy = 0;
-  private flight = 0;
-
+  private order!: Order;
+  private ordersServed = 0;
   private camY = 0;
   private shake = 0;
-  private score = 0;
+  private flash = 0;
   private combo = 0;
   private runCoins = 0;
   private best = save.best();
@@ -78,8 +90,8 @@ export class Game {
     if (!ctx) throw new Error('2D canvas not supported');
     this.ctx = ctx;
     setMuted(this.muted);
-    for (let i = 0; i < 140; i++) {
-      this.stars.push({ x: Math.random() * WORLD_W, y: Math.random() * 2000, z: 0.15 + Math.random() * 0.6 });
+    for (let i = 0; i < 14; i++) {
+      this.lanterns.push({ x: Math.random() * WORLD_W, y: Math.random() * 1600, z: 0.15 + Math.random() * 0.35, hue: Math.random() < 0.7 ? 5 : 35 });
     }
     this.resize();
     this.reset();
@@ -108,85 +120,60 @@ export class Game {
     };
   }
 
-  // ---------------------------------------------------------------- world gen
+  // ------------------------------------------------------------------- state
+
+  private get height(): number {
+    return this.stack.length - 1; // layers placed by the player (the base rice doesn't count)
+  }
+
+  private get top(): Layer {
+    return this.stack[this.stack.length - 1];
+  }
 
   private reset(): void {
-    this.planets = [];
-    this.coins = [];
+    const x = (WORLD_W - BASE_W) / 2;
+    this.stack = [{ x, y: -LAYER_H, w: BASE_W, kind: 'rice', origin: x }];
+    this.pieces = [];
     this.particles = [];
     this.popups = [];
-    this.trail = [];
-    this.score = 0;
+    this.flags = [];
     this.combo = 0;
     this.runCoins = 0;
+    this.ordersServed = 0;
     this.newBest = false;
     this.paused = false;
-
-    const first = this.makePlanet(WORLD_W / 2, 0, 0);
-    first.r = 38;
-    first.spin = 0.8;
-    first.visited = true;
-    this.planets.push(first);
-    while (this.planets.length < 8) this.spawnNext();
-
-    this.current = first;
-    this.lastPlanet = null;
-    this.angle = -Math.PI / 2;
-    this.dir = 1;
-    this.placeOnOrbit();
-    this.camY = first.y - this.viewH * 0.68;
+    this.moveDir = 1;
+    this.newOrder();
+    this.spawnMoving();
+    this.camY = this.targetCam();
   }
 
-  private difficulty(index: number): number {
-    return Math.min(index / 40, 1);
+  private newOrder(): void {
+    const n = this.ordersServed;
+    // Early orders use the simple recipes; the full menu opens up as you serve more.
+    const recipe = RECIPES[Math.floor(Math.random() * Math.min(RECIPES.length, 2 + n))];
+    this.order = { recipe, length: Math.min(5 + n, 12), start: this.height, reward: 0 };
   }
 
-  private makePlanet(x: number, y: number, index: number): Planet {
-    const d = this.difficulty(index);
-    const moving = index > 12 && Math.random() < 0.15 + d * 0.4;
-    return {
-      baseX: x,
-      x,
-      y,
-      r: 34 - d * 14 + Math.random() * 8,
-      hue: PLANET_HUES[index % PLANET_HUES.length],
-      spin: 0.85 + d * 0.9 + Math.random() * 0.35,
-      moveAmp: moving ? 30 + Math.random() * 40 * (0.5 + d) : 0,
-      moveFreq: 0.6 + Math.random() * 0.8,
-      phase: Math.random() * Math.PI * 2,
-      visited: false,
-    };
+  private nextIngredient(): Ingredient {
+    const { pattern } = this.order.recipe;
+    return pattern[(this.height - this.order.start) % pattern.length];
   }
 
-  private spawnNext(): void {
-    const index = this.planets.length;
-    const prev = this.planets[index - 1];
-    const d = this.difficulty(index);
-    const gap = 150 + d * 90 + Math.random() * 40;
-    const margin = 70;
-    let x = margin + Math.random() * (WORLD_W - margin * 2);
-    if (Math.abs(x - prev.baseX) < 60) x = x < WORLD_W / 2 ? x + 120 : x - 120;
-    const p = this.makePlanet(x, prev.y - gap, index);
-    p.baseX = Math.max(margin + p.moveAmp, Math.min(WORLD_W - margin - p.moveAmp, p.baseX));
-    p.x = p.baseX;
-    this.planets.push(p);
-
-    // Optional coin roughly between the two planets, nudged sideways for risk/reward.
-    if (Math.random() < 0.55) {
-      const t = 0.4 + Math.random() * 0.2;
-      this.coins.push({
-        x: prev.baseX + (p.baseX - prev.baseX) * t + (Math.random() - 0.5) * 70,
-        y: prev.y + (p.y - prev.y) * t,
-        taken: false,
-      });
-    }
+  private speed(): number {
+    return Math.min(130 + this.height * 5, 400);
   }
 
-  private placeOnOrbit(): void {
-    const c = this.current!;
-    const R = c.r + ORBIT_GAP;
-    this.px = c.x + Math.cos(this.angle) * R;
-    this.py = c.y + Math.sin(this.angle) * R;
+  private spawnMoving(): void {
+    const top = this.top;
+    // Alternate the side each layer slides in from.
+    const x = this.moveDir > 0 ? -top.w * 0.5 : WORLD_W - top.w * 0.5;
+    this.moving = { x, y: top.y - LAYER_H, w: top.w, kind: this.nextIngredient(), origin: x };
+  }
+
+  private targetCam(): number {
+    // Keep the top of the stack a little above the middle of the screen, but never lift the plate off the bottom too early.
+    return Math.min(this.top.y - this.viewH * 0.48, -this.viewH * 0.78);
   }
 
   // ------------------------------------------------------------------- input
@@ -196,7 +183,6 @@ export class Game {
     const wx = clientX / this.scale;
     const wy = clientY / this.scale;
 
-    // Mute toggle in the top-left corner.
     const mb = this.muteButton();
     if (Math.hypot(wx - mb.x, wy - mb.y) < mb.r + 10) {
       this.muted = !this.muted;
@@ -213,13 +199,13 @@ export class Game {
     switch (this.mode) {
       case 'title':
         this.mode = 'playing';
-        this.launch();
+        this.drop();
         break;
       case 'playing':
-        this.launch();
+        this.drop();
         break;
       case 'dead':
-        if (this.time - this.deadAt > 0.6) {
+        if (this.time - this.deadAt > 0.7) {
           this.reset();
           this.mode = 'playing';
         }
@@ -227,23 +213,109 @@ export class Game {
     }
   }
 
-  private launch(): void {
-    const c = this.current;
-    if (!c) return;
-    // Velocity of the orbiting player: tangent to the orbit plus the planet's own motion.
-    const tx = -Math.sin(this.angle) * this.dir;
-    const ty = Math.cos(this.angle) * this.dir;
-    const planetVx = c.moveAmp * c.moveFreq * Math.cos(this.time * c.moveFreq + c.phase);
-    this.vx = tx * LAUNCH_SPEED + planetVx * 0.5;
-    this.vy = ty * LAUNCH_SPEED;
-    const s = LAUNCH_SPEED / Math.hypot(this.vx, this.vy);
-    this.vx *= s;
-    this.vy *= s;
-    this.current = null;
-    this.flight = 0;
-    this.lastPlanet = c;
-    sfx.launch();
-    haptic.light();
+  private drop(): void {
+    const m = this.moving;
+    if (!m) return;
+    const top = this.top;
+    const dx = m.x - top.x;
+
+    if (Math.abs(dx) <= PERFECT_TOL) {
+      m.origin -= dx;
+      m.x = top.x;
+      this.combo++;
+      if (this.combo >= 3 && m.w < BASE_W) {
+        const grow = Math.min(REGROW, BASE_W - m.w);
+        m.x -= grow / 2;
+        m.w += grow;
+      }
+      this.place(m);
+      const cx = m.x + m.w / 2;
+      this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
+      this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 18 + this.combo * 2);
+      sfx.perfect(this.combo);
+      haptic.medium();
+      this.flash = 0.25;
+      this.shake = 3;
+    } else {
+      const overlap = top.w - Math.abs(dx);
+      if (overlap <= 0) {
+        this.moving = null;
+        this.fall(m, dx > 0 ? 1 : -1);
+        this.die();
+        return;
+      }
+      this.combo = 0;
+      // Split the dropped layer into the part that lands and the overhang that falls.
+      const keepX = Math.max(m.x, top.x);
+      const cutX = dx > 0 ? keepX + overlap : m.x;
+      this.fall({ ...m, x: cutX, w: m.w - overlap }, dx > 0 ? 1 : -1);
+      m.x = keepX;
+      m.w = overlap;
+      this.place(m);
+      sfx.slice();
+      haptic.light();
+    }
+  }
+
+  private place(layer: Layer): void {
+    this.stack.push(layer);
+    this.order.reward += layer.w / BASE_W;
+    sfx.drop();
+    if (this.height - this.order.start >= this.order.length) this.serve();
+    this.moveDir *= -1;
+    this.spawnMoving();
+  }
+
+  private serve(): void {
+    const top = this.top;
+    const coins = Math.max(1, Math.round(this.order.reward * 2));
+    this.runCoins += coins;
+    this.ordersServed++;
+    this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
+    this.popup(WORLD_W / 2, top.y - 60, `${this.order.recipe.name} served!`, '#ffffff', 22);
+    this.popup(WORLD_W / 2, top.y - 34, `+${coins} coins`, '#ffd34d', 18);
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 120 + Math.random() * 200;
+      this.particles.push({ x: top.x + top.w / 2, y: top.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 150, life: 0.9, max: 0.9, color: '#ffd34d', size: 4 });
+    }
+    sfx.serve();
+    haptic.success();
+    this.newOrder();
+  }
+
+  private fall(layer: Layer, side: number): void {
+    this.pieces.push({ ...layer, vx: side * (60 + Math.random() * 60), vy: -60, rot: 0, spin: side * (2 + Math.random() * 3) });
+  }
+
+  private die(): void {
+    this.mode = 'dead';
+    this.deadAt = this.time;
+    this.shake = 10;
+    sfx.die();
+    haptic.error();
+    this.bank += this.runCoins;
+    save.setCoins(this.bank);
+    if (this.height > this.best) {
+      this.best = this.height;
+      this.newBest = true;
+      save.setBest(this.best);
+    }
+  }
+
+  private sparkle(x: number, y: number, w: number, n: number): void {
+    for (let i = 0; i < n; i++) {
+      const side = Math.random() < 0.5 ? x : x + w;
+      this.particles.push({
+        x: side, y: y + (Math.random() - 0.5) * LAYER_H,
+        vx: (side === x ? -1 : 1) * (40 + Math.random() * 120), vy: -40 - Math.random() * 120,
+        life: 0.5 + Math.random() * 0.3, max: 0.8, color: '#fff3b0', size: 2 + Math.random() * 2,
+      });
+    }
+  }
+
+  private popup(x: number, y: number, text: string, color: string, size: number): void {
+    this.popups.push({ x, y, text, color, size, life: 1.1 });
   }
 
   // ------------------------------------------------------------------ update
@@ -253,142 +325,38 @@ export class Game {
     if (this.paused) return;
     this.time += dt;
 
-    for (const p of this.planets) {
-      p.x = p.baseX + p.moveAmp * Math.sin(this.time * p.moveFreq + p.phase);
+    const m = this.moving;
+    if (m && this.mode !== 'dead') {
+      const step = this.speed() * dt * this.moveDir;
+      m.x += step;
+      m.origin += step;
+      // Bounce at the edges so a player who waits always gets another pass.
+      const min = -m.w * 0.5;
+      const max = WORLD_W - m.w * 0.5;
+      if (m.x < min) { m.origin += min - m.x; m.x = min; this.moveDir = 1; }
+      if (m.x > max) { m.origin += max - m.x; m.x = max; this.moveDir = -1; }
     }
 
-    if (this.mode !== 'dead') {
-      if (this.current) {
-        const c = this.current;
-        const R = c.r + ORBIT_GAP;
-        const speed = (150 * c.spin) / R; // roughly constant linear speed across sizes
-        this.angle += speed * this.dir * dt;
-        this.placeOnOrbit();
-      } else {
-        this.fly(dt);
-      }
-      this.trail.push({ x: this.px, y: this.py });
-      if (this.trail.length > 14) this.trail.shift();
+    this.camY += (this.targetCam() - this.camY) * Math.min(1, dt * 4);
+
+    for (const p of this.pieces) {
+      p.vy += GRAVITY * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.spin * dt;
     }
-
-    // Camera follows the planet the player is on (or flying from), only moving up.
-    const anchor = this.current ?? this.lastPlanet;
-    if (anchor) {
-      const target = anchor.y - this.viewH * 0.68;
-      this.camY += (target - this.camY) * Math.min(1, dt * 3);
-    }
-
-    // Keep the world populated above and trim what has scrolled away.
-    while (this.planets[this.planets.length - 1].y > this.camY - this.viewH) this.spawnNext();
-    const cutoff = this.camY + this.viewH + 400;
-    this.planets = this.planets.filter((p) => p.y < cutoff || p === this.current || p === this.lastPlanet);
-    this.coins = this.coins.filter((c) => c.y < cutoff && !c.taken);
-
+    this.pieces = this.pieces.filter((p) => p.y < this.camY + this.viewH + 200);
     for (const pt of this.particles) {
+      pt.vy += 500 * dt;
       pt.x += pt.vx * dt;
       pt.y += pt.vy * dt;
-      pt.vx *= 0.96;
-      pt.vy *= 0.96;
       pt.life -= dt;
     }
     this.particles = this.particles.filter((pt) => pt.life > 0);
-    for (const pp of this.popups) { pp.y -= 40 * dt; pp.life -= dt; }
+    for (const pp of this.popups) { pp.y -= 30 * dt; pp.life -= dt; }
     this.popups = this.popups.filter((pp) => pp.life > 0);
     this.shake = Math.max(0, this.shake - dt * 30);
-  }
-
-  private fly(dt: number): void {
-    this.flight += dt;
-    // Sub-step so fast flights never tunnel through a small planet.
-    const steps = 4;
-    for (let i = 0; i < steps; i++) {
-      this.px += (this.vx * dt) / steps;
-      this.py += (this.vy * dt) / steps;
-
-      for (const coin of this.coins) {
-        if (!coin.taken && Math.hypot(coin.x - this.px, coin.y - this.py) < COIN_R + PLAYER_R + 4) {
-          coin.taken = true;
-          this.runCoins++;
-          this.burst(coin.x, coin.y, 50, 10, 120);
-          this.popup(coin.x, coin.y, '+1', 50);
-          sfx.coin();
-        }
-      }
-
-      for (const p of this.planets) {
-        if (p === this.lastPlanet) continue;
-        const R = p.r + ORBIT_GAP;
-        if (Math.hypot(this.px - p.x, this.py - p.y) <= R) {
-          this.land(p);
-          return;
-        }
-      }
-    }
-
-    const offscreen = this.px < -PLAYER_R || this.px > WORLD_W + PLAYER_R || this.py > this.camY + this.viewH + 20 || this.py < this.camY - 40;
-    if (offscreen || this.flight > MAX_FLIGHT) this.die();
-  }
-
-  private land(p: Planet): void {
-    const rx = this.px - p.x;
-    const ry = this.py - p.y;
-    const cross = rx * this.vy - ry * this.vx;
-    // Closest the flight line would have passed to the planet's centre: aiming dead centre is a "perfect".
-    const miss = Math.abs(cross) / LAUNCH_SPEED;
-    const perfect = miss < p.r * 0.4;
-
-    this.current = p;
-    this.angle = Math.atan2(ry, rx);
-    if (Math.abs(cross) > 1e-3) this.dir = cross > 0 ? 1 : -1;
-    this.placeOnOrbit();
-
-    if (!p.visited) {
-      p.visited = true;
-      this.combo = perfect ? this.combo + 1 : 0;
-      const gained = 1 + (perfect ? this.combo : 0);
-      this.score += gained;
-      this.burst(this.px, this.py, p.hue, perfect ? 22 : 12, perfect ? 220 : 140);
-      if (perfect) {
-        this.popup(p.x, p.y - p.r - 30, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', p.hue);
-        sfx.perfect();
-        haptic.medium();
-        this.shake = 4;
-      } else {
-        sfx.land(this.score);
-        haptic.light();
-      }
-    } else {
-      sfx.land(0);
-    }
-  }
-
-  private die(): void {
-    this.mode = 'dead';
-    this.deadAt = this.time;
-    this.burst(this.px, this.py, 0, 40, 300);
-    this.shake = 12;
-    sfx.die();
-    haptic.error();
-    this.bank += this.runCoins;
-    save.setCoins(this.bank);
-    if (this.score > this.best) {
-      this.best = this.score;
-      this.newBest = true;
-      save.setBest(this.best);
-    }
-  }
-
-  private burst(x: number, y: number, hue: number, n: number, speed: number): void {
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = speed * (0.3 + Math.random() * 0.7);
-      const life = 0.4 + Math.random() * 0.5;
-      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, hue, size: 1.5 + Math.random() * 2.5 });
-    }
-  }
-
-  private popup(x: number, y: number, text: string, hue: number): void {
-    this.popups.push({ x, y, text, hue, life: 0.9 });
+    this.flash = Math.max(0, this.flash - dt);
   }
 
   // ------------------------------------------------------------------ render
@@ -403,8 +371,8 @@ export class Game {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const g = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    g.addColorStop(0, '#0b1030');
-    g.addColorStop(1, '#070b1a');
+    g.addColorStop(0, '#2a1a33');
+    g.addColorStop(1, '#4b2a3a');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -412,117 +380,233 @@ export class Game {
     const sy = (Math.random() - 0.5) * this.shake;
     ctx.setTransform(s, 0, 0, s, sx * s, sy * s);
 
-    this.drawStars();
+    this.drawLanterns();
 
     ctx.save();
     ctx.translate(0, -this.camY);
-    for (const c of this.coins) this.drawCoin(c);
-    for (const p of this.planets) this.drawPlanet(p);
-    this.drawParticles();
-    if (this.mode !== 'dead') this.drawPlayer();
+    this.drawCounter();
+    // Only draw the layers that are on screen; tall stacks can have hundreds.
+    const minY = this.camY - LAYER_H;
+    const maxY = this.camY + this.viewH;
+    for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
+    for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) this.drawFlag(f.x, f.y, f.hue);
+    if (this.moving && this.mode !== 'dead') this.drawLayer(this.moving);
+    for (const p of this.pieces) {
+      ctx.save();
+      ctx.translate(p.x + p.w / 2, p.y + LAYER_H / 2);
+      ctx.rotate(p.rot);
+      ctx.translate(-(p.x + p.w / 2), -(p.y + LAYER_H / 2));
+      this.drawLayer(p);
+      ctx.restore();
+    }
+    for (const pt of this.particles) {
+      ctx.globalAlpha = pt.life / pt.max;
+      ctx.fillStyle = pt.color;
+      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+    }
+    ctx.globalAlpha = 1;
     for (const pp of this.popups) {
       ctx.globalAlpha = Math.min(1, pp.life * 2);
-      this.text(pp.text, pp.x, pp.y, 18, `hsl(${pp.hue} 100% 75%)`);
+      this.text(pp.text, pp.x, pp.y, pp.size, pp.color);
     }
     ctx.globalAlpha = 1;
     ctx.restore();
 
+    if (this.flash > 0) {
+      ctx.fillStyle = `rgba(255,243,176,${this.flash * 0.35})`;
+      ctx.fillRect(0, 0, WORLD_W, this.viewH);
+    }
+
     this.drawHud();
   }
 
-  private drawStars(): void {
+  private drawLanterns(): void {
     const { ctx } = this;
-    const span = 2000;
-    for (const st of this.stars) {
-      let y = (st.y - this.camY * st.z) % span;
+    const span = 1600;
+    for (const l of this.lanterns) {
+      let y = (l.y - this.camY * l.z) % span;
       if (y < 0) y += span;
-      if (y > this.viewH) continue;
-      ctx.globalAlpha = 0.3 + st.z;
-      ctx.fillStyle = '#cfe3ff';
-      ctx.fillRect(st.x, y, st.z * 2.4, st.z * 2.4);
+      if (y > this.viewH + 40) continue;
+      const r = 10 + l.z * 30;
+      const glow = ctx.createRadialGradient(l.x, y, 0, l.x, y, r * 2.4);
+      glow.addColorStop(0, `hsla(${l.hue}, 90%, 60%, ${0.25 * l.z + 0.05})`);
+      glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(l.x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
+      ctx.globalAlpha = 0.25 + l.z;
+      ctx.fillStyle = `hsl(${l.hue} 75% 48%)`;
+      ctx.beginPath();
+      ctx.ellipse(l.x, y, r * 0.8, r, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#1b1020';
+      ctx.fillRect(l.x - r * 0.45, y - r - 2, r * 0.9, 4);
+      ctx.fillRect(l.x - r * 0.45, y + r - 2, r * 0.9, 4);
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
 
-  private drawPlanet(p: Planet): void {
+  private drawCounter(): void {
     const { ctx } = this;
-    const R = p.r + ORBIT_GAP;
-    const isCurrent = p === this.current;
-
-    ctx.strokeStyle = `hsla(${p.hue}, 90%, 70%, ${isCurrent ? 0.45 : 0.15})`;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 8]);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.shadowColor = `hsl(${p.hue} 100% 60%)`;
-    ctx.shadowBlur = 24;
-    const grad = ctx.createRadialGradient(p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1, p.x, p.y, p.r);
-    grad.addColorStop(0, `hsl(${p.hue} 90% ${p.visited ? 70 : 78}%)`);
-    grad.addColorStop(1, `hsl(${p.hue} 70% ${p.visited ? 28 : 40}%)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    // Wooden counter from the plate down past the bottom of the screen.
+    const counterY = 14;
+    ctx.fillStyle = '#7a4a26';
+    ctx.fillRect(-20, counterY, WORLD_W + 40, 2000);
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, counterY + 18 + i * 26);
+      ctx.bezierCurveTo(120, counterY + 10 + i * 26, 260, counterY + 30 + i * 26, WORLD_W, counterY + 16 + i * 26);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#a0683a';
+    ctx.fillRect(-20, counterY, WORLD_W + 40, 6);
+    // Plate.
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    this.roundRect(WORLD_W / 2 - 140, 6, 280, 16, 8);
     ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#f4f7fb';
+    this.roundRect(WORLD_W / 2 - 136, 0, 272, 14, 7);
+    ctx.fill();
+    ctx.fillStyle = '#3d6fb6';
+    ctx.fillRect(WORLD_W / 2 - 124, 9, 248, 2);
   }
 
-  private drawCoin(c: Coin): void {
+  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
     const { ctx } = this;
-    const w = Math.abs(Math.cos(this.time * 3 + c.x)) * COIN_R;
-    ctx.fillStyle = '#ffd34d';
-    ctx.shadowColor = '#ffb300';
-    ctx.shadowBlur = 14;
+    r = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
-    ctx.moveTo(c.x, c.y - COIN_R);
-    ctx.lineTo(c.x + w, c.y);
-    ctx.lineTo(c.x, c.y + COIN_R);
-    ctx.lineTo(c.x - w, c.y);
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  private drawLayer(l: Layer): void {
+    const { ctx } = this;
+    const { x, y, w } = l;
+    const h = LAYER_H;
+    ctx.save();
+    this.roundRect(x, y, w, h, 6);
+    ctx.fillStyle = COLORS[l.kind];
+    ctx.fill();
+    ctx.clip();
+
+    // Texture is drawn at fixed positions relative to `origin`, so it doesn't jump when a layer is trimmed.
+    const start = Math.floor((x - l.origin) / 12) - 1;
+    const end = Math.ceil((x + w - l.origin) / 12) + 1;
+    switch (l.kind) {
+      case 'rice':
+        ctx.fillStyle = '#ffffff';
+        for (let i = start; i < end; i++) {
+          for (let row = 0; row < 3; row++) {
+            const gx = l.origin + i * 12 + ((i * 7 + row * 5) % 9);
+            ctx.beginPath();
+            ctx.ellipse(gx, y + 5 + row * 7, 3.2, 2, ((i + row) % 3) * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.06)';
+        ctx.fillRect(x, y + h - 4, w, 4);
+        break;
+      case 'salmon':
+      case 'tuna':
+        ctx.strokeStyle = l.kind === 'salmon' ? 'rgba(255,230,215,0.85)' : 'rgba(255,170,180,0.45)';
+        ctx.lineWidth = l.kind === 'salmon' ? 3 : 2;
+        for (let i = start; i < end; i++) {
+          const gx = l.origin + i * 12;
+          ctx.beginPath();
+          ctx.moveTo(gx, y + h);
+          ctx.quadraticCurveTo(gx + 6, y + h / 2, gx + 14, y);
+          ctx.stroke();
+        }
+        break;
+      case 'nori':
+        ctx.fillStyle = 'rgba(120,160,110,0.18)';
+        for (let i = start; i < end; i++) ctx.fillRect(l.origin + i * 12 + ((i * 5) % 7), y + 3 + ((i * 3) % 14), 5, 2);
+        break;
+      case 'avocado':
+        ctx.fillStyle = '#d9ed92';
+        ctx.fillRect(x, y, w, 7);
+        break;
+      case 'cucumber':
+        ctx.fillStyle = '#cfe9b8';
+        ctx.fillRect(x, y + 5, w, h - 10);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        for (let i = start; i < end; i++) ctx.fillRect(l.origin + i * 12 + 4, y + h / 2 - 1, 3, 3);
+        break;
+      case 'egg':
+        ctx.fillStyle = 'rgba(200,120,0,0.25)';
+        ctx.fillRect(x, y + 7, w, 2);
+        ctx.fillRect(x, y + 15, w, 2);
+        ctx.fillStyle = 'rgba(150,80,0,0.35)';
+        ctx.fillRect(x, y, w, 3);
+        break;
+    }
+    // Soft highlight on the top edge.
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(x, y, w, 3);
+    ctx.restore();
+  }
+
+  private drawFlag(x: number, y: number, hue: number): void {
+    const { ctx } = this;
+    ctx.strokeStyle = '#e8d3a8';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 6);
+    ctx.lineTo(x, y - 30);
+    ctx.stroke();
+    ctx.fillStyle = `hsl(${hue} 80% 60%)`;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 30);
+    ctx.lineTo(x + 18, y - 25);
+    ctx.lineTo(x, y - 20);
     ctx.closePath();
     ctx.fill();
-    ctx.shadowBlur = 0;
   }
 
-  private drawPlayer(): void {
-    const { ctx } = this;
-    for (let i = 0; i < this.trail.length; i++) {
-      const t = this.trail[i];
-      const k = i / this.trail.length;
-      ctx.globalAlpha = k * 0.5;
-      ctx.fillStyle = '#9ff3ff';
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, PLAYER_R * k, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.shadowColor = '#7ff';
-    ctx.shadowBlur = 20;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(this.px, this.py, PLAYER_R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  private drawParticles(): void {
-    const { ctx } = this;
-    for (const pt of this.particles) {
-      ctx.globalAlpha = pt.life / pt.max;
-      ctx.fillStyle = pt.hue === 0 ? '#ffffff' : `hsl(${pt.hue} 100% 70%)`;
-      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  private text(str: string, x: number, y: number, size: number, color = '#fff', weight = 800): void {
+  private text(str: string, x: number, y: number, size: number, color = '#fff', weight = 800, align: CanvasTextAlign = 'center'): void {
     const { ctx } = this;
     ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-    ctx.textAlign = 'center';
+    ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = color;
     ctx.fillText(str, x, y);
+  }
+
+  private drawOrderCard(y: number): void {
+    const { ctx } = this;
+    const o = this.order;
+    const done = this.height - o.start;
+    const w = 236;
+    const x = (WORLD_W - w) / 2;
+    ctx.fillStyle = 'rgba(255,248,235,0.94)';
+    this.roundRect(x, y, w, 52, 12);
+    ctx.fill();
+    this.text(`ORDER: ${o.recipe.name}`, x + 12, y + 15, 13, '#5a2e1f', 800, 'left');
+    this.text(`${done}/${o.length}`, x + w - 12, y + 15, 13, '#b5442a', 800, 'right');
+    // Progress bar.
+    ctx.fillStyle = 'rgba(90,46,31,0.15)';
+    this.roundRect(x + 12, y + 26, w - 24, 5, 2.5);
+    ctx.fill();
+    ctx.fillStyle = '#e76f51';
+    this.roundRect(x + 12, y + 26, (w - 24) * (done / o.length), 5, 2.5);
+    ctx.fill();
+    // Upcoming ingredients, so players can see the roll come together.
+    const { pattern } = o.recipe;
+    for (let i = 0; i < 6; i++) {
+      const kind = pattern[(done + i) % pattern.length];
+      ctx.fillStyle = COLORS[kind];
+      this.roundRect(x + 12 + i * 22, y + 37, 18, 9, 3);
+      ctx.fill();
+      ctx.strokeStyle = i === 0 ? '#5a2e1f' : 'rgba(90,46,31,0.3)';
+      ctx.lineWidth = i === 0 ? 1.5 : 1;
+      ctx.stroke();
+    }
+    this.text('next', x + 12 + 6 * 22 + 4, y + 42, 10, 'rgba(90,46,31,0.6)', 700, 'left');
   }
 
   private drawHud(): void {
@@ -531,7 +615,6 @@ export class Game {
     const top = this.insets.top;
     const midY = this.viewH / 2;
 
-    // Mute button.
     const mb = this.muteButton();
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 2;
@@ -540,45 +623,49 @@ export class Game {
     ctx.stroke();
     this.text(this.muted ? '×' : '♪', mb.x, mb.y + 1, 16, 'rgba(255,255,255,0.8)');
 
-    // Coins.
-    ctx.textAlign = 'right';
-    ctx.font = '700 16px system-ui, sans-serif';
     ctx.fillStyle = '#ffd34d';
-    ctx.fillText(`◆ ${this.bank + (this.mode === 'dead' ? 0 : this.runCoins)}`, WORLD_W - this.insets.right - 16, top + 30);
+    ctx.beginPath();
+    ctx.arc(WORLD_W - this.insets.right - 24, top + 30, 8, 0, Math.PI * 2);
+    ctx.fill();
+    this.text(String(this.bank + (this.mode === 'dead' ? 0 : this.runCoins)), WORLD_W - this.insets.right - 38, top + 31, 16, '#ffd34d', 700, 'right');
 
     if (this.mode === 'title') {
       const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
-      ctx.fillStyle = 'rgba(5,8,20,0.45)';
-      ctx.fillRect(0, 0, WORLD_W, this.viewH);
-      this.text('ORBIT', cx, midY - 190, 56, '#ffffff', 900);
-      this.text('HOP', cx, midY - 138, 56, '#7ff3ff', 900);
+      this.text('SUSHI', cx, top + 120, 60, '#ffffff', 900);
+      this.text('STACK', cx, top + 176, 60, '#ff8a5b', 900);
+      if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 16, 'rgba(255,255,255,0.75)', 700);
       ctx.globalAlpha = pulse;
-      this.text('TAP TO LAUNCH', cx, this.viewH - this.insets.bottom - 90, 20);
+      this.text('TAP TO DROP', cx, top + 236, 20);
       ctx.globalAlpha = 1;
-      this.text('Release at the right moment to hop', cx, this.viewH - this.insets.bottom - 56, 14, 'rgba(255,255,255,0.6)', 500);
-      this.text('to the next planet. Aim for the centre!', cx, this.viewH - this.insets.bottom - 36, 14, 'rgba(255,255,255,0.6)', 500);
-      if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 16, 'rgba(255,255,255,0.7)', 700);
+      this.text('Line each layer up perfectly.', cx, top + 264, 14, 'rgba(255,255,255,0.65)', 500);
       return;
     }
 
-    this.text(String(this.score), cx, top + 70, 54, '#fff', 900);
+    this.text(String(this.height), cx, top + 64, 50, '#fff', 900);
+    if (this.mode === 'playing') this.drawOrderCard(top + 100);
 
     if (this.paused) {
       this.panel(midY, 'PAUSED', 'Tap to resume');
     } else if (this.mode === 'dead') {
       const t = Math.min(1, (this.time - this.deadAt) / 0.35);
       ctx.globalAlpha = t;
-      ctx.fillStyle = 'rgba(5,8,20,0.6)';
+      ctx.fillStyle = 'rgba(30,15,30,0.5)';
       ctx.fillRect(0, 0, WORLD_W, this.viewH);
-      this.panel(midY, this.newBest ? 'NEW BEST!' : 'LOST IN SPACE', `Score ${this.score}   ·   Best ${this.best}`);
-      if (this.runCoins > 0) this.text(`+${this.runCoins} ◆`, cx, midY + 44, 18, '#ffd34d', 700);
-      if (this.time - this.deadAt > 0.6) this.text('TAP TO RETRY', cx, midY + 100, 20);
+      ctx.fillStyle = 'rgba(42,26,51,0.92)';
+      this.roundRect(30, midY - 95, WORLD_W - 60, 225, 18);
+      ctx.fill();
+      this.panel(midY - 20, this.newBest ? 'NEW BEST!' : 'DROPPED IT!', `${this.height} layers   ·   Best ${this.best}`);
+      this.text(`${this.ordersServed} order${this.ordersServed === 1 ? '' : 's'} served   ·   +${this.runCoins} coins`, cx, midY + 20, 15, '#ffd34d', 700);
+      // Near-miss nudge: the most effective "one more try" prompt.
+      const gap = this.best - this.height;
+      if (!this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, midY + 50, 15, '#ffb4a2', 700);
+      if (this.time - this.deadAt > 0.7) this.text('TAP TO RETRY', cx, midY + 100, 20);
       ctx.globalAlpha = 1;
     }
   }
 
   private panel(y: number, title: string, sub: string): void {
     this.text(title, WORLD_W / 2, y - 30, 38, '#fff', 900);
-    this.text(sub, WORLD_W / 2, y + 12, 17, 'rgba(255,255,255,0.8)', 600);
+    this.text(sub, WORLD_W / 2, y + 8, 17, 'rgba(255,255,255,0.85)', 600);
   }
 }

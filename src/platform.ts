@@ -8,6 +8,7 @@ const native = Capacitor.isNativePlatform();
 export const haptic = {
   light: () => { if (native) void Haptics.impact({ style: ImpactStyle.Light }); },
   medium: () => { if (native) void Haptics.impact({ style: ImpactStyle.Medium }); },
+  success: () => { if (native) void Haptics.notification({ type: NotificationType.Success }); },
   error: () => {
     if (native) void Haptics.notification({ type: NotificationType.Error });
     else navigator.vibrate?.(80);
@@ -33,10 +34,10 @@ const store = {
 };
 
 export const save = {
-  best: () => Number(store.get('orbit-hop.best') ?? 0),
-  setBest: (v: number) => store.set('orbit-hop.best', String(v)),
-  coins: () => Number(store.get('orbit-hop.coins') ?? 0),
-  setCoins: (v: number) => store.set('orbit-hop.coins', String(v)),
-  muted: () => store.get('orbit-hop.muted') === '1',
-  setMuted: (v: boolean) => store.set('orbit-hop.muted', v ? '1' : '0'),
+  best: () => Number(store.get('sushi-stack.best') ?? 0),
+  setBest: (v: number) => store.set('sushi-stack.best', String(v)),
+  coins: () => Number(store.get('sushi-stack.coins') ?? 0),
+  setCoins: (v: number) => store.set('sushi-stack.coins', String(v)),
+  muted: () => store.get('sushi-stack.muted') === '1',
+  setMuted: (v: boolean) => store.set('sushi-stack.muted', v ? '1' : '0'),
 };
