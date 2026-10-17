@@ -25,6 +25,29 @@ tap to drop it on the stack. Anything hanging over the edge gets sliced off, so 
 | Serving | When an order is complete, a flag pick is planted on the stack and you earn coins: 2 × the average layer width. Wider stacks pay more. |
 | Score | Layers stacked. Best score and banked coins are saved on the device. |
 
+## Levels and boss chefs
+Each order is a level, and each level has a boss chef who watches you work. The chef:
+- moves left and right to follow the sliding layer, watching it and pointing at it,
+- gets more worked up as the order nears completion: **calm → focused → intense** (wide eyes, sweat) **→ panic** on the last layer (huge eyes, shaking),
+- reacts to every drop: **impressed** (star eyes, "Sugoi!") on a PERFECT, **winces** when you slice off an overhang, is **happy** when the order is served, is **shocked** when Second Chance saves you, and is **angry** and gloats when you miss.
+
+Beating a boss pays its level × 5 bonus coins, on top of the order's coins.
+
+| Level | Boss | Rule |
+|---|---|---|
+| 1 | Chef Kenji | Warm-up round |
+| 2 | Chef Hana | Layers move 10% faster |
+| 3 | Chef Taro | Smaller PERFECT zone (3 instead of 5 units) |
+| 4 | Chef Mei | 2 extra layers in the order |
+| 5 | Chef Goro | Layers move 20% faster |
+| 6 | Chef Yuki | Layer speed surges and eases |
+| 7 | Chef Ryu | Layers move 30% faster |
+| 8 | Chef Aiko | Smaller PERFECT zone and 2 extra layers |
+| 9 | Master Sato | 30% faster, with surges |
+| 10 | Grand Chef Kaito | 40% faster, surges, smaller PERFECT zone and 1 extra layer |
+
+After level 10 the bosses repeat, 10% faster on each lap. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
+
 ## Scenes (free)
 Each run plays through 10 backgrounds in a random order, and the scene crossfades to the next one every time an order is served:
 Night Izakaya, Sakura Garden, Ocean Deep, Snowy Onsen, Bamboo Forest, Neon Tokyo, Sunset Harbor, Rainy Alley, Fuji Dawn and Golden Palace.

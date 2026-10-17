@@ -2,6 +2,7 @@ import { sfx, unlockAudio, setMuted } from './audio';
 import { haptic, save } from './platform';
 import { THEMES, drawBackdrop, makeSpecks, type Theme } from './themes';
 import { BOOSTERS, PLATES, drawPlate, type BoosterId, type PlateId } from './shop';
+import { CHEFS, drawChef, type Chef, type Mood } from './chef';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
 // World y grows downward; the plate sits at y = 0 and the stack grows toward negative y.
@@ -10,6 +11,7 @@ const LAYER_H = 24;
 const BASE_W = 200;
 const WIDE_W = 260; // starting width with the Wide Base booster
 const PERFECT_TOL = 5; // drops this close to the layer below snap into place
+const TIGHT_TOL = 3; // perfect window for chefs with the "precise" rule
 const REGROW = 8; // width regained per perfect once a streak reaches 3
 const GRAVITY = 1400;
 
@@ -47,7 +49,7 @@ interface Piece extends Layer { vx: number; vy: number; rot: number; spin: numbe
 
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
 
-interface Popup { x: number; y: number; text: string; life: number; color: string; size: number }
+interface Popup { x: number; y: number; text: string; life: number; max: number; color: string; size: number }
 
 interface Order { recipe: Recipe; length: number; start: number; reward: number }
 
@@ -108,6 +110,12 @@ export class Game {
   private shopSel: PlateId | null = null; // plate waiting for a confirming second tap
   private toast: { text: string; life: number } | null = null;
 
+  // Boss chef for the current level. One level = one order.
+  private chefX = WORLD_W / 2;
+  private reaction: { mood: Mood; life: number } | null = null;
+  private bubble: { text: string; life: number } | null = null;
+  private introIn = 0; // seconds until the next chef is announced
+
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas not supported');
@@ -161,6 +169,44 @@ export class Game {
     return this.stack[this.stack.length - 1];
   }
 
+  private get level(): number {
+    return this.ordersServed + 1;
+  }
+
+  /** Bosses go in order; after the tenth they repeat, a little faster each lap. */
+  private get chef(): Chef {
+    return CHEFS[this.ordersServed % CHEFS.length];
+  }
+
+  private get lap(): number {
+    return Math.floor(this.ordersServed / CHEFS.length);
+  }
+
+  private react(mood: Mood, life: number, line?: string): void {
+    this.reaction = { mood, life };
+    if (line) this.bubble = { text: line, life: 1.8 };
+  }
+
+  /** How worked up the chef is: rises as the order nears completion. */
+  private chefMood(): Mood {
+    if (this.mode === 'dead') return 'angry';
+    if (this.reaction) return this.reaction.mood;
+    const left = this.order.length - (this.height - this.order.start);
+    const progress = 1 - left / this.order.length;
+    if (left <= 1) return 'panic';
+    if (progress >= 0.7) return 'intense';
+    if (progress >= 0.4) return 'focused';
+    return 'calm';
+  }
+
+  private announceChef(): void {
+    const c = this.chef;
+    this.popup(WORLD_W / 2, this.top.y - 130, `LEVEL ${this.level}`, '#ffffff', 26, 2.2);
+    this.popup(WORLD_W / 2, this.top.y - 104, `${c.name}: ${c.rule}`, '#ffd34d', 14, 2.2);
+    this.bubble = { text: c.intro, life: 2.2 };
+    this.reaction = null;
+  }
+
   private get theme(): Theme {
     return THEMES[this.themeOrder[this.themeIdx]];
   }
@@ -178,6 +224,9 @@ export class Game {
     this.newBest = false;
     this.paused = false;
     this.moveDir = 1;
+    this.reaction = null;
+    this.bubble = null;
+    this.introIn = 0;
     this.newOrder();
     this.spawnMoving();
     this.camY = this.targetCam();
@@ -206,9 +255,10 @@ export class Game {
 
     this.reset();
     this.mode = 'playing';
+    this.announceChef();
 
     const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > BASE_W && 'wide base', this.boosters.chance && 'second chance'].filter(Boolean);
-    if (active.length) this.popup(WORLD_W / 2, this.top.y - 110, `Boosters: ${active.join(' · ')}`, '#ffd34d', 15);
+    if (active.length) this.popup(WORLD_W / 2, this.top.y - 76, `Boosters: ${active.join(' · ')}`, '#9fe3ff', 13, 2.2);
   }
 
   private changeTheme(apply: () => void): void {
@@ -228,7 +278,7 @@ export class Game {
     const n = this.ordersServed;
     // Early orders use the simple recipes; the full menu opens up as you serve more.
     const recipe = RECIPES[Math.floor(Math.random() * Math.min(RECIPES.length, 2 + n))];
-    this.order = { recipe, length: Math.min(5 + n, 12), start: this.height, reward: 0 };
+    this.order = { recipe, length: Math.min(5 + n, 12) + this.chef.extra, start: this.height, reward: 0 };
   }
 
   private nextIngredient(): Ingredient {
@@ -237,7 +287,9 @@ export class Game {
   }
 
   private speed(): number {
-    const v = Math.min(130 + this.height * 5, 400);
+    const c = this.chef;
+    let v = Math.min(130 + this.height * 5, 400) * c.speed * (1 + this.lap * 0.1);
+    if (c.wobble) v *= 1 + 0.35 * Math.sin(this.time * 2.2);
     return this.slowStart && this.height < 15 ? v * 0.7 : v;
   }
 
@@ -304,7 +356,7 @@ export class Game {
     const top = this.top;
     const dx = m.x - top.x;
 
-    if (Math.abs(dx) <= PERFECT_TOL) {
+    if (Math.abs(dx) <= (this.chef.tight ? TIGHT_TOL : PERFECT_TOL)) {
       m.origin -= dx;
       m.x = top.x;
       this.combo++;
@@ -317,6 +369,7 @@ export class Game {
       const cx = m.x + m.w / 2;
       this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
       if (this.combo % 5 === 0) this.addCoins(this.combo / 5 * 3, cx, m.y - 44, 'Streak bonus!');
+      if (this.mode === 'playing' && !this.bubble) this.react('impressed', 0.7, this.combo >= 3 ? ['Sugoi!', 'Beautiful!', 'Perfect cut!'][this.combo % 3] : undefined);
       this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 18 + this.combo * 2);
       sfx.perfect(this.combo);
       haptic.medium();
@@ -333,6 +386,7 @@ export class Game {
           this.chanceUsed = true;
           this.combo = 0;
           this.popup(WORLD_W / 2, top.y - 60, 'SECOND CHANCE!', '#ff9eb0', 22);
+          this.react('shock', 1, 'Lucky!');
           sfx.slice();
           haptic.medium();
           this.spawnMoving();
@@ -350,6 +404,7 @@ export class Game {
       m.x = keepX;
       m.w = overlap;
       this.place(m);
+      if (this.mode === 'playing' && !this.reaction) this.react('wince', 0.5);
       sfx.slice();
       haptic.light();
     }
@@ -371,7 +426,8 @@ export class Game {
     this.ordersServed++;
     this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
     this.popup(WORLD_W / 2, top.y - 60, `${this.order.recipe.name} served!`, '#ffffff', 22);
-    this.addCoins(coins, WORLD_W / 2, top.y - 34, '');
+    this.addCoins(coins + 5 * this.ordersServed, WORLD_W / 2, top.y - 34, `${CHEFS[(this.ordersServed - 1) % CHEFS.length].name} beaten!`);
+    this.react('happy', 1.2, CHEFS[(this.ordersServed - 1) % CHEFS.length].beaten);
     // A new scene for every order served.
     this.changeTheme(() => { this.themeIdx = (this.themeIdx + 1) % this.themeOrder.length; });
     this.popup(WORLD_W / 2, this.camY + this.viewH * 0.3, this.theme.name, 'rgba(255,255,255,0.8)', 15);
@@ -383,6 +439,8 @@ export class Game {
     sfx.serve();
     haptic.success();
     this.newOrder();
+    // The next boss steps in after the beaten one has had a moment to react.
+    this.introIn = 1.2;
   }
 
   private fall(layer: Layer, side: number): void {
@@ -391,6 +449,9 @@ export class Game {
 
   private die(): void {
     this.mode = 'dead';
+    this.reaction = null;
+    this.bubble = { text: this.chef.gloat, life: 99 };
+    this.popups = [];
     this.deadAt = this.time;
     this.shake = 10;
     sfx.die();
@@ -415,8 +476,8 @@ export class Game {
     }
   }
 
-  private popup(x: number, y: number, text: string, color: string, size: number): void {
-    this.popups.push({ x, y, text, color, size, life: 1.1 });
+  private popup(x: number, y: number, text: string, color: string, size: number, life = 1.1): void {
+    this.popups.push({ x, y, text, color, size, life, max: life });
   }
 
   // ------------------------------------------------------------------ update
@@ -457,7 +518,15 @@ export class Game {
       pt.life -= dt;
     }
     this.particles = this.particles.filter((pt) => pt.life > 0);
-    for (const pp of this.popups) { pp.y -= 30 * dt; pp.life -= dt; }
+    for (const pp of this.popups) { pp.y -= (30 * 1.1 / pp.max) * dt; pp.life -= dt; }
+    if (this.reaction && (this.reaction.life -= dt) <= 0) this.reaction = null;
+    if (this.bubble && (this.bubble.life -= dt) <= 0) this.bubble = null;
+    if (this.introIn > 0 && (this.introIn -= dt) <= 0 && this.mode === 'playing') this.announceChef();
+    // The chef shuffles left and right to keep the sliding layer in view.
+    if (this.moving && this.mode === 'playing') {
+      const target = Math.max(70, Math.min(WORLD_W - 70, this.moving.x + this.moving.w / 2));
+      this.chefX += (target - this.chefX) * Math.min(1, dt * 2.5);
+    }
     this.popups = this.popups.filter((pp) => pp.life > 0);
     this.shake = Math.max(0, this.shake - dt * 30);
     this.flash = Math.max(0, this.flash - dt);
@@ -655,6 +724,47 @@ export class Game {
     ctx.fillText(str, x, y);
   }
 
+  private drawBoss(x: number, y: number): void {
+    const { ctx } = this;
+    const s = 0.85;
+    const c = this.chef;
+    // Watch and point at the sliding layer; on the results screen, at the player.
+    const m = this.moving;
+    const lookX = m && this.mode === 'playing' ? m.x + m.w / 2 : x;
+    const lookY = m && this.mode === 'playing' ? m.y + LAYER_H / 2 - this.camY : y + 200;
+    drawChef(ctx, c, x, y, s, this.chefMood(), lookX, lookY, this.time);
+
+    // Name tag.
+    const tag = `${c.name.toUpperCase()}`;
+    ctx.font = '800 10px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const tw = ctx.measureText(tag).width + 14;
+    ctx.fillStyle = c.accent;
+    const ty = y + 70 * s - 6;
+    this.roundRect(x - tw / 2, ty, tw, 15, 7.5);
+    ctx.fill();
+    this.text(tag, x, ty + 8, 10, '#ffffff', 800);
+
+    if (!this.bubble) return;
+    // Speech bubble on whichever side has more room.
+    ctx.font = '800 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const bw = ctx.measureText(this.bubble.text).width + 18;
+    const right = x < WORLD_W / 2;
+    const bx = Math.max(6, Math.min(WORLD_W - 6 - bw, right ? x + 30 : x - 30 - bw));
+    const by = y - 50;
+    ctx.globalAlpha = Math.min(1, this.bubble.life * 4);
+    ctx.fillStyle = '#ffffff';
+    this.roundRect(bx, by, bw, 24, 12);
+    ctx.fill();
+    ctx.beginPath();
+    const tx = right ? bx + 10 : bx + bw - 10;
+    ctx.moveTo(tx - 5, by + 22);
+    ctx.lineTo(right ? x + 16 : x - 16, y - 18);
+    ctx.lineTo(tx + 5, by + 22);
+    ctx.fill();
+    this.text(this.bubble.text, bx + bw / 2, by + 12.5, 12, '#3a1d12', 800);
+    ctx.globalAlpha = 1;
+  }
+
   private drawOrderCard(y: number): void {
     const { ctx } = this;
     const o = this.order;
@@ -664,7 +774,7 @@ export class Game {
     ctx.fillStyle = 'rgba(255,248,235,0.94)';
     this.roundRect(x, y, w, 52, 12);
     ctx.fill();
-    this.text(`ORDER: ${o.recipe.name}`, x + 12, y + 15, 13, '#5a2e1f', 800, 'left');
+    this.text(`LV ${this.level} · ${o.recipe.name}`, x + 12, y + 15, 13, '#5a2e1f', 800, 'left');
     this.text(`${done}/${o.length}`, x + w - 12, y + 15, 13, '#b5442a', 800, 'right');
     // Progress bar.
     ctx.fillStyle = 'rgba(90,46,31,0.15)';
@@ -803,7 +913,10 @@ export class Game {
     }
 
     this.text(String(this.height), cx, top + 64, 50, '#fff', 900);
-    if (this.mode === 'playing') this.drawOrderCard(top + 100);
+    if (this.mode === 'playing') {
+      this.drawOrderCard(top + 100);
+      this.drawBoss(this.chefX, top + 205);
+    }
 
     if (this.paused) {
       this.panel(midY, 'PAUSED', 'Tap to resume');
@@ -812,6 +925,8 @@ export class Game {
       ctx.globalAlpha = t;
       ctx.fillStyle = 'rgba(30,15,30,0.5)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+      // The boss gloats over the result.
+      this.drawBoss(WORLD_W / 2, Math.max(top + 150, midY - 175));
       ctx.fillStyle = 'rgba(42,26,51,0.94)';
       this.roundRect(30, midY - 100, WORLD_W - 60, 270, 18);
       ctx.fill();
