@@ -55,6 +55,7 @@ interface Insets { top: number; right: number; bottom: number; left: number }
 export class Game {
   private ctx: CanvasRenderingContext2D;
   private scale = 1; // CSS pixels per world unit
+  private offX = 0; // world units of empty space left of the play area on wide screens
   private viewH = 700; // world units visible vertically
   private dpr = 1;
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -70,7 +71,7 @@ export class Game {
   private particles: Particle[] = [];
   private popups: Popup[] = [];
   private flags: { x: number; y: number; hue: number }[] = []; // picks marking each served order
-  private lanterns: { x: number; y: number; z: number; hue: number }[] = [];
+  private lanterns: { x: number; y: number; z: number; hue: number }[] = []; // x is a 0-1 fraction of the visible width
 
   private order!: Order;
   private ordersServed = 0;
@@ -91,12 +92,20 @@ export class Game {
     this.ctx = ctx;
     setMuted(this.muted);
     for (let i = 0; i < 14; i++) {
-      this.lanterns.push({ x: Math.random() * WORLD_W, y: Math.random() * 1600, z: 0.15 + Math.random() * 0.35, hue: Math.random() < 0.7 ? 5 : 35 });
+      this.lanterns.push({ x: Math.random(), y: Math.random() * 1600, z: 0.15 + Math.random() * 0.35, hue: Math.random() < 0.7 ? 5 : 35 });
     }
     this.resize();
     this.reset();
-    window.addEventListener('resize', () => this.resize());
+    new ResizeObserver(() => this.resize()).observe(canvas);
     canvas.addEventListener('pointerdown', (e) => this.onTap(e.clientX, e.clientY));
+    // Space or Enter also drops, for keyboard players on desktop.
+    window.addEventListener('keydown', (e) => {
+      if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        this.onTap(rect.left + rect.width / 2, rect.top + rect.height * 0.75);
+      }
+    });
   }
 
   pause(): void {
@@ -105,12 +114,15 @@ export class Game {
 
   private resize(): void {
     this.dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const rect = this.canvas.getBoundingClientRect();
+    const w = rect.width || window.innerWidth;
+    const h = rect.height || window.innerHeight;
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
-    this.scale = w / WORLD_W;
+    // Phones fill the width; wide screens (tablets in a window, desktops) keep at least 640 units of height visible.
+    this.scale = Math.min(w / WORLD_W, h / 640);
     this.viewH = h / this.scale;
+    this.offX = (w / this.scale - WORLD_W) / 2;
     const cs = getComputedStyle(this.safeProbe);
     this.insets = {
       top: parseFloat(cs.paddingTop) / this.scale,
@@ -180,8 +192,9 @@ export class Game {
 
   private onTap(clientX: number, clientY: number): void {
     unlockAudio();
-    const wx = clientX / this.scale;
-    const wy = clientY / this.scale;
+    const rect = this.canvas.getBoundingClientRect();
+    const wx = (clientX - rect.left) / this.scale - this.offX;
+    const wy = (clientY - rect.top) / this.scale;
 
     const mb = this.muteButton();
     if (Math.hypot(wx - mb.x, wy - mb.y) < mb.r + 10) {
@@ -198,8 +211,8 @@ export class Game {
 
     switch (this.mode) {
       case 'title':
+        // The first tap only starts the game, so it can never drop a layer that's still sliding in.
         this.mode = 'playing';
-        this.drop();
         break;
       case 'playing':
         this.drop();
@@ -378,7 +391,7 @@ export class Game {
 
     const sx = (Math.random() - 0.5) * this.shake;
     const sy = (Math.random() - 0.5) * this.shake;
-    ctx.setTransform(s, 0, 0, s, sx * s, sy * s);
+    ctx.setTransform(s, 0, 0, s, (sx + this.offX) * s, sy * s);
 
     this.drawLanterns();
 
@@ -414,7 +427,7 @@ export class Game {
 
     if (this.flash > 0) {
       ctx.fillStyle = `rgba(255,243,176,${this.flash * 0.35})`;
-      ctx.fillRect(0, 0, WORLD_W, this.viewH);
+      ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     }
 
     this.drawHud();
@@ -423,24 +436,26 @@ export class Game {
   private drawLanterns(): void {
     const { ctx } = this;
     const span = 1600;
+    const spanW = WORLD_W + this.offX * 2;
     for (const l of this.lanterns) {
+      const x = -this.offX + l.x * spanW;
       let y = (l.y - this.camY * l.z) % span;
       if (y < 0) y += span;
       if (y > this.viewH + 40) continue;
       const r = 10 + l.z * 30;
-      const glow = ctx.createRadialGradient(l.x, y, 0, l.x, y, r * 2.4);
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
       glow.addColorStop(0, `hsla(${l.hue}, 90%, 60%, ${0.25 * l.z + 0.05})`);
       glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
       ctx.fillStyle = glow;
-      ctx.fillRect(l.x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
+      ctx.fillRect(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
       ctx.globalAlpha = 0.25 + l.z;
       ctx.fillStyle = `hsl(${l.hue} 75% 48%)`;
       ctx.beginPath();
-      ctx.ellipse(l.x, y, r * 0.8, r, 0, 0, Math.PI * 2);
+      ctx.ellipse(x, y, r * 0.8, r, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#1b1020';
-      ctx.fillRect(l.x - r * 0.45, y - r - 2, r * 0.9, 4);
-      ctx.fillRect(l.x - r * 0.45, y + r - 2, r * 0.9, 4);
+      ctx.fillRect(x - r * 0.45, y - r - 2, r * 0.9, 4);
+      ctx.fillRect(x - r * 0.45, y + r - 2, r * 0.9, 4);
       ctx.globalAlpha = 1;
     }
   }
@@ -450,17 +465,17 @@ export class Game {
     // Wooden counter from the plate down past the bottom of the screen.
     const counterY = 14;
     ctx.fillStyle = '#7a4a26';
-    ctx.fillRect(-20, counterY, WORLD_W + 40, 2000);
+    ctx.fillRect(-this.offX - 20, counterY, WORLD_W + this.offX * 2 + 40, 2000);
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 2;
     for (let i = 0; i < 8; i++) {
       ctx.beginPath();
-      ctx.moveTo(0, counterY + 18 + i * 26);
-      ctx.bezierCurveTo(120, counterY + 10 + i * 26, 260, counterY + 30 + i * 26, WORLD_W, counterY + 16 + i * 26);
+      ctx.moveTo(-this.offX, counterY + 18 + i * 26);
+      ctx.bezierCurveTo(120, counterY + 10 + i * 26, 260, counterY + 30 + i * 26, WORLD_W + this.offX, counterY + 16 + i * 26);
       ctx.stroke();
     }
     ctx.fillStyle = '#a0683a';
-    ctx.fillRect(-20, counterY, WORLD_W + 40, 6);
+    ctx.fillRect(-this.offX - 20, counterY, WORLD_W + this.offX * 2 + 40, 6);
     // Plate.
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     this.roundRect(WORLD_W / 2 - 140, 6, 280, 16, 8);
@@ -635,9 +650,9 @@ export class Game {
       this.text('STACK', cx, top + 176, 60, '#ff8a5b', 900);
       if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 16, 'rgba(255,255,255,0.75)', 700);
       ctx.globalAlpha = pulse;
-      this.text('TAP TO DROP', cx, top + 236, 20);
+      this.text('TAP TO PLAY', cx, top + 236, 20);
       ctx.globalAlpha = 1;
-      this.text('Line each layer up perfectly.', cx, top + 264, 14, 'rgba(255,255,255,0.65)', 500);
+      this.text('Then tap to drop each layer on the stack.', cx, top + 264, 14, 'rgba(255,255,255,0.65)', 500);
       return;
     }
 
@@ -650,7 +665,7 @@ export class Game {
       const t = Math.min(1, (this.time - this.deadAt) / 0.35);
       ctx.globalAlpha = t;
       ctx.fillStyle = 'rgba(30,15,30,0.5)';
-      ctx.fillRect(0, 0, WORLD_W, this.viewH);
+      ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
       ctx.fillStyle = 'rgba(42,26,51,0.92)';
       this.roundRect(30, midY - 95, WORLD_W - 60, 225, 18);
       ctx.fill();
