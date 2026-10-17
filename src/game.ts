@@ -1,11 +1,14 @@
 import { sfx, unlockAudio, setMuted } from './audio';
 import { haptic, save } from './platform';
+import { THEMES, drawBackdrop, makeSpecks, type Theme } from './themes';
+import { BOOSTERS, PLATES, drawPlate, type BoosterId, type PlateId } from './shop';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
 // World y grows downward; the plate sits at y = 0 and the stack grows toward negative y.
 const WORLD_W = 400;
 const LAYER_H = 24;
 const BASE_W = 200;
+const WIDE_W = 260; // starting width with the Wide Base booster
 const PERFECT_TOL = 5; // drops this close to the layer below snap into place
 const REGROW = 8; // width regained per perfect once a streak reaches 3
 const GRAVITY = 1400;
@@ -48,7 +51,9 @@ interface Popup { x: number; y: number; text: string; life: number; color: strin
 
 interface Order { recipe: Recipe; length: number; start: number; reward: number }
 
-type Mode = 'title' | 'playing' | 'dead';
+type Mode = 'title' | 'playing' | 'dead' | 'shop';
+
+interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
 
 interface Insets { top: number; right: number; bottom: number; left: number }
 
@@ -71,7 +76,11 @@ export class Game {
   private particles: Particle[] = [];
   private popups: Popup[] = [];
   private flags: { x: number; y: number; hue: number }[] = []; // picks marking each served order
-  private lanterns: { x: number; y: number; z: number; hue: number }[] = []; // x is a 0-1 fraction of the visible width
+  private specks = makeSpecks(70);
+  private themeOrder = THEMES.map((_, i) => i);
+  private themeIdx = 0;
+  private prevTheme: Theme | null = null; // fading out after a scene change
+  private fade = 1;
 
   private order!: Order;
   private ordersServed = 0;
@@ -86,21 +95,31 @@ export class Game {
   private newBest = false;
   private deadAt = 0;
 
+  // Shop and rewards.
+  private boosters: Record<string, number> = save.boosters();
+  private plates: string[] = save.plates();
+  private plate = save.plate() as PlateId;
+  private baseW = BASE_W;
+  private doubleCoins = false;
+  private slowStart = false;
+  private chanceUsed = false;
+  private buttons: Button[] = [];
+  private shopFrom: Mode = 'title';
+  private shopSel: PlateId | null = null; // plate waiting for a confirming second tap
+  private toast: { text: string; life: number } | null = null;
+
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas not supported');
     this.ctx = ctx;
     setMuted(this.muted);
-    for (let i = 0; i < 14; i++) {
-      this.lanterns.push({ x: Math.random(), y: Math.random() * 1600, z: 0.15 + Math.random() * 0.35, hue: Math.random() < 0.7 ? 5 : 35 });
-    }
     this.resize();
     this.reset();
     new ResizeObserver(() => this.resize()).observe(canvas);
     canvas.addEventListener('pointerdown', (e) => this.onTap(e.clientX, e.clientY));
     // Space or Enter also drops, for keyboard players on desktop.
     window.addEventListener('keydown', (e) => {
-      if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) {
+      if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && this.mode !== 'shop') {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         this.onTap(rect.left + rect.width / 2, rect.top + rect.height * 0.75);
@@ -142,9 +161,13 @@ export class Game {
     return this.stack[this.stack.length - 1];
   }
 
+  private get theme(): Theme {
+    return THEMES[this.themeOrder[this.themeIdx]];
+  }
+
   private reset(): void {
-    const x = (WORLD_W - BASE_W) / 2;
-    this.stack = [{ x, y: -LAYER_H, w: BASE_W, kind: 'rice', origin: x }];
+    const x = (WORLD_W - this.baseW) / 2;
+    this.stack = [{ x, y: -LAYER_H, w: this.baseW, kind: 'rice', origin: x }];
     this.pieces = [];
     this.particles = [];
     this.popups = [];
@@ -160,6 +183,47 @@ export class Game {
     this.camY = this.targetCam();
   }
 
+  private startRun(): void {
+    // Boosters bought in the shop are used up here (Second Chance only when it saves you).
+    const use = (id: BoosterId) => {
+      if (!this.boosters[id]) return false;
+      this.boosters[id]--;
+      return true;
+    };
+    this.doubleCoins = use('double');
+    this.slowStart = use('slow');
+    this.baseW = use('wide') ? WIDE_W : BASE_W;
+    this.chanceUsed = false;
+    save.setBoosters(this.boosters);
+
+    // Each run tours the backgrounds in a fresh random order.
+    const order = THEMES.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    this.changeTheme(() => { this.themeOrder = order; this.themeIdx = 0; });
+
+    this.reset();
+    this.mode = 'playing';
+
+    const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > BASE_W && 'wide base', this.boosters.chance && 'second chance'].filter(Boolean);
+    if (active.length) this.popup(WORLD_W / 2, this.top.y - 110, `Boosters: ${active.join(' · ')}`, '#ffd34d', 15);
+  }
+
+  private changeTheme(apply: () => void): void {
+    this.prevTheme = this.theme;
+    apply();
+    if (this.prevTheme === this.theme) this.prevTheme = null;
+    this.fade = 0;
+  }
+
+  private addCoins(n: number, x: number, y: number, label: string): void {
+    if (this.doubleCoins) n *= 2;
+    this.runCoins += n;
+    this.popup(x, y, `${label} +${n} coins`, '#ffd34d', 16);
+  }
+
   private newOrder(): void {
     const n = this.ordersServed;
     // Early orders use the simple recipes; the full menu opens up as you serve more.
@@ -173,7 +237,8 @@ export class Game {
   }
 
   private speed(): number {
-    return Math.min(130 + this.height * 5, 400);
+    const v = Math.min(130 + this.height * 5, 400);
+    return this.slowStart && this.height < 15 ? v * 0.7 : v;
   }
 
   private spawnMoving(): void {
@@ -209,19 +274,26 @@ export class Game {
       return;
     }
 
+    for (const b of this.buttons) {
+      if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+        b.onTap();
+        return;
+      }
+    }
+
     switch (this.mode) {
       case 'title':
         // The first tap only starts the game, so it can never drop a layer that's still sliding in.
-        this.mode = 'playing';
+        this.startRun();
         break;
       case 'playing':
         this.drop();
         break;
       case 'dead':
-        if (this.time - this.deadAt > 0.7) {
-          this.reset();
-          this.mode = 'playing';
-        }
+        if (this.time - this.deadAt > 0.7) this.startRun();
+        break;
+      case 'shop':
+        this.shopSel = null;
         break;
     }
   }
@@ -236,14 +308,15 @@ export class Game {
       m.origin -= dx;
       m.x = top.x;
       this.combo++;
-      if (this.combo >= 3 && m.w < BASE_W) {
-        const grow = Math.min(REGROW, BASE_W - m.w);
+      if (this.combo >= 3 && m.w < this.baseW) {
+        const grow = Math.min(REGROW, this.baseW - m.w);
         m.x -= grow / 2;
         m.w += grow;
       }
       this.place(m);
       const cx = m.x + m.w / 2;
       this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
+      if (this.combo % 5 === 0) this.addCoins(this.combo / 5 * 3, cx, m.y - 44, 'Streak bonus!');
       this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 18 + this.combo * 2);
       sfx.perfect(this.combo);
       haptic.medium();
@@ -252,8 +325,20 @@ export class Game {
     } else {
       const overlap = top.w - Math.abs(dx);
       if (overlap <= 0) {
-        this.moving = null;
         this.fall(m, dx > 0 ? 1 : -1);
+        if (this.boosters.chance && !this.chanceUsed) {
+          // Second Chance: lose the layer, keep the roll.
+          this.boosters.chance--;
+          save.setBoosters(this.boosters);
+          this.chanceUsed = true;
+          this.combo = 0;
+          this.popup(WORLD_W / 2, top.y - 60, 'SECOND CHANCE!', '#ff9eb0', 22);
+          sfx.slice();
+          haptic.medium();
+          this.spawnMoving();
+          return;
+        }
+        this.moving = null;
         this.die();
         return;
       }
@@ -274,6 +359,7 @@ export class Game {
     this.stack.push(layer);
     this.order.reward += layer.w / BASE_W;
     sfx.drop();
+    if (this.height % 25 === 0) this.addCoins(10, WORLD_W / 2, layer.y - 80, `${this.height} layers!`);
     if (this.height - this.order.start >= this.order.length) this.serve();
     this.moveDir *= -1;
     this.spawnMoving();
@@ -282,11 +368,13 @@ export class Game {
   private serve(): void {
     const top = this.top;
     const coins = Math.max(1, Math.round(this.order.reward * 2));
-    this.runCoins += coins;
     this.ordersServed++;
     this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
     this.popup(WORLD_W / 2, top.y - 60, `${this.order.recipe.name} served!`, '#ffffff', 22);
-    this.popup(WORLD_W / 2, top.y - 34, `+${coins} coins`, '#ffd34d', 18);
+    this.addCoins(coins, WORLD_W / 2, top.y - 34, '');
+    // A new scene for every order served.
+    this.changeTheme(() => { this.themeIdx = (this.themeIdx + 1) % this.themeOrder.length; });
+    this.popup(WORLD_W / 2, this.camY + this.viewH * 0.3, this.theme.name, 'rgba(255,255,255,0.8)', 15);
     for (let i = 0; i < 24; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = 120 + Math.random() * 200;
@@ -339,6 +427,9 @@ export class Game {
     this.time += dt;
 
     const m = this.moving;
+    this.fade = Math.min(1, this.fade + dt / 1.5);
+    if (this.toast && (this.toast.life -= dt) <= 0) this.toast = null;
+
     if (m && this.mode !== 'dead') {
       const step = this.speed() * dt * this.moveDir;
       m.x += step;
@@ -383,17 +474,22 @@ export class Game {
     const s = this.scale * this.dpr;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    const g = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    g.addColorStop(0, '#2a1a33');
-    g.addColorStop(1, '#4b2a3a');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
     const sx = (Math.random() - 0.5) * this.shake;
     const sy = (Math.random() - 0.5) * this.shake;
     ctx.setTransform(s, 0, 0, s, (sx + this.offX) * s, sy * s);
 
-    this.drawLanterns();
+    // Crossfade from the previous scene to the current one.
+    const bw = WORLD_W + this.offX * 2;
+    if (this.prevTheme && this.fade < 1) drawBackdrop(ctx, this.prevTheme, this.specks, this.time, this.camY, -this.offX, bw, this.viewH);
+    drawBackdrop(ctx, this.theme, this.specks, this.time, this.camY, -this.offX, bw, this.viewH, 1, this.prevTheme ? this.fade : 1);
+
+    this.buttons = [];
+    if (this.mode === 'shop') {
+      this.drawShop();
+      this.drawTopBar();
+      this.drawToast();
+      return;
+    }
 
     ctx.save();
     ctx.translate(0, -this.camY);
@@ -431,40 +527,15 @@ export class Game {
     }
 
     this.drawHud();
-  }
-
-  private drawLanterns(): void {
-    const { ctx } = this;
-    const span = 1600;
-    const spanW = WORLD_W + this.offX * 2;
-    for (const l of this.lanterns) {
-      const x = -this.offX + l.x * spanW;
-      let y = (l.y - this.camY * l.z) % span;
-      if (y < 0) y += span;
-      if (y > this.viewH + 40) continue;
-      const r = 10 + l.z * 30;
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
-      glow.addColorStop(0, `hsla(${l.hue}, 90%, 60%, ${0.25 * l.z + 0.05})`);
-      glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(x - r * 2.4, y - r * 2.4, r * 4.8, r * 4.8);
-      ctx.globalAlpha = 0.25 + l.z;
-      ctx.fillStyle = `hsl(${l.hue} 75% 48%)`;
-      ctx.beginPath();
-      ctx.ellipse(x, y, r * 0.8, r, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#1b1020';
-      ctx.fillRect(x - r * 0.45, y - r - 2, r * 0.9, 4);
-      ctx.fillRect(x - r * 0.45, y + r - 2, r * 0.9, 4);
-      ctx.globalAlpha = 1;
-    }
+    this.drawToast();
   }
 
   private drawCounter(): void {
     const { ctx } = this;
     // Wooden counter from the plate down past the bottom of the screen.
     const counterY = 14;
-    ctx.fillStyle = '#7a4a26';
+    const t = this.theme;
+    ctx.fillStyle = t.counter;
     ctx.fillRect(-this.offX - 20, counterY, WORLD_W + this.offX * 2 + 40, 2000);
     ctx.strokeStyle = 'rgba(0,0,0,0.18)';
     ctx.lineWidth = 2;
@@ -474,17 +545,9 @@ export class Game {
       ctx.bezierCurveTo(120, counterY + 10 + i * 26, 260, counterY + 30 + i * 26, WORLD_W + this.offX, counterY + 16 + i * 26);
       ctx.stroke();
     }
-    ctx.fillStyle = '#a0683a';
+    ctx.fillStyle = t.counterEdge;
     ctx.fillRect(-this.offX - 20, counterY, WORLD_W + this.offX * 2 + 40, 6);
-    // Plate.
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    this.roundRect(WORLD_W / 2 - 140, 6, 280, 16, 8);
-    ctx.fill();
-    ctx.fillStyle = '#f4f7fb';
-    this.roundRect(WORLD_W / 2 - 136, 0, 272, 14, 7);
-    ctx.fill();
-    ctx.fillStyle = '#3d6fb6';
-    ctx.fillRect(WORLD_W / 2 - 124, 9, 248, 2);
+    drawPlate(ctx, this.plate, WORLD_W / 2, 0);
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
@@ -624,12 +687,9 @@ export class Game {
     this.text('next', x + 12 + 6 * 22 + 4, y + 42, 10, 'rgba(90,46,31,0.6)', 700, 'left');
   }
 
-  private drawHud(): void {
+  private drawTopBar(): void {
     const { ctx } = this;
-    const cx = WORLD_W / 2;
     const top = this.insets.top;
-    const midY = this.viewH / 2;
-
     const mb = this.muteButton();
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 2;
@@ -642,7 +702,88 @@ export class Game {
     ctx.beginPath();
     ctx.arc(WORLD_W - this.insets.right - 24, top + 30, 8, 0, Math.PI * 2);
     ctx.fill();
-    this.text(String(this.bank + (this.mode === 'dead' ? 0 : this.runCoins)), WORLD_W - this.insets.right - 38, top + 31, 16, '#ffd34d', 700, 'right');
+    const coins = this.bank + (this.mode === 'playing' ? this.runCoins : 0);
+    this.text(String(coins), WORLD_W - this.insets.right - 38, top + 31, 16, '#ffd34d', 700, 'right');
+  }
+
+  /** Draws a tappable button and registers its hit area for this frame. */
+  private button(x: number, y: number, w: number, h: number, label: string, onTap: () => void, style: 'primary' | 'gold' | 'quiet' = 'primary'): void {
+    const { ctx } = this;
+    ctx.fillStyle = style === 'gold' ? '#ffd34d' : style === 'quiet' ? 'rgba(255,255,255,0.15)' : '#ff8a5b';
+    this.roundRect(x, y, w, h, h / 2);
+    ctx.fill();
+    this.text(label, x + w / 2, y + h / 2 + 1, 15, style === 'gold' ? '#4a2a00' : '#ffffff', 800);
+    this.buttons.push({ x, y, w, h, onTap });
+  }
+
+  private openShop(): void {
+    this.shopFrom = this.mode;
+    this.shopSel = null;
+    this.mode = 'shop';
+    sfx.drop();
+  }
+
+  private showToast(text: string): void {
+    this.toast = { text, life: 1.8 };
+  }
+
+  private drawToast(): void {
+    if (!this.toast) return;
+    const { ctx } = this;
+    const y = this.viewH - this.insets.bottom - 110;
+    ctx.globalAlpha = Math.min(1, this.toast.life * 3);
+    ctx.fillStyle = 'rgba(20,10,20,0.88)';
+    this.roundRect(40, y, WORLD_W - 80, 40, 20);
+    ctx.fill();
+    this.text(this.toast.text, WORLD_W / 2, y + 21, 14, '#fff', 700);
+    ctx.globalAlpha = 1;
+  }
+
+  // ------------------------------------------------------------ daily gift
+
+  private static day(offset = 0): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  }
+
+  private giftReady(): boolean {
+    return save.giftDay() !== Game.day();
+  }
+
+  private claimGift(): void {
+    if (!this.giftReady()) {
+      const now = new Date();
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const hours = Math.ceil((midnight.getTime() - now.getTime()) / 3_600_000);
+      this.showToast(`Next gift in ${hours} hour${hours === 1 ? '' : 's'}`);
+      return;
+    }
+    // Coming back on consecutive days grows the gift, up to day 7.
+    const streak = save.giftDay() === Game.day(-1) ? save.giftStreak() + 1 : 1;
+    const reward = 20 + 10 * (Math.min(streak, 7) - 1);
+    save.setGift(Game.day(), streak);
+    this.bank += reward;
+    save.setCoins(this.bank);
+    this.showToast(`+${reward} coins · Day ${streak} streak`);
+    sfx.serve();
+    haptic.success();
+  }
+
+  /** The cheapest plate the player doesn't own yet: shown after each run as something to save toward. */
+  private nextGoal() {
+    return PLATES.filter((p) => !this.plates.includes(p.id)).sort((a, b) => a.price - b.price)[0];
+  }
+
+  // ------------------------------------------------------------------ screens
+
+  private drawHud(): void {
+    const { ctx } = this;
+    const cx = WORLD_W / 2;
+    const top = this.insets.top;
+    const midY = this.viewH / 2;
+
+    this.drawTopBar();
 
     if (this.mode === 'title') {
       const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
@@ -653,6 +794,11 @@ export class Game {
       this.text('TAP TO PLAY', cx, top + 236, 20);
       ctx.globalAlpha = 1;
       this.text('Then tap to drop each layer on the stack.', cx, top + 264, 14, 'rgba(255,255,255,0.65)', 500);
+      const ready = this.giftReady();
+      this.button(40, top + 296, 152, 44, ready ? 'DAILY GIFT' : 'GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.button(208, top + 296, 152, 44, 'SHOP', () => this.openShop());
+      const owned = BOOSTERS.filter((b) => this.boosters[b.id]).map((b) => `${b.name} x${this.boosters[b.id]}`);
+      if (owned.length) this.text(`Ready: ${owned.join(', ')}`, cx, top + 360, 12, 'rgba(255,255,255,0.75)', 600);
       return;
     }
 
@@ -666,17 +812,180 @@ export class Game {
       ctx.globalAlpha = t;
       ctx.fillStyle = 'rgba(30,15,30,0.5)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
-      ctx.fillStyle = 'rgba(42,26,51,0.92)';
-      this.roundRect(30, midY - 95, WORLD_W - 60, 225, 18);
+      ctx.fillStyle = 'rgba(42,26,51,0.94)';
+      this.roundRect(30, midY - 100, WORLD_W - 60, 270, 18);
       ctx.fill();
-      this.panel(midY - 20, this.newBest ? 'NEW BEST!' : 'DROPPED IT!', `${this.height} layers   ·   Best ${this.best}`);
-      this.text(`${this.ordersServed} order${this.ordersServed === 1 ? '' : 's'} served   ·   +${this.runCoins} coins`, cx, midY + 20, 15, '#ffd34d', 700);
+      this.panel(midY - 25, this.newBest ? 'NEW BEST!' : 'DROPPED IT!', `${this.height} layers   ·   Best ${this.best}`);
+      this.text(`${this.ordersServed} order${this.ordersServed === 1 ? '' : 's'} served   ·   +${this.runCoins} coins`, cx, midY + 15, 15, '#ffd34d', 700);
       // Near-miss nudge: the most effective "one more try" prompt.
       const gap = this.best - this.height;
-      if (!this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, midY + 50, 15, '#ffb4a2', 700);
-      if (this.time - this.deadAt > 0.7) this.text('TAP TO RETRY', cx, midY + 100, 20);
+      if (!this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, midY + 40, 14, '#ffb4a2', 700);
+
+      // Progress toward the next plate keeps coins meaningful between runs.
+      const goal = this.nextGoal();
+      if (goal) {
+        const have = Math.min(this.bank, goal.price);
+        const can = this.bank >= goal.price;
+        this.text(can ? `You can buy the ${goal.name}!` : `Next: ${goal.name}  ${have}/${goal.price}`, cx, midY + 68, 14, can ? '#ffd34d' : 'rgba(255,255,255,0.85)', 700);
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        this.roundRect(70, midY + 82, WORLD_W - 140, 7, 3.5);
+        ctx.fill();
+        ctx.fillStyle = '#ffd34d';
+        this.roundRect(70, midY + 82, (WORLD_W - 140) * (have / goal.price), 7, 3.5);
+        ctx.fill();
+      }
+      if (this.time - this.deadAt > 0.7) {
+        this.button(50, midY + 108, 140, 44, 'SHOP', () => this.openShop(), goal && this.bank >= goal.price ? 'gold' : 'quiet');
+        this.button(210, midY + 108, 140, 44, 'RETRY', () => this.startRun());
+      }
       ctx.globalAlpha = 1;
     }
+  }
+
+  private drawShop(): void {
+    const { ctx } = this;
+    const top = this.insets.top;
+    const cx = WORLD_W / 2;
+    ctx.fillStyle = 'rgba(20,10,25,0.55)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.text('SHOP', cx, top + 31, 24, '#fff', 900);
+
+    const backY = this.viewH - this.insets.bottom - 60;
+    const gap = 10;
+    const cw = (WORLD_W - 32 - gap) / 2;
+    const gridTop = top + 64;
+    const ch = Math.max(70, Math.min(100, (backY - 12 - gridTop - 48 - 4 * gap) / 5));
+
+    // Boosters: one tap buys one.
+    this.text('BOOSTERS · used on your next run', 16, gridTop + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+    BOOSTERS.forEach((b, i) => {
+      const x = 16 + (i % 2) * (cw + gap);
+      const y = gridTop + 24 + Math.floor(i / 2) * (ch + gap);
+      ctx.fillStyle = 'rgba(255,248,235,0.95)';
+      this.roundRect(x, y, cw, ch, 12);
+      ctx.fill();
+      ctx.fillStyle = b.color;
+      ctx.beginPath();
+      ctx.arc(x + 26, y + ch / 2, 17, 0, Math.PI * 2);
+      ctx.fill();
+      if (b.id === 'slow') {
+        // Clock face drawn by hand; the glyph renders too small on some fonts.
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(x + 26, y + ch / 2, 9, 0, Math.PI * 2);
+        ctx.moveTo(x + 26, y + ch / 2 - 6);
+        ctx.lineTo(x + 26, y + ch / 2);
+        ctx.lineTo(x + 30, y + ch / 2 + 3);
+        ctx.stroke();
+      } else {
+        this.text({ chance: '♥', double: '2x', wide: '↔' }[b.id], x + 26, y + ch / 2 + 1, b.id === 'double' ? 14 : 18, '#fff', 900);
+      }
+      this.text(b.name, x + 50, y + ch / 2 - 18, 13, '#4a2618', 800, 'left');
+      this.text(b.desc, x + 50, y + ch / 2, 11, 'rgba(74,38,24,0.75)', 600, 'left');
+      const afford = this.bank >= b.price;
+      ctx.fillStyle = '#e0a800';
+      ctx.beginPath();
+      ctx.arc(x + 56, y + ch / 2 + 19, 5, 0, Math.PI * 2);
+      ctx.fill();
+      this.text(String(b.price), x + 65, y + ch / 2 + 20, 13, afford ? '#4a2618' : '#b5442a', 800, 'left');
+      const n = this.boosters[b.id] ?? 0;
+      if (n) {
+        ctx.fillStyle = '#4a2618';
+        this.roundRect(x + cw - 34, y + 6, 28, 18, 9);
+        ctx.fill();
+        this.text(`x${n}`, x + cw - 20, y + 16, 11, '#fff', 800);
+      }
+      this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.buyBooster(b.id) });
+    });
+
+    // Plates: tap to equip if owned; otherwise tap once to select and again to buy.
+    const platesTop = gridTop + 24 + 2 * (ch + gap) + 4;
+    this.text('PLATES · your roll sits on it', 16, platesTop + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+    PLATES.forEach((p, i) => {
+      const x = 16 + (i % 2) * (cw + gap);
+      const y = platesTop + 24 + Math.floor(i / 2) * (ch + gap);
+      const owned = this.plates.includes(p.id);
+      const equipped = this.plate === p.id;
+      const selected = this.shopSel === p.id;
+      ctx.fillStyle = 'rgba(48,30,52,0.92)';
+      this.roundRect(x, y, cw, ch, 12);
+      ctx.fill();
+      if (equipped || selected) {
+        ctx.strokeStyle = selected ? '#ffd34d' : '#6cc070';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+      drawPlate(ctx, p.id, x + cw / 2, y + ch * 0.36, 0.5);
+      this.text(p.name, x + 12, y + ch - 32, 13, '#fff', 800, 'left');
+      if (selected) {
+        this.text(`Tap again to buy for ${p.price}`, x + 12, y + ch - 14, 11, '#ffd34d', 700, 'left');
+      } else if (equipped) {
+        this.text('✓ IN USE', x + 12, y + ch - 14, 11, '#8fdc93', 800, 'left');
+      } else if (owned) {
+        this.text('Tap to use', x + 12, y + ch - 14, 11, 'rgba(255,255,255,0.7)', 700, 'left');
+      } else {
+        ctx.fillStyle = '#ffd34d';
+        ctx.beginPath();
+        ctx.arc(x + 17, y + ch - 14, 5, 0, Math.PI * 2);
+        ctx.fill();
+        this.text(String(p.price), x + 26, y + ch - 13, 13, this.bank >= p.price ? '#ffd34d' : '#ff9a8a', 800, 'left');
+      }
+      this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.tapPlate(p.id) });
+    });
+
+    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom; this.shopSel = null; }, 'quiet');
+  }
+
+  private spend(price: number): boolean {
+    if (this.bank < price) {
+      this.showToast(`You need ${price - this.bank} more coins`);
+      haptic.error();
+      return false;
+    }
+    this.bank -= price;
+    save.setCoins(this.bank);
+    return true;
+  }
+
+  private buyBooster(id: BoosterId): void {
+    this.shopSel = null;
+    const b = BOOSTERS.find((x) => x.id === id)!;
+    if (!this.spend(b.price)) return;
+    this.boosters[id] = (this.boosters[id] ?? 0) + 1;
+    save.setBoosters(this.boosters);
+    this.showToast(`${b.name} ready for your next run`);
+    sfx.serve();
+    haptic.success();
+  }
+
+  private tapPlate(id: PlateId): void {
+    const p = PLATES.find((x) => x.id === id)!;
+    if (this.plates.includes(id)) {
+      this.plate = id;
+      save.setPlate(id);
+      this.shopSel = null;
+      sfx.drop();
+      return;
+    }
+    if (this.shopSel !== id) {
+      this.shopSel = id;
+      if (this.bank < p.price) {
+        this.shopSel = null;
+        this.showToast(`You need ${p.price - this.bank} more coins`);
+        haptic.error();
+      }
+      return;
+    }
+    if (!this.spend(p.price)) return;
+    this.plates.push(id);
+    save.setPlates(this.plates);
+    this.plate = id;
+    save.setPlate(id);
+    this.shopSel = null;
+    this.showToast(`${p.name} unlocked!`);
+    sfx.serve();
+    haptic.success();
   }
 
   private panel(y: number, title: string, sub: string): void {

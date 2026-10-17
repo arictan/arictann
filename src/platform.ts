@@ -40,4 +40,20 @@ export const save = {
   setCoins: (v: number) => store.set('sushi-stack.coins', String(v)),
   muted: () => store.get('sushi-stack.muted') === '1',
   setMuted: (v: boolean) => store.set('sushi-stack.muted', v ? '1' : '0'),
+  boosters: (): Record<string, number> => {
+    try { return JSON.parse(store.get('sushi-stack.boosters') ?? '{}') as Record<string, number>; } catch { return {}; }
+  },
+  setBoosters: (v: Record<string, number>) => store.set('sushi-stack.boosters', JSON.stringify(v)),
+  plates: (): string[] => {
+    try { return JSON.parse(store.get('sushi-stack.plates') ?? '["classic"]') as string[]; } catch { return ['classic']; }
+  },
+  setPlates: (ids: string[]) => store.set('sushi-stack.plates', JSON.stringify(ids)),
+  plate: () => store.get('sushi-stack.plate') ?? 'classic',
+  setPlate: (id: string) => store.set('sushi-stack.plate', id),
+  giftDay: () => store.get('sushi-stack.giftDay') ?? '',
+  giftStreak: () => Number(store.get('sushi-stack.giftStreak') ?? 0),
+  setGift: (day: string, streak: number) => {
+    store.set('sushi-stack.giftDay', day);
+    store.set('sushi-stack.giftStreak', String(streak));
+  },
 };

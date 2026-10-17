@@ -25,16 +25,43 @@ tap to drop it on the stack. Anything hanging over the edge gets sliced off, so 
 | Serving | When an order is complete, a flag pick is planted on the stack and you earn coins: 2 × the average layer width. Wider stacks pay more. |
 | Score | Layers stacked. Best score and banked coins are saved on the device. |
 
+## Scenes (free)
+Each run plays through 10 backgrounds in a random order, and the scene crossfades to the next one every time an order is served:
+Night Izakaya, Sakura Garden, Ocean Deep, Snowy Onsen, Bamboo Forest, Neon Tokyo, Sunset Harbor, Rainy Alley, Fuji Dawn and Golden Palace.
+The changing scenery gives players a visible sign of progress and a reason to push for one more order.
+
+## Earning coins
+| Source | Coins |
+|---|---|
+| Serving an order | 2 × the average layer width (wider is better), about 6–20 coins |
+| Perfect streak | +3 at a 5-perfect streak, +6 at 10, and so on |
+| Height milestone | +10 every 25 layers |
+| Daily gift | 20 coins on day 1, +10 for each day in a row, up to 80 on day 7. Missing a day resets it. |
+
+The Coin Doubler booster doubles everything earned during a run except the daily gift.
+
+## Shop
+**Boosters** are used up on your next run, so coins stay useful forever:
+| Booster | Price | Effect |
+|---|---|---|
+| Second Chance | 40 | Your first miss only loses that layer, not the run. It's used only if you actually miss. |
+| Coin Doubler | 50 | 2× coins for one run |
+| Slow Start | 25 | The first 15 layers move 30% slower |
+| Wide Base | 30 | Start with a 260-wide roll instead of 200 |
+
+**Plates** are cosmetic and owned forever. Tap a plate once to select it and again to buy:
+Classic Plate (free), Wooden Geta (60), Black Slate (100), Bamboo Mat (150), Wave Porcelain (220), Gold Platter (400).
+
 ## Hooks
-- **Instant start, instant retry.** The first tap plays, and the game-over screen accepts a tap after 0.7 s.
+- **Instant start, instant retry.** The game-over screen has RETRY and SHOP buttons.
 - **Near-miss nudge:** "So close! Only 2 more for a new best".
-- **Combos with escalating feedback:** each perfect in a streak plays a higher note.
-- **Orders give short-term goals** inside an endless run, so there's always "just finish this roll".
-- **Coins carry over between runs**, ready for the shop below.
+- **A visible goal after every run:** "Next: Black Slate 80/100" with a progress bar. It turns gold with "You can buy…" when you can afford it.
+- **Daily gift streak**, to bring players back each day.
+- **Combos with escalating feedback**, plus streak coin bonuses.
+- **Orders give short-term goals**, and each one also changes the scene.
 
 ## Roadmap
-1. **Restaurant meta.** Spend coins on decor (lanterns, counter, plates), new ingredients (ebi, unagi, ikura) and knife skins.
-   This is the long-term reason to come back.
+1. **More shop items:** new ingredient sets (ebi, unagi, ikura), flag-pick designs and knife trails.
 2. **Daily special.** One fixed recipe per day, with a streak counter and a bonus coin reward.
 3. **Customers.** Animated customers with patience timers and tips for perfect rolls.
 4. **Leaderboards.** Game Center and Play Games, plus a weekly event.
