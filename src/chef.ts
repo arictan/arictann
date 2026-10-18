@@ -4,6 +4,9 @@
 export type Hair = 'short' | 'bun' | 'bob' | 'bald' | 'spiky' | 'ponytail' | 'twinbuns' | 'gray';
 export type Hat = 'hachimaki' | 'cap' | 'toque' | 'bandana' | 'none' | 'shades' | 'gold';
 export type Face = 'none' | 'mustache' | 'beard' | 'glasses' | 'elder';
+export type Attack = 'knife' | 'slam' | 'splat';
+export type Help = 'slow' | 'patch' | 'tip';
+export type Holding = 'knife' | 'fist' | 'patty' | null;
 
 export interface Chef {
   name: string;
@@ -12,6 +15,9 @@ export interface Chef {
   wobble: boolean; // layer speed surges and eases
   tight: boolean; // smaller perfect window
   extra: number; // extra layers in the order
+  kind: number; // how often they help (0-1)
+  mean: number; // chance per drop that they attack
+  attacks: Attack[];
   skin: string;
   hairColor: string;
   outfit: string;
@@ -25,16 +31,16 @@ export interface Chef {
 }
 
 export const CHEFS: Chef[] = [
-  { name: 'Chef Kenji', rule: 'Warm-up round', speed: 1, wobble: false, tight: false, extra: 0, skin: '#f1c9a5', hairColor: '#1d1a1a', outfit: '#f4f1ea', accent: '#d7263d', hair: 'short', hat: 'hachimaki', face: 'none', intro: 'Show me your rolls!', beaten: 'Not bad, rookie!', gloat: 'Back to rice school!' },
-  { name: 'Chef Hana', rule: 'Quick hands: faster layers', speed: 1.1, wobble: false, tight: false, extra: 0, skin: '#f5d0b0', hairColor: '#2b1b17', outfit: '#f7b2c8', accent: '#c2185b', hair: 'bun', hat: 'none', face: 'none', intro: 'Keep up with me!', beaten: 'So fast! Well done!', gloat: 'Too slow, too slow!' },
-  { name: 'Chef Taro', rule: 'Precise: smaller PERFECT zone', speed: 1, wobble: false, tight: true, extra: 0, skin: '#e8b98f', hairColor: '#222', outfit: '#ffffff', accent: '#3d6fb6', hair: 'short', hat: 'cap', face: 'glasses', intro: 'Every millimetre counts.', beaten: 'Precise. I approve.', gloat: 'Sloppy cutting!' },
-  { name: 'Chef Mei', rule: 'Big order: 2 extra layers', speed: 1.05, wobble: false, tight: false, extra: 2, skin: '#efc29a', hairColor: '#3a2418', outfit: '#9ad1d4', accent: '#1d6fa3', hair: 'bob', hat: 'bandana', face: 'none', intro: 'Table of twelve tonight!', beaten: 'The table is happy!', gloat: 'The customers are waiting!' },
-  { name: 'Chef Goro', rule: 'Heavy hitter: much faster', speed: 1.2, wobble: false, tight: false, extra: 0, skin: '#d9a77c', hairColor: '#1a1a1a', outfit: '#2d2d2d', accent: '#f2b705', hair: 'bald', hat: 'hachimaki', face: 'beard', intro: 'HAAA! Stack it!', beaten: 'You have strong hands!', gloat: 'HA! Weak!' },
-  { name: 'Chef Yuki', rule: 'Tricky: speed surges', speed: 1.1, wobble: true, tight: false, extra: 0, skin: '#f5d6bd', hairColor: '#111', outfit: '#e9eef6', accent: '#6c8ebf', hair: 'ponytail', hat: 'toque', face: 'none', intro: 'Can you read my rhythm?', beaten: 'You found the rhythm!', gloat: 'Lost the beat, huh?' },
-  { name: 'Chef Ryu', rule: 'Neon speed: very fast', speed: 1.3, wobble: false, tight: false, extra: 0, skin: '#ecc19b', hairColor: '#231c3a', outfit: '#26104a', accent: '#ff3fa4', hair: 'spiky', hat: 'shades', face: 'none', intro: 'Let’s turn it up!', beaten: 'Respect. You’re fast.', gloat: 'Too slow for Tokyo!' },
-  { name: 'Chef Aiko', rule: 'Perfectionist: tight + long', speed: 1.1, wobble: false, tight: true, extra: 2, skin: '#f3cba8', hairColor: '#4a2a1a', outfit: '#ffe08a', accent: '#e76f51', hair: 'twinbuns', hat: 'none', face: 'none', intro: 'Only perfect will do!', beaten: 'Kawaii! Perfect roll!', gloat: 'Not cute enough!' },
-  { name: 'Master Sato', rule: 'Old master: fast surges', speed: 1.3, wobble: true, tight: false, extra: 0, skin: '#e6b48c', hairColor: '#d8d8d8', outfit: '#5b3b2e', accent: '#c9a227', hair: 'gray', hat: 'cap', face: 'elder', intro: 'Fifty years I have waited...', beaten: 'The student surpasses me.', gloat: 'Patience, young one.' },
-  { name: 'Grand Chef Kaito', rule: 'Final boss: everything', speed: 1.4, wobble: true, tight: true, extra: 1, skin: '#eec39d', hairColor: '#111', outfit: '#1a1208', accent: '#d4a537', hair: 'short', hat: 'gold', face: 'mustache', intro: 'Face the Golden Knife!', beaten: 'A new Grand Chef is born!', gloat: 'Bow to the Golden Knife!' },
+  { name: 'Chef Kenji', rule: 'Warm-up round', speed: 1, wobble: false, tight: false, extra: 0, kind: 0.5, mean: 0.05, attacks: ['slam'], skin: '#f1c9a5', hairColor: '#1d1a1a', outfit: '#f4f1ea', accent: '#d7263d', hair: 'short', hat: 'hachimaki', face: 'none', intro: 'Show me your rolls!', beaten: 'Not bad, rookie!', gloat: 'Back to rice school!' },
+  { name: 'Chef Hana', rule: 'Quick hands: faster layers', speed: 1.1, wobble: false, tight: false, extra: 0, kind: 0.6, mean: 0.12, attacks: ['knife'], skin: '#f5d0b0', hairColor: '#2b1b17', outfit: '#f7b2c8', accent: '#c2185b', hair: 'bun', hat: 'none', face: 'none', intro: 'Keep up with me!', beaten: 'So fast! Well done!', gloat: 'Too slow, too slow!' },
+  { name: 'Chef Taro', rule: 'Precise: smaller PERFECT zone', speed: 1, wobble: false, tight: true, extra: 0, kind: 0.3, mean: 0.15, attacks: ['slam', 'splat'], skin: '#e8b98f', hairColor: '#222', outfit: '#ffffff', accent: '#3d6fb6', hair: 'short', hat: 'cap', face: 'glasses', intro: 'Every millimetre counts.', beaten: 'Precise. I approve.', gloat: 'Sloppy cutting!' },
+  { name: 'Chef Mei', rule: 'Big order: 2 extra layers', speed: 1.05, wobble: false, tight: false, extra: 2, kind: 0.6, mean: 0.1, attacks: ['splat'], skin: '#efc29a', hairColor: '#3a2418', outfit: '#9ad1d4', accent: '#1d6fa3', hair: 'bob', hat: 'bandana', face: 'none', intro: 'Table of twelve tonight!', beaten: 'The table is happy!', gloat: 'The customers are waiting!' },
+  { name: 'Chef Goro', rule: 'Heavy hitter: much faster', speed: 1.2, wobble: false, tight: false, extra: 0, kind: 0.2, mean: 0.25, attacks: ['slam', 'knife'], skin: '#d9a77c', hairColor: '#1a1a1a', outfit: '#2d2d2d', accent: '#f2b705', hair: 'bald', hat: 'hachimaki', face: 'beard', intro: 'HAAA! Stack it!', beaten: 'You have strong hands!', gloat: 'HA! Weak!' },
+  { name: 'Chef Yuki', rule: 'Tricky: speed surges', speed: 1.1, wobble: true, tight: false, extra: 0, kind: 0.4, mean: 0.2, attacks: ['knife', 'splat'], skin: '#f5d6bd', hairColor: '#111', outfit: '#e9eef6', accent: '#6c8ebf', hair: 'ponytail', hat: 'toque', face: 'none', intro: 'Can you read my rhythm?', beaten: 'You found the rhythm!', gloat: 'Lost the beat, huh?' },
+  { name: 'Chef Ryu', rule: 'Neon speed: very fast', speed: 1.3, wobble: false, tight: false, extra: 0, kind: 0.25, mean: 0.25, attacks: ['knife', 'splat'], skin: '#ecc19b', hairColor: '#231c3a', outfit: '#26104a', accent: '#ff3fa4', hair: 'spiky', hat: 'shades', face: 'none', intro: 'Let’s turn it up!', beaten: 'Respect. You’re fast.', gloat: 'Too slow for Tokyo!' },
+  { name: 'Chef Aiko', rule: 'Perfectionist: tight + long', speed: 1.1, wobble: false, tight: true, extra: 2, kind: 0.5, mean: 0.2, attacks: ['slam', 'splat'], skin: '#f3cba8', hairColor: '#4a2a1a', outfit: '#ffe08a', accent: '#e76f51', hair: 'twinbuns', hat: 'none', face: 'none', intro: 'Only perfect will do!', beaten: 'Kawaii! Perfect roll!', gloat: 'Not cute enough!' },
+  { name: 'Master Sato', rule: 'Old master: fast surges', speed: 1.3, wobble: true, tight: false, extra: 0, kind: 0.4, mean: 0.25, attacks: ['knife', 'slam'], skin: '#e6b48c', hairColor: '#d8d8d8', outfit: '#5b3b2e', accent: '#c9a227', hair: 'gray', hat: 'cap', face: 'elder', intro: 'Fifty years I have waited...', beaten: 'The student surpasses me.', gloat: 'Patience, young one.' },
+  { name: 'Grand Chef Kaito', rule: 'Final boss: everything', speed: 1.4, wobble: true, tight: true, extra: 1, kind: 0.2, mean: 0.3, attacks: ['knife', 'slam', 'splat'], skin: '#eec39d', hairColor: '#111', outfit: '#1a1208', accent: '#d4a537', hair: 'short', hat: 'gold', face: 'mustache', intro: 'Face the Golden Knife!', beaten: 'A new Grand Chef is born!', gloat: 'Bow to the Golden Knife!' },
 ];
 
 export type Mood = 'calm' | 'focused' | 'intense' | 'panic' | 'happy' | 'impressed' | 'wince' | 'angry' | 'shock';
@@ -42,7 +48,7 @@ export type Mood = 'calm' | 'focused' | 'intense' | 'panic' | 'happy' | 'impress
 /**
  * Draws a chef bust with its head centred at (x, y). (lookX, lookY) is the point the chef watches and points at.
  */
-export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: number, s: number, mood: Mood, lookX: number, lookY: number, time: number): void {
+export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: number, s: number, mood: Mood, lookX: number, lookY: number, time: number, holding: Holding = null): void {
   ctx.save();
   const shaking = mood === 'panic' || mood === 'angry';
   ctx.translate(x + (shaking ? Math.sin(time * 45) * 1.5 * s : 0), y + Math.sin(time * 2) * 1.5 * s);
@@ -54,7 +60,8 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
   const side = lx >= 0 ? 1 : -1;
   const sx = side * 26;
   const sy = 40;
-  const ang = Math.atan2(ly - sy, lx - sx);
+  // Winding up an attack or a throw raises the arm; otherwise it points at the target.
+  const ang = holding ? -Math.PI / 2 + side * 0.45 + Math.sin(time * 18) * 0.06 : Math.atan2(ly - sy, lx - sx);
   const reach = 34;
   const hx = sx + Math.cos(ang) * reach;
   const hy = sy + Math.sin(ang) * reach;
@@ -72,12 +79,31 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
   ctx.beginPath();
   ctx.arc(hx, hy, 6, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = c.skin;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(hx, hy);
-  ctx.lineTo(hx + Math.cos(ang) * 9, hy + Math.sin(ang) * 9);
-  ctx.stroke();
+  if (holding === 'knife') {
+    drawKnife(ctx, hx, hy - 12, -Math.PI / 2 + side * 0.2, 1.2);
+  } else if (holding === 'patty') {
+    ctx.fillStyle = '#f6f1e4';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 10, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#24321f';
+    ctx.fillRect(hx - 10, hy - 6, 20, 6);
+  } else if (holding === 'fist') {
+    ctx.fillStyle = c.skin;
+    ctx.beginPath();
+    ctx.arc(hx, hy - 4, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = c.skin;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx + Math.cos(ang) * 9, hy + Math.sin(ang) * 9);
+    ctx.stroke();
+  }
 
   // Back hair (long styles sit behind the head).
   ctx.fillStyle = c.hairColor;
@@ -463,6 +489,36 @@ function drawFace(ctx: CanvasRenderingContext2D, c: Chef, mood: Mood, lx: number
     }
     ctx.globalAlpha = 1;
   }
+}
+
+/** A chef's knife centred at (x, y), pointing along angle `a`. */
+export function drawKnife(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, s = 1): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#5a3a22';
+  ctx.beginPath();
+  ctx.moveTo(-18, -3);
+  ctx.lineTo(-4, -3);
+  ctx.lineTo(-4, 3);
+  ctx.lineTo(-18, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#dfe6ee';
+  ctx.beginPath();
+  ctx.moveTo(-4, -4);
+  ctx.lineTo(18, -2);
+  ctx.lineTo(22, 1);
+  ctx.lineTo(-4, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#8a96a3';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, -3, 14, 1.2);
+  ctx.restore();
 }
 
 function star(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string): void {

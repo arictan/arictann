@@ -33,6 +33,23 @@ Each order is a level, and each level has a boss chef who watches you work. The 
 
 Beating a boss pays its level × 5 bonus coins, on top of the order's coins.
 
+### Chefs fight back (or help)
+The chef stands large behind the counter, and the stack is drawn in front of them. After each drop the chef may act.
+Every action is announced with a label on the chef's chest and a short wind-up, so the player can react.
+
+| | Action | What happens |
+|---|---|---|
+| Attack | **Knife Throw** | The chef raises a knife, then throws it at the sliding layer and homes in on it. Drop the layer before the knife reaches it to **dodge**. If it hits, the layer is knocked off: you lose that layer and your combo, but not the run. |
+| Attack | **Table Slam** | The chef raises a fist and slams the counter. The screen shakes and the top layer slides 10–20 units sideways. It always keeps some footing on the layer below. |
+| Attack | **Soy Splash** | Three soy-sauce splats cover part of the screen for about 3.5 seconds. |
+| Help | **Steady Hands** | The next 3 layers move at 55% speed, shown with a blue glow. |
+| Help | **Patch Up** | The chef throws a rice ball that widens the top layer by up to 50, back toward full width. |
+| Help | **Tip** | Bonus coins: 3 + level × 2. |
+
+Each chef has a temperament. The chance of an attack after a drop is the chef's meanness (5–30%), plus 8% if the drop wasn't a PERFECT.
+The chance of help is the chef's kindness × 6% normally, × 15% with a combo, or × 35% with a 3+ combo. Each chef attacks only in their own ways
+(Kenji only slams; Kaito uses all three). There are no events before layer 3, and none for 3 drops after the last event or after a new boss arrives.
+
 | Level | Boss | Rule |
 |---|---|---|
 | 1 | Chef Kenji | Warm-up round |

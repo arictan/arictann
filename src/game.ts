@@ -2,7 +2,7 @@ import { sfx, unlockAudio, setMuted } from './audio';
 import { haptic, save } from './platform';
 import { THEMES, drawBackdrop, makeSpecks, type Theme } from './themes';
 import { BOOSTERS, PLATES, drawPlate, type BoosterId, type PlateId } from './shop';
-import { CHEFS, drawChef, type Chef, type Mood } from './chef';
+import { CHEFS, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
 // World y grows downward; the plate sits at y = 0 and the stack grows toward negative y.
@@ -52,6 +52,23 @@ interface Particle { x: number; y: number; vx: number; vy: number; life: number;
 interface Popup { x: number; y: number; text: string; life: number; max: number; color: string; size: number }
 
 interface Order { recipe: Recipe; length: number; start: number; reward: number }
+
+// Things the chef throws. Coordinates are world units.
+interface Projectile { kind: 'knife' | 'patty'; x: number; y: number; vx: number; vy: number; rot: number; target: Layer | null; dodged: boolean }
+
+interface Splat { x: number; y: number; r: number; life: number; seed: number } // screen units
+
+const ATTACK_INFO: Record<Attack, { label: string; line: string; windup: number }> = {
+  knife: { label: 'KNIFE THROW!', line: 'Catch this!', windup: 1.0 },
+  slam: { label: 'TABLE SLAM!', line: 'Hmph!', windup: 0.9 },
+  splat: { label: 'SOY SPLASH!', line: 'Oops, soy sauce!', windup: 0.7 },
+};
+
+const HELP_INFO: Record<Help, { label: string; line: string }> = {
+  slow: { label: 'STEADY HANDS!', line: 'Take your time.' },
+  patch: { label: 'PATCH UP!', line: 'Let me fix that!' },
+  tip: { label: 'TIP!', line: 'For you!' },
+};
 
 type Mode = 'title' | 'playing' | 'dead' | 'shop';
 
@@ -115,6 +132,12 @@ export class Game {
   private reaction: { mood: Mood; life: number } | null = null;
   private bubble: { text: string; life: number } | null = null;
   private introIn = 0; // seconds until the next chef is announced
+  private event: { kind: Attack | Help; bad: boolean; t: number } | null = null; // chef winding up an attack or a favour
+  private sinceEvent = 0; // drops since the chef last did something
+  private steady = 0; // drops left at half speed (Steady Hands)
+  private projectiles: Projectile[] = [];
+  private splats: Splat[] = [];
+  private banner: { title: string; sub: string; life: number } | null = null; // "LEVEL 3" when a new boss arrives
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
@@ -190,6 +213,7 @@ export class Game {
   /** How worked up the chef is: rises as the order nears completion. */
   private chefMood(): Mood {
     if (this.mode === 'dead') return 'angry';
+    if (this.event) return this.event.bad ? 'angry' : 'happy';
     if (this.reaction) return this.reaction.mood;
     const left = this.order.length - (this.height - this.order.start);
     const progress = 1 - left / this.order.length;
@@ -201,10 +225,10 @@ export class Game {
 
   private announceChef(): void {
     const c = this.chef;
-    this.popup(WORLD_W / 2, this.top.y - 130, `LEVEL ${this.level}`, '#ffffff', 26, 2.2);
-    this.popup(WORLD_W / 2, this.top.y - 104, `${c.name}: ${c.rule}`, '#ffd34d', 14, 2.2);
+    this.banner = { title: `LEVEL ${this.level}`, sub: c.rule, life: 2.4 };
     this.bubble = { text: c.intro, life: 2.2 };
     this.reaction = null;
+    this.sinceEvent = 0; // give the player a few drops before the new boss acts
   }
 
   private get theme(): Theme {
@@ -227,6 +251,12 @@ export class Game {
     this.reaction = null;
     this.bubble = null;
     this.introIn = 0;
+    this.event = null;
+    this.sinceEvent = 0;
+    this.steady = 0;
+    this.projectiles = [];
+    this.splats = [];
+    this.banner = null;
     this.newOrder();
     this.spawnMoving();
     this.camY = this.targetCam();
@@ -290,6 +320,7 @@ export class Game {
     const c = this.chef;
     let v = Math.min(130 + this.height * 5, 400) * c.speed * (1 + this.lap * 0.1);
     if (c.wobble) v *= 1 + 0.35 * Math.sin(this.time * 2.2);
+    if (this.steady > 0) v *= 0.55;
     return this.slowStart && this.height < 15 ? v * 0.7 : v;
   }
 
@@ -415,15 +446,190 @@ export class Game {
     this.order.reward += layer.w / BASE_W;
     sfx.drop();
     if (this.height % 25 === 0) this.addCoins(10, WORLD_W / 2, layer.y - 80, `${this.height} layers!`);
-    if (this.height - this.order.start >= this.order.length) this.serve();
+    if (this.steady > 0) this.steady--;
+    this.sinceEvent++;
+    const served = this.height - this.order.start >= this.order.length;
+    if (served) this.serve();
     this.moveDir *= -1;
     this.spawnMoving();
+    if (!served) this.maybeChefEvent();
+  }
+
+  // ------------------------------------------------------------ chef events
+
+  /**
+   * After each drop the chef may attack or help. Mean chefs attack more, kind ones help more,
+   * and the player's own play tips the odds: perfect streaks earn help, sloppy drops invite attacks.
+   */
+  private maybeChefEvent(): void {
+    if (this.mode !== 'playing' || this.event || this.introIn > 0 || this.height < 3 || this.sinceEvent < 3) return;
+    const c = this.chef;
+    const sloppy = this.combo === 0;
+    const bad = c.mean + (sloppy ? 0.08 : 0);
+    const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06);
+    const r = Math.random();
+    if (r < bad) {
+      const kind = c.attacks[Math.floor(Math.random() * c.attacks.length)];
+      this.startEvent(kind, true, ATTACK_INFO[kind].windup, ATTACK_INFO[kind].line);
+    } else if (r < bad + good) {
+      const helps: Help[] = ['slow', 'tip'];
+      if (this.top.w < this.baseW * 0.8) helps.push('patch', 'patch');
+      const kind = helps[Math.floor(Math.random() * helps.length)];
+      this.startEvent(kind, false, 0.6, HELP_INFO[kind].line);
+    }
+  }
+
+  private startEvent(kind: Attack | Help, bad: boolean, windup: number, line: string): void {
+    this.event = { kind, bad, t: windup };
+    this.sinceEvent = 0;
+    this.reaction = null;
+    this.bubble = { text: line, life: windup + 0.8 };
+    if (bad) haptic.light();
+  }
+
+  private bossScale(): number {
+    return Math.max(1.4, Math.min(2, this.viewH / 430));
+  }
+
+  private bossY(): number {
+    return this.insets.top + 140 + 62 * this.bossScale();
+  }
+
+  private runEvent(kind: Attack | Help): void {
+    const s = this.bossScale();
+    const handY = this.bossY() - 20 * s + this.camY; // world units
+    const top = this.top;
+    switch (kind) {
+      case 'knife': {
+        const m = this.moving;
+        if (!m) return;
+        const side = m.x + m.w / 2 >= this.chefX ? 1 : -1;
+        const x = this.chefX + side * 30 * s;
+        const dx = m.x + m.w / 2 - x;
+        const dy = m.y + LAYER_H / 2 - handY;
+        const d = Math.hypot(dx, dy) || 1;
+        this.projectiles.push({ kind: 'knife', x, y: handY, vx: (dx / d) * 460, vy: (dy / d) * 460, rot: 0, target: m, dodged: false });
+        sfx.slice();
+        break;
+      }
+      case 'slam': {
+        this.shake = 16;
+        sfx.die();
+        haptic.medium();
+        // The top layer slides sideways, but always keeps some footing on the layer below.
+        const below = this.stack[this.stack.length - 2];
+        if (below && this.stack.length > 1) {
+          const dir = Math.random() < 0.5 ? -1 : 1;
+          let nx = top.x + dir * (10 + Math.random() * 10);
+          nx = Math.max(below.x - top.w + 24, Math.min(below.x + below.w - 24, nx));
+          top.origin += nx - top.x;
+          top.x = nx;
+        }
+        this.popup(top.x + top.w / 2, top.y - 20, 'SLAM!', '#ff6b6b', 22);
+        break;
+      }
+      case 'splat': {
+        const cy = top.y - this.camY;
+        for (let i = 0; i < 3; i++) {
+          this.splats.push({ x: 70 + Math.random() * (WORLD_W - 140), y: cy - 120 + Math.random() * 200, r: 30 + Math.random() * 25, life: 3.5, seed: Math.random() * 100 });
+        }
+        sfx.drop();
+        haptic.medium();
+        break;
+      }
+      case 'slow':
+        this.steady = 3;
+        this.popup(WORLD_W / 2, top.y - 50, 'Next 3 layers slowed!', '#9fe3ff', 16, 1.6);
+        sfx.serve();
+        break;
+      case 'patch': {
+        const x = this.chefX;
+        const dx = top.x + top.w / 2 - x;
+        const dy = top.y - handY;
+        const d = Math.hypot(dx, dy) || 1;
+        this.projectiles.push({ kind: 'patty', x, y: handY, vx: (dx / d) * 380, vy: (dy / d) * 380, rot: 0, target: null, dodged: false });
+        break;
+      }
+      case 'tip':
+        this.addCoins(3 + this.level * 2, WORLD_W / 2, top.y - 50, 'Tip!');
+        for (let i = 0; i < 16; i++) {
+          const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
+          const v = 150 + Math.random() * 150;
+          this.particles.push({ x: this.chefX, y: handY, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.9, max: 0.9, color: '#ffd34d', size: 5 });
+        }
+        sfx.serve();
+        haptic.success();
+        break;
+    }
+  }
+
+  private updateProjectiles(dt: number): void {
+    for (const p of this.projectiles) {
+      if (p.kind === 'knife') {
+        p.rot += dt * 16;
+        const m = this.moving;
+        if (p.target && p.target === m) {
+          // Home in on the sliding layer until the player drops it.
+          const dx = m.x + m.w / 2 - p.x;
+          const dy = m.y + LAYER_H / 2 - p.y;
+          const d = Math.hypot(dx, dy) || 1;
+          p.vx += ((dx / d) * 460 - p.vx) * Math.min(1, dt * 3);
+          p.vy += ((dy / d) * 460 - p.vy) * Math.min(1, dt * 3);
+          if (p.x > m.x - 6 && p.x < m.x + m.w + 6 && p.y > m.y - 6 && p.y < m.y + LAYER_H + 6) {
+            this.fall(m, p.vx >= 0 ? 1 : -1);
+            this.combo = 0;
+            this.popup(m.x + m.w / 2, m.y - 16, 'KNOCKED OFF!', '#ff6b6b', 20);
+            this.react('happy', 0.9, 'Ha! Too slow!');
+            this.shake = 8;
+            sfx.slice();
+            haptic.error();
+            this.spawnMoving();
+            p.y = Infinity; // remove
+            continue;
+          }
+        } else if (p.target && !p.dodged) {
+          p.dodged = true;
+          this.popup(WORLD_W / 2, this.top.y - 40, 'DODGED!', '#8fdc93', 20);
+          this.react('shock', 0.8, 'What?!');
+        }
+        if (p.target !== m) p.vy += 900 * dt;
+      } else {
+        // Rice patty: lands on the top layer and widens it.
+        const t = this.top;
+        const dx = t.x + t.w / 2 - p.x;
+        const dy = t.y - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 14) {
+          const grow = Math.min(this.baseW - t.w, 50);
+          t.x -= grow / 2;
+          t.w += grow;
+          if (this.moving) {
+            const mc = this.moving.x + this.moving.w / 2;
+            this.moving.w = t.w;
+            this.moving.x = mc - t.w / 2;
+          }
+          this.sparkle(t.x, t.y + LAYER_H / 2, t.w, 24);
+          this.popup(t.x + t.w / 2, t.y - 20, 'WIDER!', '#8fdc93', 20);
+          sfx.perfect(4);
+          haptic.success();
+          p.y = Infinity;
+          continue;
+        }
+        p.rot += dt * 6;
+        p.vx += ((dx / (d || 1)) * 380 - p.vx) * Math.min(1, dt * 4);
+        p.vy += ((dy / (d || 1)) * 380 - p.vy) * Math.min(1, dt * 4);
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+    this.projectiles = this.projectiles.filter((p) => p.y < this.camY + this.viewH + 60 && p.x > -60 && p.x < WORLD_W + 60);
   }
 
   private serve(): void {
     const top = this.top;
     const coins = Math.max(1, Math.round(this.order.reward * 2));
     this.ordersServed++;
+    this.banner = null;
     this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
     this.popup(WORLD_W / 2, top.y - 60, `${this.order.recipe.name} served!`, '#ffffff', 22);
     this.addCoins(coins + 5 * this.ordersServed, WORLD_W / 2, top.y - 34, `${CHEFS[(this.ordersServed - 1) % CHEFS.length].name} beaten!`);
@@ -450,6 +656,8 @@ export class Game {
   private die(): void {
     this.mode = 'dead';
     this.reaction = null;
+    this.event = null;
+    this.projectiles = [];
     this.bubble = { text: this.chef.gloat, life: 99 };
     this.popups = [];
     this.deadAt = this.time;
@@ -522,9 +730,19 @@ export class Game {
     if (this.reaction && (this.reaction.life -= dt) <= 0) this.reaction = null;
     if (this.bubble && (this.bubble.life -= dt) <= 0) this.bubble = null;
     if (this.introIn > 0 && (this.introIn -= dt) <= 0 && this.mode === 'playing') this.announceChef();
+    if (this.event && this.mode === 'playing' && (this.event.t -= dt) <= 0) {
+      const kind = this.event.kind;
+      this.event = null;
+      this.runEvent(kind);
+    }
+    this.updateProjectiles(dt);
+    if (this.banner && (this.banner.life -= dt) <= 0) this.banner = null;
+    for (const sp of this.splats) sp.life -= dt;
+    this.splats = this.splats.filter((sp) => sp.life > 0);
     // The chef shuffles left and right to keep the sliding layer in view.
     if (this.moving && this.mode === 'playing') {
-      const target = Math.max(70, Math.min(WORLD_W - 70, this.moving.x + this.moving.w / 2));
+      const margin = 45 * this.bossScale();
+      const target = Math.max(margin, Math.min(WORLD_W - margin, this.moving.x + this.moving.w / 2));
       this.chefX += (target - this.chefX) * Math.min(1, dt * 2.5);
     }
     this.popups = this.popups.filter((pp) => pp.life > 0);
@@ -560,6 +778,9 @@ export class Game {
       return;
     }
 
+    // The boss looms behind the counter, so the stack is drawn over them.
+    if (this.mode === 'playing') this.drawBossBody(this.chefX, this.bossY(), this.bossScale());
+
     ctx.save();
     ctx.translate(0, -this.camY);
     this.drawCounter();
@@ -568,7 +789,27 @@ export class Game {
     const maxY = this.camY + this.viewH;
     for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
     for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) this.drawFlag(f.x, f.y, f.hue);
-    if (this.moving && this.mode !== 'dead') this.drawLayer(this.moving);
+    if (this.moving && this.mode !== 'dead') {
+      this.drawLayer(this.moving);
+      if (this.steady > 0) {
+        ctx.strokeStyle = `rgba(159,227,255,${0.6 + 0.4 * Math.sin(this.time * 8)})`;
+        ctx.lineWidth = 3;
+        this.roundRect(this.moving.x - 2, this.moving.y - 2, this.moving.w + 4, LAYER_H + 4, 8);
+        ctx.stroke();
+      }
+    }
+    for (const p of this.projectiles) {
+      if (p.kind === 'knife') {
+        drawKnife(ctx, p.x, p.y, p.rot, 1.3);
+      } else {
+        ctx.fillStyle = '#f6f1e4';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#24321f';
+        ctx.fillRect(p.x - 12, p.y + 2, 24, 7);
+      }
+    }
     for (const p of this.pieces) {
       ctx.save();
       ctx.translate(p.x + p.w / 2, p.y + LAYER_H / 2);
@@ -589,6 +830,8 @@ export class Game {
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+
+    for (const sp of this.splats) this.drawSplat(sp);
 
     if (this.flash > 0) {
       ctx.fillStyle = `rgba(255,243,176,${this.flash * 0.35})`;
@@ -724,44 +967,105 @@ export class Game {
     ctx.fillText(str, x, y);
   }
 
-  private drawBoss(x: number, y: number): void {
-    const { ctx } = this;
-    const s = 0.85;
-    const c = this.chef;
+  private holding(): Holding {
+    const e = this.event;
+    if (!e) return null;
+    return e.kind === 'knife' ? 'knife' : e.kind === 'slam' ? 'fist' : e.kind === 'patch' ? 'patty' : null;
+  }
+
+  private drawBossBody(x: number, y: number, s: number): void {
     // Watch and point at the sliding layer; on the results screen, at the player.
     const m = this.moving;
     const lookX = m && this.mode === 'playing' ? m.x + m.w / 2 : x;
-    const lookY = m && this.mode === 'playing' ? m.y + LAYER_H / 2 - this.camY : y + 200;
-    drawChef(ctx, c, x, y, s, this.chefMood(), lookX, lookY, this.time);
+    const lookY = m && this.mode === 'playing' ? m.y + LAYER_H / 2 - this.camY : y + 300;
+    drawChef(this.ctx, this.chef, x, y, s, this.chefMood(), lookX, lookY, this.time, this.mode === 'playing' ? this.holding() : null);
+  }
 
-    // Name tag.
-    const tag = `${c.name.toUpperCase()}`;
-    ctx.font = '800 10px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-    const tw = ctx.measureText(tag).width + 14;
-    ctx.fillStyle = c.accent;
-    const ty = y + 70 * s - 6;
-    this.roundRect(x - tw / 2, ty, tw, 15, 7.5);
-    ctx.fill();
-    this.text(tag, x, ty + 8, 10, '#ffffff', 800);
+  private drawBossLabels(x: number, y: number, s: number): void {
+    const { ctx } = this;
+    const c = this.chef;
+    const e = this.event;
+    const chestY = y + 42 * s;
+    if (this.banner && this.mode === 'playing' && !e) {
+      // New boss: level banner across the chef's chest.
+      const bx = Math.max(110, Math.min(WORLD_W - 110, x));
+      ctx.globalAlpha = Math.min(1, this.banner.life * 3);
+      ctx.fillStyle = 'rgba(20,10,25,0.85)';
+      this.roundRect(bx - 105, chestY - 26, 210, 52, 14);
+      ctx.fill();
+      this.text(this.banner.title, bx, chestY - 9, 22, '#ffffff', 900);
+      this.text(this.banner.sub, bx, chestY + 13, 12, '#ffd34d', 700);
+      ctx.globalAlpha = 1;
+    } else if (!e || this.mode !== 'playing') {
+      // Name badge pinned on the uniform.
+      const tag = c.name.toUpperCase();
+      ctx.font = '800 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      const tw = ctx.measureText(tag).width + 16;
+      ctx.fillStyle = c.accent;
+      this.roundRect(x - tw / 2, chestY - 9, tw, 18, 9);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      this.text(tag, x, chestY + 1, 11, '#ffffff', 800);
+    }
+
+    // Warning (attack) or good-news (help) label while the chef winds up.
+    if (e && this.mode === 'playing') {
+      const label = e.bad ? ATTACK_INFO[e.kind as Attack].label : HELP_INFO[e.kind as Help].label;
+      const ly = chestY;
+      const pulse = 1 + 0.08 * Math.sin(this.time * 20);
+      ctx.save();
+      ctx.translate(x, ly);
+      ctx.scale(pulse, pulse);
+      ctx.font = '900 16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      const lw = ctx.measureText(label).width + 26;
+      ctx.fillStyle = e.bad ? '#e63946' : '#2a9d5c';
+      this.roundRect(-lw / 2, -15, lw, 30, 15);
+      ctx.fill();
+      this.text(label, 0, 1, 16, '#ffffff', 900);
+      ctx.restore();
+    }
 
     if (!this.bubble) return;
-    // Speech bubble on whichever side has more room.
-    ctx.font = '800 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-    const bw = ctx.measureText(this.bubble.text).width + 18;
+    // Speech bubble beside the head, on whichever side has more room.
+    ctx.font = '800 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    const bw = ctx.measureText(this.bubble.text).width + 20;
     const right = x < WORLD_W / 2;
-    const bx = Math.max(6, Math.min(WORLD_W - 6 - bw, right ? x + 30 : x - 30 - bw));
-    const by = y - 50;
+    const bx = Math.max(6, Math.min(WORLD_W - 6 - bw, right ? x + 28 * s : x - 28 * s - bw));
+    const by = y - 34 * s;
     ctx.globalAlpha = Math.min(1, this.bubble.life * 4);
     ctx.fillStyle = '#ffffff';
-    this.roundRect(bx, by, bw, 24, 12);
+    this.roundRect(bx, by, bw, 26, 13);
     ctx.fill();
     ctx.beginPath();
-    const tx = right ? bx + 10 : bx + bw - 10;
-    ctx.moveTo(tx - 5, by + 22);
-    ctx.lineTo(right ? x + 16 : x - 16, y - 18);
-    ctx.lineTo(tx + 5, by + 22);
+    const tx = right ? bx + 12 : bx + bw - 12;
+    ctx.moveTo(tx - 6, by + 24);
+    ctx.lineTo(right ? x + 20 * s : x - 20 * s, y - 14 * s);
+    ctx.lineTo(tx + 6, by + 24);
     ctx.fill();
-    this.text(this.bubble.text, bx + bw / 2, by + 12.5, 12, '#3a1d12', 800);
+    this.text(this.bubble.text, bx + bw / 2, by + 13.5, 13, '#3a1d12', 800);
+    ctx.globalAlpha = 1;
+  }
+
+  private drawSplat(sp: Splat): void {
+    const { ctx } = this;
+    ctx.globalAlpha = Math.min(0.92, sp.life);
+    ctx.fillStyle = '#2b1608';
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 7; i++) {
+      const a = sp.seed + i * 0.9;
+      const d = sp.r * (0.9 + ((i * 37) % 10) / 12);
+      ctx.beginPath();
+      ctx.arc(sp.x + Math.cos(a) * d, sp.y + Math.sin(a) * d, sp.r * (0.18 + (i % 3) * 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.ellipse(sp.x - sp.r * 0.35, sp.y - sp.r * 0.35, sp.r * 0.25, sp.r * 0.12, -0.6, 0, Math.PI * 2);
+    ctx.fill();
     ctx.globalAlpha = 1;
   }
 
@@ -915,7 +1219,7 @@ export class Game {
     this.text(String(this.height), cx, top + 64, 50, '#fff', 900);
     if (this.mode === 'playing') {
       this.drawOrderCard(top + 100);
-      this.drawBoss(this.chefX, top + 205);
+      this.drawBossLabels(this.chefX, this.bossY(), this.bossScale());
     }
 
     if (this.paused) {
@@ -926,7 +1230,10 @@ export class Game {
       ctx.fillStyle = 'rgba(30,15,30,0.5)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
       // The boss gloats over the result.
-      this.drawBoss(WORLD_W / 2, Math.max(top + 150, midY - 175));
+      const ds = 1.5;
+      const dy = Math.max(top + 120, midY - 100 - 72 * ds);
+      this.drawBossBody(WORLD_W / 2, dy, ds);
+      this.drawBossLabels(WORLD_W / 2, dy, ds);
       ctx.fillStyle = 'rgba(42,26,51,0.94)';
       this.roundRect(30, midY - 100, WORLD_W - 60, 270, 18);
       ctx.fill();
