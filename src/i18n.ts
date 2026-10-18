@@ -73,6 +73,12 @@ const en: Dict = {
   secFriends: 'FRIENDS',
   secSave: 'SAVE TRANSFER',
   secPrivacy: 'PRIVACY & DATA',
+  introTag: 'One tap. Endless chefs.',
+  intro1: 'Grandma’s little sushi bar has been closed for years…',
+  intro2: 'Today, you’re bringing it back to life!',
+  intro3: 'But the rival chefs want it closed. Beat them, one order at a time!',
+  tapStart: 'TAP TO START',
+  skip: 'SKIP',
 };
 
 const ja: Dict = {
@@ -133,6 +139,12 @@ const ja: Dict = {
   secFriends: 'フレンド',
   secSave: 'データ引き継ぎ',
   secPrivacy: 'プライバシーとデータ',
+  introTag: 'ワンタップ。終わらない板前バトル。',
+  intro1: 'おばあちゃんの小さな寿司屋は、何年も閉まったまま…',
+  intro2: '今日、あなたがお店を復活させる！',
+  intro3: 'でもライバルの板前たちが邪魔をする。注文ごとに勝ち抜こう！',
+  tapStart: 'タップでスタート',
+  skip: 'スキップ',
 };
 
 const ko: Dict = {
@@ -193,6 +205,12 @@ const ko: Dict = {
   secFriends: '친구',
   secSave: '데이터 이전',
   secPrivacy: '개인정보 및 데이터',
+  introTag: '원탭. 끝없는 셰프 대결.',
+  intro1: '할머니의 작은 초밥집은 몇 년째 문을 닫았어요…',
+  intro2: '오늘, 당신이 가게를 다시 살려요!',
+  intro3: '하지만 라이벌 셰프들이 방해해요. 주문 하나씩 이겨 나가세요!',
+  tapStart: '탭해서 시작',
+  skip: '건너뛰기',
 };
 
 const es: Dict = {
@@ -253,6 +271,12 @@ const es: Dict = {
   secFriends: 'AMIGOS',
   secSave: 'TRANSFERIR PARTIDA',
   secPrivacy: 'PRIVACIDAD Y DATOS',
+  introTag: 'Un toque. Chefs sin fin.',
+  intro1: 'El pequeño bar de sushi de la abuela lleva años cerrado…',
+  intro2: '¡Hoy le devuelves la vida!',
+  intro3: 'Pero los chefs rivales lo quieren cerrado. ¡Gánales pedido a pedido!',
+  tapStart: 'TOCA PARA EMPEZAR',
+  skip: 'SALTAR',
 };
 
 const pt: Dict = {
@@ -313,6 +337,12 @@ const pt: Dict = {
   secFriends: 'AMIGOS',
   secSave: 'TRANSFERIR PROGRESSO',
   secPrivacy: 'PRIVACIDADE E DADOS',
+  introTag: 'Um toque. Chefs sem fim.',
+  intro1: 'O pequeno bar de sushi da vovó está fechado há anos…',
+  intro2: 'Hoje, você vai trazê-lo de volta à vida!',
+  intro3: 'Mas os chefs rivais querem ele fechado. Vença um pedido de cada vez!',
+  tapStart: 'TOQUE PARA COMEÇAR',
+  skip: 'PULAR',
 };
 
 const hi: Dict = {
@@ -373,6 +403,12 @@ const hi: Dict = {
   secFriends: 'दोस्त',
   secSave: 'सेव ट्रांसफ़र',
   secPrivacy: 'गोपनीयता और डेटा',
+  introTag: 'एक टैप। अनगिनत शेफ़।',
+  intro1: 'दादी का छोटा सुशी बार सालों से बंद पड़ा है…',
+  intro2: 'आज आप इसे फिर से ज़िंदा करेंगे!',
+  intro3: 'पर प्रतिद्वंद्वी शेफ़ इसे बंद देखना चाहते हैं। एक-एक ऑर्डर से उन्हें हराएँ!',
+  tapStart: 'शुरू करने के लिए टैप करें',
+  skip: 'छोड़ें',
 };
 
 const tr: Dict = {
@@ -433,6 +469,12 @@ const tr: Dict = {
   secFriends: 'ARKADAŞLAR',
   secSave: 'KAYIT AKTARIMI',
   secPrivacy: 'GİZLİLİK VE VERİ',
+  introTag: 'Tek dokunuş. Sonsuz şef.',
+  intro1: 'Büyükannenin küçük suşi barı yıllardır kapalı…',
+  intro2: 'Bugün onu yeniden hayata döndürüyorsun!',
+  intro3: 'Ama rakip şefler kapalı kalmasını istiyor. Onları sipariş sipariş yen!',
+  tapStart: 'BAŞLAMAK İÇİN DOKUN',
+  skip: 'GEÇ',
 };
 
 const DICTS: Record<Lang, Dict> = { en, ja, ko, es, pt, hi, tr };

@@ -71,6 +71,11 @@ export const sfx = {
   coin: () => tone(1400, 0.06, 'square', 0.05, 2000),
   tap: () => tone(660, 0.04, 'sine', 0.06, 880),
   die: () => { tone(220, 0.45, 'sawtooth', 0.12, 55); hiss(0.3, 0.2, 300); },
+  // Intro sounds.
+  whoosh: () => hiss(0.3, 0.22, 900, 0.6),
+  shutter: () => { for (let i = 0; i < 7; i++) setTimeout(() => hiss(0.05, 0.16, 500 + i * 60, 2), i * 70); },
+  light: (i: number) => tone(880 + i * 110, 0.12, 'sine', 0.08, undefined, 0),
+  sting: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.5 - i * 0.05, 'triangle', 0.12, undefined, i * 0.06)),
 };
 
 // ------------------------------------------------------------------- music

@@ -19,6 +19,7 @@ import { ClipRecorder, clipsSupported } from './clips';
 import { GUEST_SERVES_PER_DAY, STAFF, STYLES, THEMES as REST_THEMES, criticToday, decodeRestaurant, encodeRestaurant, styleText, stylesArray, themeById, themeInSeason, type RestCode, type RestTheme, type StaffId } from './restaurant';
 import { drawRestaurantScene, seatPos, type SceneGuest } from './scene';
 import type { AreaId } from './collect';
+import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
 import { CHEFS, chefFor, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
@@ -339,6 +340,8 @@ export class Game {
   private lastPerfect = false;
   private friendGhost: [number, number][] | null = null; // shape of a friend's run from a ghost code
   private confirmBox: { title: string; text: string; ok: string; go: () => void } | null = null;
+  // Intro: logo on every launch; the story panels only the first time.
+  private intro: { stage: 'logo' | 'story'; t: number; prev: number; panel: number; full: boolean } | null = null;
   private upgradeFx: { i: number; t: number } | null = null; // sparkle on a just-upgraded restaurant area
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
@@ -352,6 +355,8 @@ export class Game {
     setHaptics(settings.haptics);
     this.clips = new ClipRecorder(canvas);
     void loadConfig();
+    // ?nointro skips it (used by automated tests).
+    if (!location.search.includes('nointro')) this.intro = { stage: 'logo', t: 0, prev: 0, panel: 0, full: !this.progress.seen.includes('intro') };
     track('app_open', { level: this.progress.unlocked, lang: settings.lang });
     this.scheduleTipReminder();
     new ResizeObserver(() => this.resize()).observe(canvas);
@@ -884,6 +889,11 @@ export class Game {
         b.onTap();
         return;
       }
+    }
+
+    if (this.intro) {
+      this.advanceIntro();
+      return;
     }
 
     switch (this.mode) {
@@ -1895,6 +1905,10 @@ export class Game {
     dt = Math.min(dt, 1 / 20);
     if (this.paused) return;
     const real = dt;
+    if (this.intro) {
+      this.updateIntro(real);
+      return;
+    }
 
     // Overlays and celebrations run in real time.
     if (this.adOverlay) this.adOverlay.t = Math.max(0, this.adOverlay.t - real);
@@ -2034,6 +2048,10 @@ export class Game {
     if (hol) drawHolidayOverlay(ctx, hol.holiday.decor, this.specks, this.time, this.camY, -this.offX, bw, this.viewH);
 
     this.buttons = [];
+    if (this.intro) {
+      this.drawIntro();
+      return;
+    }
     if (this.scrolling) {
       if (this.mode === 'shop') this.drawShop();
       else if (this.mode === 'map') this.drawMap();
@@ -3155,8 +3173,8 @@ export class Game {
     const top = this.insets.top;
     const p = this.progress;
     if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 15, 'rgba(255,255,255,0.75)', 700);
-    this.text('SUSHI', cx, top + 80, 44, '#ffffff', 900);
-    this.text('STACK', cx, top + 120, 44, '#ff8a5b', 900);
+    logoText(ctx, 'SUSHI', cx, top + 80, 44, '#ffffff', '#ffe2c6');
+    logoText(ctx, 'STACK', cx, top + 122, 44, '#ffb37a', '#ff5d3a');
 
     // Streak chips: win streak, daily streak (with freezes), Chef Rank.
     const chips = [`🔥 Win ${p.winStreak}`, `📅 Day ${save.giftDay() === Game.day() || save.giftDay() === Game.day(-1) ? save.giftStreak() : 0} ${'❄'.repeat(p.freezes)}`, `👑 Rank ${p.rank}`];
@@ -5385,6 +5403,115 @@ export class Game {
     this.pill(24 + (WORLD_W - 40) / 2, y + 4, (WORLD_W - 40) / 2, 'DONE', f, () => { if (!hatOpen(a.hat)) a.hat = 0; p.persist(); this.mode = this.screenBack; }, 'gold');
     y += 44;
     this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ intro
+
+  private updateIntro(real: number): void {
+    const it = this.intro!;
+    it.prev = it.t;
+    it.t += real;
+    const cross = (a: number) => it.prev < a && it.t >= a;
+    if (it.stage === 'logo') {
+      for (let i = 0; i < 5; i++) if (cross(0.34 + i * 0.13)) { sfx.drop(); haptic.light(); }
+      if (cross(0.85)) sfx.whoosh();
+      if (cross(1.35)) sfx.sting();
+      const end = settings.reducedMotion ? 0.9 : it.full ? LOGO_TIME + 0.5 : LOGO_SHORT;
+      if (it.t >= end) this.advanceIntro();
+    } else {
+      if (it.panel === 1) {
+        if (cross(0.2)) sfx.shutter();
+        for (let i = 0; i < 4; i++) if (cross(1.0 + i * 0.22)) sfx.light(i);
+        if (cross(1.6)) sfx.serve();
+      }
+      if (it.panel === 2 && cross(0.45)) { sfx.slice(); haptic.medium(); }
+      if (it.panel < 2 && it.t >= PANEL_TIME) this.advanceIntro();
+    }
+  }
+
+  /** Tap or timer: logo → story panels → the first run (new players) or the home screen. */
+  private advanceIntro(): void {
+    const it = this.intro!;
+    if (it.stage === 'logo') {
+      if (!it.full) return this.finishIntro(false);
+      it.stage = 'story';
+      it.panel = 0;
+      it.t = it.prev = 0;
+      return;
+    }
+    // Tapping while the caption is still typing finishes the caption first.
+    if (it.t < 1.2 && it.panel < 2) {
+      it.t = it.prev = 1.2;
+      return;
+    }
+    if (it.panel < 2) {
+      it.panel++;
+      it.t = it.prev = 0;
+      sfx.whoosh();
+      return;
+    }
+    if (it.t > 1.0) this.finishIntro(false);
+  }
+
+  private finishIntro(skipped: boolean): void {
+    const it = this.intro!;
+    this.intro = null;
+    if (!it.full) return;
+    const p = this.progress;
+    if (!p.seen.includes('intro')) p.seen.push('intro', 'story:0:start'); // the intro tells chapter 1's opening
+    p.persist();
+    track('intro', { skipped, panel: it.panel });
+    this.startRun(); // straight into the first drop, skipped or not
+  }
+
+  private drawIntro(): void {
+    const { ctx } = this;
+    const it = this.intro!;
+    const L = -this.offX;
+    const W = WORLD_W + this.offX * 2;
+    const H = this.viewH;
+    if (it.stage === 'logo') {
+      const g = ctx.createRadialGradient(WORLD_W / 2, H * 0.42, 20, WORLD_W / 2, H * 0.42, H * 0.75);
+      g.addColorStop(0, '#5a2a5e');
+      g.addColorStop(1, '#1a0d20');
+      ctx.fillStyle = g;
+      ctx.fillRect(L, 0, W, H);
+      const t = settings.reducedMotion ? 99 : it.t;
+      // Soft spotlight that grows as the stack lands.
+      const sp = ctx.createRadialGradient(WORLD_W / 2, H * 0.4, 0, WORLD_W / 2, H * 0.4, 60 + Math.min(1, t) * 140);
+      sp.addColorStop(0, 'rgba(255,190,110,0.35)');
+      sp.addColorStop(1, 'rgba(255,190,110,0)');
+      ctx.fillStyle = sp;
+      ctx.fillRect(L, 0, W, H);
+      drawLogo(ctx, t, WORLD_W / 2, H * 0.42, t > 1.45 ? tr('introTag') : '');
+      logoSparkles(ctx, t, WORLD_W / 2, H * 0.42);
+      // Fade out at the end.
+      const end = it.full ? LOGO_TIME + 0.5 : LOGO_SHORT;
+      if (!settings.reducedMotion && it.t > end - 0.3) {
+        ctx.fillStyle = `rgba(10,5,15,${Math.min(1, (it.t - (end - 0.3)) / 0.3)})`;
+        ctx.fillRect(L, 0, W, H);
+      }
+    } else {
+      const o = { ctx, t: it.t, L, W, H, me: avatarChef(this.progress.avatar), rival: chefFor(1) };
+      if (it.panel === 0) panelClosed(o);
+      else if (it.panel === 1) panelReopen(o);
+      else panelRival(o);
+      // Fade in from black at the start of each panel.
+      if (it.t < 0.3) {
+        ctx.fillStyle = `rgba(10,5,15,${1 - it.t / 0.3})`;
+        ctx.fillRect(L, 0, W, H);
+      }
+      caption(ctx, [t('intro1'), t('intro2'), t('intro3')][it.panel], Math.max(0, it.t - 0.3), H - this.insets.bottom - 120);
+      // Progress dots, and TAP TO START on the last panel.
+      for (let i = 0; i < 3; i++) this.dot(WORLD_W / 2 - 16 + i * 16, H - this.insets.bottom - 70, 4.5, i === it.panel ? '#ffd34d' : 'rgba(255,255,255,0.35)');
+      if (it.panel === 2 && it.t > 1.0) {
+        ctx.globalAlpha = 0.6 + 0.4 * Math.sin(it.t * 5);
+        logoText(ctx, t('tapStart'), WORLD_W / 2, H - this.insets.bottom - 40, 20, '#ffffff', '#ffe2c6');
+        ctx.globalAlpha = 1;
+      }
+    }
+    // SKIP is always there.
+    this.button(WORLD_W - 92 - this.insets.right, this.insets.top + 14, 80, 32, `${t('skip')} ›`, () => this.finishIntro(true), 'quiet');
   }
 
   // ------------------------------------------------------------ chef cards
