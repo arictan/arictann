@@ -1,14 +1,20 @@
 import { FONT } from './font';
 import { Capacitor } from '@capacitor/core';
 import { sfx, unlockAudio, setMuted } from './audio';
-import { askForReminders, haptic, save, scheduleReminder } from './platform';
+import { askForReminders, haptic, save, scheduleReminder, setHaptics } from './platform';
 import { setMusic, setMusicIntensity } from './audio';
 import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, areaCost } from './collect';
 import { CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
-import { decodeChallenge, encodeChallenge, shareCard, type Challenge } from './share';
+import { decodeChallenge, encodeChallenge, shareCard, shareClip, type Challenge } from './share';
 import { STORY_LEVELS, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, type MissionKind, starsNeeded } from './progress';
 import { THEMES, drawBackdrop, drawHolidayOverlay, makeSpecks, type Theme } from './themes';
+import { settings, saveSettings } from './settings';
+import { LANGS, t, t as tr } from './i18n';
+import { analyticsSummary, track } from './analytics';
+import { cfg, loadConfig } from './config';
+import { exportSave, importSave } from './transfer';
+import { ClipRecorder, clipsSupported } from './clips';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
 import { CHEFS, chefFor, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
@@ -25,6 +31,13 @@ const REGROW = 8; // width regained per perfect once a streak reaches 3
 const GRAVITY = 1400;
 const MAP_ROW = 118; // vertical spacing of chefs on the journey map
 
+
+/** Colour-blind mode: a symbol for every ingredient, with an ink that reads on its colour. */
+const SYMBOLS: Record<Ingredient, [string, string]> = {
+  rice: ['○', '#7a6a4a'], nori: ['■', '#cfe3c4'], salmon: ['▲', '#5a1f0a'], tuna: ['◆', '#ffe0e4'],
+  avocado: ['♣', '#2c3d0a'], cucumber: ['+', '#0e2a12'], egg: ['●', '#6a4a00'], ebi: ['~', '#5a1f0a'],
+  unagi: ['≡', '#ffd9b0'], tofu: ['□', '#6a5a3a'], ikura: ['✱', '#4a0e00'],
+};
 
 const COLORS: Record<Ingredient, string> = {
   rice: '#f6f1e4',
@@ -151,7 +164,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -296,6 +309,11 @@ export class Game {
   private storyQueue: { ch: Chapter; lines: string[]; end: boolean }[] = [];
   private achT = 0;
 
+  // Platform update: highlight clips, the last clip, save codes.
+  private clips: ClipRecorder;
+  private clip: File | null = null;
+  private saveCode = '';
+
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas not supported');
@@ -304,6 +322,10 @@ export class Game {
     this.resize();
     this.reset();
     this.progress.visit();
+    setHaptics(settings.haptics);
+    this.clips = new ClipRecorder(canvas);
+    void loadConfig();
+    track('app_open', { level: this.progress.unlocked, lang: settings.lang });
     new ResizeObserver(() => this.resize()).observe(canvas);
     // On scrolling screens (shop, map, album) a tap fires on release, so lists can be dragged;
     // everywhere else it fires on press.
@@ -417,7 +439,7 @@ export class Game {
 
   private announceChef(): void {
     const c = this.chef;
-    this.banner = { title: this.special ? 'DAILY SPECIAL' : `LEVEL ${this.level}`, sub: c.rule, life: 2.4 };
+    this.banner = { title: this.special ? 'DAILY SPECIAL' : t('level', this.level), sub: c.rule, life: 2.4 };
     this.bubble = { text: c.intro, life: 2.2 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
@@ -595,8 +617,11 @@ export class Game {
     if (active.length) this.popup(WORLD_W / 2, this.top.y - 76, `Boosters: ${active.join(' · ')}`, '#9fe3ff', 13, 2.2);
     if (ws >= 3) this.popup(WORLD_W / 2, this.top.y - 96, `🔥 Win streak ${ws}: ${ws >= 8 ? 'hot start, steady hands, free Second Chance' : ws >= 5 ? 'hot start + steady hands' : 'hot start'}`, '#ffb703', 13, 2.4);
     if (mode === 'journey' && (level - 1) % 10 === 0) this.queueStory(chapterFor(level), false);
-    if (this.progress.tutorial === 0) this.coach('TAP TO DROP', 'Tap anywhere when the layer is over the stack', 8);
-    else if (this.progress.tutorial === 1) this.coach('AIM FOR PERFECT', 'Line it up exactly for a PERFECT and keep the full width', 6);
+    track('run_start', { mode, level, boosters: this.picked.size });
+    this.clip = null;
+    if (settings.clips) this.clips.start();
+    if (this.progress.tutorial === 0) this.coach(t('tapDrop'), t('tapDropText'), 8);
+    else if (this.progress.tutorial === 1) this.coach(t('aim'), t('aimText'), 6);
   }
 
   private changeTheme(apply: () => void): void {
@@ -610,6 +635,7 @@ export class Game {
     if (this.doubleCoins) n *= 2;
     if (this.fever > 0) n *= 3;
     if (this.runMode === 'zen') n *= 0.3;
+    n *= cfg.coinBoost;
     // Chef Rank, the Kitsune companion and finished restaurants all add percentage bonuses.
     const restaurants = this.progress.restaurant.r + this.progress.restaurant.michelin;
     n = Math.max(1, Math.round(n * (this.progress.coinBonus + this.foxBonus + restaurants * 0.05)));
@@ -705,7 +731,7 @@ export class Game {
     const fav = pool.find((r) => r.name === REGULARS[who].favorite);
     if (fav && this.rand() < 0.5) recipe = fav;
     // Friends sometimes make a special request: a longer order that pays double and earns extra hearts.
-    const request = heartLevel(this.progress.hearts[REGULARS[who].id] ?? 0) >= 2 && this.rand() < 0.2;
+    const request = heartLevel(this.progress.hearts[REGULARS[who].id] ?? 0) >= 2 && this.rand() < cfg.heartRequestChance;
     // Orders grow to 12 layers early on, then keep growing slowly in endless mode (up to 20).
     const endless = Math.min(8, Math.max(0, Math.floor((this.level - STORY_LEVELS) / 10)));
     const length = Math.min(5 + Math.floor(n / 2), 12) + endless + this.chef.extra - (this.shortOrders ? 2 : 0) + (request ? 2 : 0);
@@ -731,7 +757,8 @@ export class Game {
     if (this.moving?.special === 'ice') v *= 1.6;
     if (this.moving?.kind === 'tofu') v *= 1 + 0.3 * Math.sin(this.time * 14);
     if (this.rage) v *= 1 + 0.12 * this.rage;
-    if (this.progress.tutorial < 2 && this.height < 4) v *= 0.6; // first run: gentle start
+    if (this.progress.tutorial < 2 && this.height < 4) v *= cfg.tutorialSlowdown; // first run: gentle start
+    if (settings.assist) v *= 0.82;
     if (this.fever > 0) v *= 0.5;
     if (this.steady > 0) v *= 0.55;
     if (this.easy && this.height < 10) v *= 0.8;
@@ -837,16 +864,20 @@ export class Game {
     const dx = m.x - top.x;
     if (this.progress.tutorial === 0) {
       this.progress.tutorial = 1;
+      track('tutorial', { step: 1 });
       this.coach('Line them up!', 'Drop each layer exactly on the one below for a PERFECT. PERFECTs build your combo.', 3.5);
     }
 
-    const tol = (this.chef.tight && this.runMode !== 'puzzle' ? TIGHT_TOL : PERFECT_TOL) + (this.magnet ? 4 : 0) + (this.fever > 0 ? 8 : 0) + (this.perks.magnet ?? 0) * 2;
+    const tol = (this.chef.tight && this.runMode !== 'puzzle' ? TIGHT_TOL : PERFECT_TOL) + (this.magnet ? 4 : 0) + (this.fever > 0 ? 8 : 0) + (this.perks.magnet ?? 0) * 2 + (settings.assist ? 3 : 0);
     if (Math.abs(dx) <= tol) {
       m.origin -= dx;
       m.x = top.x;
       this.combo += m.kind === 'ebi' ? 2 : 1; // ebi counts double
       this.orderStats.perfects++;
-      if (this.progress.tutorial === 1) this.progress.tutorial = 2;
+      if (this.progress.tutorial === 1) {
+        this.progress.tutorial = 2;
+        track('tutorial', { step: 2 });
+      }
       if (this.combo >= 3 && m.w < this.baseW) {
         const grow = Math.min(REGROW + (this.perks.regrow ?? 0) * 4, this.baseW - m.w);
         m.x -= grow / 2;
@@ -928,6 +959,7 @@ export class Game {
       this.orderStats.slices++;
       if (this.progress.tutorial === 2 || (this.progress.tutorial === 1 && this.height >= 3)) {
         this.progress.tutorial = 3;
+        track('tutorial', { step: 3 });
         this.coach('Sliced!', 'The part hanging over the edge gets cut off. Stay centred to keep your roll wide.', 3.5);
       }
       if (this.runMode === 'puzzle' && this.orderStats.slices > puzzleConfig(this.puzzle).maxSlices) {
@@ -981,11 +1013,12 @@ export class Game {
   /** Full-screen celebration: a title, a line of detail and a burst of confetti. */
   private celebrate(title: string, sub: string, time = 2): void {
     this.celebration = { title, sub, t: time };
+    sfx.celebrate();
+    if (settings.reducedMotion) return;
     const colors = ['#ff8a5b', '#ffd34d', '#8fdc93', '#9fe3ff', '#ff5d8f', '#e0aaff'];
     for (let i = 0; i < 70; i++) {
       this.confetti.push({ x: Math.random() * WORLD_W, y: -20 - Math.random() * 200, vx: (Math.random() - 0.5) * 80, vy: 80 + Math.random() * 160, rot: Math.random() * 6, color: colors[i % colors.length], life: 3 });
     }
-    sfx.celebrate();
   }
 
   /** Sushi Pass XP. Resets each season. */
@@ -1134,7 +1167,8 @@ export class Game {
    * Gives a reward for watching an ad. VIP players get it without the ad. On phones this plays a
    * real (test) AdMob rewarded ad; in the browser it shows a simulated test ad.
    */
-  private watchAd(label: string, onReward: () => void): void {
+  private watchAd(label: string, reward: () => void): void {
+    const onReward = () => { track('ad_reward', { label }); reward(); };
     if (this.progress.vip) {
       onReward();
       this.showToast('VIP: reward without the ad');
@@ -1161,6 +1195,7 @@ export class Game {
   }
 
   private grant(id: ProductId): void {
+    track('purchase', { id, test: !monetize.purchasesLive });
     const p = this.progress;
     switch (id) {
       case 'starter':
@@ -1473,6 +1508,7 @@ export class Game {
 
     // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
     if (this.journey && beatLevel % 10 === 0 && beatLevel <= STORY_LEVELS) this.queueStory(chapterFor(beatLevel), true);
+    if (this.journey) track('level_beat', { level: beatLevel, stars, flawless });
     if (this.journey && this.progress.beat(beatLevel, stars)) {
       this.showToast(beatLevel === STORY_LEVELS ? 'STORY COMPLETE! Endless chefs await...' : `New chef card: ${beaten.name}!`);
       if (beatLevel === STORY_LEVELS) this.unlockExclusive('set', 'legend', 'Legend sushi set');
@@ -1489,6 +1525,7 @@ export class Game {
     if (this.perks.stickers) this.openPacks(this.perks.stickers);
     if (this.progress.tutorial < 4) {
       this.progress.tutorial = 4;
+      track('tutorial', { step: 4 });
       this.coach('Order served!', 'Every order beats a chef and opens the next level. Watch out: from now on chefs fight back!', 4);
     }
     this.earnTokens(this.special ? 3 : 1);
@@ -1519,7 +1556,7 @@ export class Game {
     // The next boss steps in after the beaten one has had a moment to react.
     this.introIn = 1.2;
     // Pick a perk for the rest of the run (journey and challenges).
-    if (this.runMode === 'journey' || this.runMode === 'challenge') {
+    if ((this.runMode === 'journey' || this.runMode === 'challenge') && cfg.perksEvery > 0 && this.ordersServed % cfg.perksEvery === 0) {
       const ids = Object.keys(PERKS) as PerkId[];
       const choice: PerkId[] = [];
       while (choice.length < 3) {
@@ -1539,7 +1576,7 @@ export class Game {
     }
     if (this.runMode === 'puzzle' || this.calmChefs || this.level % 10 !== 0) return;
     const done = (this.height - this.order.start) / this.order.length;
-    const phase = done >= 0.85 && this.level > STORY_LEVELS ? 2 : done >= 0.5 ? 1 : 0;
+    const phase = done >= 0.85 && this.level > STORY_LEVELS ? 2 : done >= cfg.rageAt ? 1 : 0;
     if (phase > this.rage) {
       this.rage = phase;
       this.banner = { title: phase === 2 ? 'FINAL FURY!' : 'RAGE MODE!', sub: phase === 2 ? 'Everything faster. Hold on!' : 'Faster layers, more attacks, knife flurries', life: 2.2 };
@@ -1551,6 +1588,7 @@ export class Game {
   }
 
   private choosePerk(id: PerkId): void {
+    track('perk', { id, level: this.level });
     this.perks[id] = (this.perks[id] ?? 0) + 1;
     this.perkChoice = null;
     const t = this.top;
@@ -1606,6 +1644,7 @@ export class Game {
     // Only bank what hasn't been banked yet (a continue can end the same run twice).
     const fresh = this.runCoins - this.bankedRunCoins;
     this.bankedRunCoins = this.runCoins;
+    p.stat('coins', fresh);
     this.bank += fresh;
     save.setCoins(this.bank);
     // A slice of every run's coins also drops into the piggy bank, up to 2,500.
@@ -1636,6 +1675,9 @@ export class Game {
     }
     this.checkRace();
     p.persist();
+    track('run_end', { mode: this.runMode, level: this.level, height: this.height, coins: this.runCoins, served: this.ordersServed, result: this.resultKind });
+    if (this.runMode === 'challenge' && this.challenge && !this.revived) this.recordDuel();
+    if (settings.clips) void this.clips.finish().then((f) => { this.clip = f; });
   }
 
   private gateStop(): void {
@@ -1735,6 +1777,10 @@ export class Game {
     }
 
     if (this.tip && !this.dish && (this.tip.t -= real) <= 0) this.tip = null;
+    if (settings.reducedMotion) {
+      this.shake = 0;
+      this.flash = 0;
+    }
     if ((this.achT -= real) <= 0) {
       this.achT = 1;
       this.checkAchievements();
@@ -1836,6 +1882,7 @@ export class Game {
       else if (this.mode === 'story') this.drawStory();
       else if (this.mode === 'trophies') this.drawTrophies();
       else if (this.mode === 'gallery') this.drawGallery();
+      else if (this.mode === 'settings') this.drawSettings();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -2117,6 +2164,14 @@ export class Game {
         ctx.textBaseline = 'middle';
         for (let i = start; i < end; i += 3) ctx.fillText('?', l.origin + i * 12 + 6, y + h / 2 + 1);
         break;
+    }
+    if (settings.colorblind) {
+      const [sym, ink] = SYMBOLS[l.kind];
+      ctx.fillStyle = ink;
+      ctx.font = `700 14px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let i = Math.floor((x - l.origin) / 48) - 1; i <= Math.ceil((x + w - l.origin) / 48); i++) ctx.fillText(sym, l.origin + i * 48 + 24, y + h / 2 + 1);
     }
     // Soft highlight on the top edge.
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
@@ -2439,8 +2494,8 @@ export class Game {
       ctx.strokeStyle = 'rgba(40,15,20,0.8)';
       ctx.font = `900 26px ${FONT}`;
       ctx.textAlign = 'center';
-      ctx.strokeText('ORDER UP!', peak.x, peak.y - 50);
-      this.text('ORDER UP!', peak.x, peak.y - 50, 26, '#ffd34d', 900);
+      ctx.strokeText(tr('orderUp'), peak.x, peak.y - 50);
+      this.text(tr('orderUp'), peak.x, peak.y - 50, 26, '#ffd34d', 900);
       ctx.globalAlpha = 1;
     }
     if (d.ate) {
@@ -2516,6 +2571,7 @@ export class Game {
       ctx.strokeStyle = i === 0 ? '#5a2e1f' : 'rgba(90,46,31,0.3)';
       ctx.lineWidth = i === 0 ? 1.5 : 1;
       ctx.stroke();
+      if (settings.colorblind) this.text(SYMBOLS[kind][0], x + 21 + i * 22, y + 42, 8, SYMBOLS[kind][1], 700);
     }
     this.text('next', x + 12 + 6 * 22 + 4, y + 42, 10, 'rgba(90,46,31,0.6)', 700, 'left');
     // Who it's for: the regular's face, with a gold tag on special requests (double coins).
@@ -2742,7 +2798,7 @@ export class Game {
     }
 
     if (this.paused) {
-      this.panel(midY, 'PAUSED', 'Tap to resume');
+      this.panel(midY, t('paused'), t('tapResume'));
     } else if (this.mode === 'dead') {
       this.drawResults();
     }
@@ -2757,7 +2813,7 @@ export class Game {
       case 'puzzle-won': return `PUZZLE ${this.puzzle + 1} SOLVED!`;
       case 'puzzle-lost': return this.orderStats.slices > puzzleConfig(this.puzzle).maxSlices ? 'TOO MANY SLICES!' : 'PUZZLE FAILED';
       case 'challenge': return this.challenge && this.height > this.challenge.score ? 'YOU WIN!' : 'FRIEND WINS';
-      default: return this.newBest ? 'NEW BEST!' : 'DROPPED IT!';
+      default: return this.newBest ? t('newBest') : t('dropped');
     }
   }
 
@@ -2817,13 +2873,14 @@ export class Game {
       const row1: [string, () => void, 'primary' | 'gold' | 'quiet'][] = [];
       if (canContinue) row1.push([this.progress.vip ? 'CONTINUE' : '▶ CONTINUE', () => this.watchAd('Continue this run', () => this.revive()), 'gold']);
       if (!this.doubled && this.runCoins > 0) row1.push([`▶ +${this.runCoins}`, () => this.watchAd('Double your coins', () => { this.doubled = true; this.bankCoins(this.runCoins); this.showToast(`Coins doubled: +${this.runCoins}`); }), 'gold']);
-      row1.push(['SHARE', () => this.shareRun(), 'quiet']);
+      row1.push([tr('share'), () => this.shareRun(), 'quiet']);
+      if (this.clip) row1.push(['🎬 CLIP', () => { track('clip_share'); void shareClip(this.clip!, this.height); }, 'quiet']);
       const w1 = (WORLD_W - 72 - (row1.length - 1) * 8) / row1.length;
       row1.forEach(([label, go, style], i) => this.button(36 + i * (w1 + 8), cardTop + 232, w1, 44, label, go, style));
-      const second = this.journey || this.resultKind === 'gate' ? ['MAP', () => this.openMap()] as const : ['MODES', () => this.openScreen('modes')] as const;
-      this.button(36, cardTop + 290, 96, 46, 'HOME', () => { this.mode = 'title'; this.reset(); }, 'quiet');
+      const second = this.journey || this.resultKind === 'gate' ? [tr('map'), () => this.openMap()] as const : [tr('modes'), () => this.openScreen('modes')] as const;
+      this.button(36, cardTop + 290, 96, 46, tr('home'), () => { this.mode = 'title'; this.reset(); }, 'quiet');
       this.button(140, cardTop + 290, 108, 46, second[0], second[1], 'quiet');
-      this.button(256, cardTop + 290, 108, 46, this.resultKind === 'puzzle-won' ? 'NEXT' : this.resultKind === 'gate' ? 'GET STARS' : 'RETRY', () => this.retry());
+      this.button(256, cardTop + 290, 108, 46, this.resultKind === 'puzzle-won' ? tr('next') : this.resultKind === 'gate' ? 'GET STARS' : tr('retry'), () => this.retry());
     }
     ctx.globalAlpha = 1;
   }
@@ -2851,34 +2908,51 @@ export class Game {
 
     // Big play button.
     const lvl = p.playLevel;
-    const pulse = 1 + 0.03 * Math.sin(this.time * 4);
+    const pulse = settings.reducedMotion ? 1 : 1 + 0.03 * Math.sin(this.time * 4);
     ctx.save();
     ctx.translate(cx, top + 210);
     ctx.scale(pulse, pulse);
     ctx.fillStyle = '#ff8a5b';
     this.roundRect(-170, -28, 340, 56, 28);
     ctx.fill();
-    this.text(`PLAY · LEVEL ${lvl}`, 0, -4, 22, '#fff', 900);
+    this.fitText(t('play', lvl), 0, -4, 300, 22, '#fff', 'center', 700);
     const gate = p.unlocked > lvl ? starsNeeded(p.unlocked) : 0;
     this.text(gate ? `Gate to ${p.unlocked}: ${p.totalStars}/${gate}★` : chefFor(lvl).name, 0, 16, 11, 'rgba(255,255,255,0.9)', 700);
     ctx.restore();
     this.buttons.push({ x: cx - 170, y: top + 182, w: 340, h: 56, onTap: () => this.startRun() });
 
     this.announceUnlocks();
+    // Settings gear beside the sound button (settings are always reachable, even before MORE opens).
+    const mb = this.muteButton();
+    const gx = mb.x + 38;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gx, mb.y, mb.r, 0, Math.PI * 2);
+    ctx.stroke();
+    this.text('⚙', gx, mb.y + 1, 15, 'rgba(255,255,255,0.85)', 400);
+    this.buttons.push({ x: gx - 20, y: mb.y - 20, w: 40, h: 40, onTap: () => this.openScreen('settings') });
+    // A one-time announcement from remote config.
+    if (cfg.message && !p.seen.includes(`msg:${cfg.message}`)) {
+      p.seen.push(`msg:${cfg.message}`);
+      p.persist();
+      this.showToast(cfg.message);
+    }
     // Gift (with Maki the cat) and modes. Locked features show the level that opens them.
     const ready = this.giftReady();
     if (this.lockedAt('gift')) this.lockedButton(30, top + 250, 165, 42, 'gift', 'GIFT');
     else {
-      this.button(30, top + 250, 165, 42, ready ? '   DAILY GIFT' : '   GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.button(30, top + 250, 165, 42, '', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.fitText(ready ? t('gift') : t('giftTomorrow'), 30 + 165 / 2 + 14, top + 272, 165 - 64, 15, ready ? '#4a2a00' : '#ffffff', 'center', 700);
       this.text(ready ? '😺' : '😸', 52, top + 271 + (ready ? Math.sin(this.time * 6) * 3 : 0), 22, '#fff', 400);
     }
     if (this.lockedAt('modes')) {
       this.lockedButton(205, top + 250, 165, 42, 'modes', 'MODES');
       this.lockedButton(30, top + 300, 340, 40, 'modes', 'DAILY SPECIAL');
     } else {
-      this.button(205, top + 250, 165, 42, 'MODES', () => this.openScreen('modes'));
+      this.button(205, top + 250, 165, 42, t('modes'), () => this.openScreen('modes'));
       const specialDone = p.specialDay === dayKey();
-      this.button(30, top + 300, 340, 40, specialDone ? 'DAILY SPECIAL ✓ (practice)' : 'DAILY SPECIAL · +150 COINS', () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
+      this.button(30, top + 300, 340, 40, specialDone ? t('specialDone') : t('special'), () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
     }
     if (this.lockedAt('gift')) this.drawHowTo(top + 350);
     else this.drawMissions(top + 350);
@@ -2910,11 +2984,11 @@ export class Game {
     const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3);
     const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0;
     const nav: [string, string, () => void, boolean, string][] = [
-      ['🗺️', 'MAP', () => this.openMap(), false, 'map'],
-      ['🎉', 'EVENTS', () => this.openScreen('events'), eventsBadge, 'events'],
-      ['🛒', 'SHOP', () => this.openShop(), false, 'shop'],
-      ['🏯', 'RESTAURANT', () => this.openScreen('restaurant'), p.starPool >= areaCost(p.restaurant.r + p.restaurant.michelin, 1), 'restaurant'],
-      ['☰', 'MORE', () => this.openScreen('more'), moreBadge, 'more'],
+      ['🗺️', t('map'), () => this.openMap(), false, 'map'],
+      ['🎉', t('events'), () => this.openScreen('events'), eventsBadge, 'events'],
+      ['🛒', t('shop'), () => this.openShop(), false, 'shop'],
+      ['🏯', t('restaurant'), () => this.openScreen('restaurant'), p.starPool >= areaCost(p.restaurant.r + p.restaurant.michelin, 1), 'restaurant'],
+      ['☰', t('more'), () => this.openScreen('more'), moreBadge, 'more'],
     ];
     const nw = WORLD_W / nav.length;
     nav.forEach(([icon, label, open, badge, id], i) => {
@@ -2933,7 +3007,7 @@ export class Game {
         return;
       }
       this.text(icon, x + nw / 2, navY + 22, 22, '#fff', 400);
-      this.text(label, x + nw / 2, navY + 46, 9.5, 'rgba(255,255,255,0.8)', 700);
+      this.fitText(label, x + nw / 2, navY + 46, nw - 6, 9.5, 'rgba(255,255,255,0.8)', 'center', 700);
       if (!p.seen.includes(`feature:${id}:visited`) && UNLOCKS.some((u) => u.id === id && p.unlocked <= u.level + 1)) {
         // "NEW" tag until the player first visits a freshly opened feature.
         go = () => { p.seen.push(`feature:${id}:visited`); p.persist(); open(); };
@@ -2978,6 +3052,7 @@ export class Game {
       if (p.unlocked < u.level || p.seen.includes(key)) continue;
       p.seen.push(key);
       p.persist();
+      track('feature_unlock', { id: u.id });
       if (p.unlocked <= u.level + 1) {
         this.celebrate(`🔓 ${u.name.toUpperCase()}`, u.desc, 3.2);
         return;
@@ -2991,15 +3066,15 @@ export class Game {
     ctx.fillStyle = 'rgba(20,10,25,0.93)';
     this.roundRect(24, y, WORLD_W - 48, 134, 16);
     ctx.fill();
-    this.text('HOW TO PLAY', WORLD_W / 2, y + 20, 13, '#ffd34d', 700);
+    this.text(t('howTo'), WORLD_W / 2, y + 20, 13, '#ffd34d', 700);
     const lines: [string, string][] = [
-      ['👆', 'Tap to drop the sliding layer on the stack'],
-      ['✂️', 'Whatever hangs over the edge gets sliced off'],
-      ['👨‍🍳', 'Finish the chef’s order to beat them'],
+      ['👆', t('how1')],
+      ['✂️', t('how2')],
+      ['👨‍🍳', t('how3')],
     ];
-    lines.forEach(([icon, t], i) => {
+    lines.forEach(([icon, line], i) => {
       this.text(icon, 50, y + 50 + i * 28, 17, '#fff', 400);
-      this.text(t, 70, y + 50 + i * 28, 12.5, '#fff', 600, 'left');
+      this.fitText(line, 70, y + 50 + i * 28, WORLD_W - 112, 12.5, '#fff', 'left');
     });
   }
 
@@ -3674,7 +3749,7 @@ export class Game {
     this.qaClip = null;
     this.listMax = Math.max(0, contentH - frame.areaH + 10);
     this.pageScroll = Math.min(this.pageScroll, this.listMax);
-    this.button(16, frame.backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.screenBack; }, 'quiet');
+    this.button(16, frame.backY, WORLD_W - 32, 46, t('back'), () => { this.mode = this.screenBack; }, 'quiet');
   }
 
   /** A tappable area inside a scrolling list: only the visible part responds. */
@@ -3918,8 +3993,7 @@ export class Game {
       ['📒', 'Album', 'Chef cards, stickers, records', () => { this.openAlbum(); this.shopFrom = 'more'; }],
       ['📊', 'Leaderboards', 'Your best runs and the Cup', () => this.openScreen('boards', 'more')],
       ['🤝', 'Friend Code', 'Play a friend’s challenge', () => this.openCodeInput()],
-      ['🎵', `Music: ${this.musicOn ? 'ON' : 'OFF'}`, 'Tap to switch', () => this.toggleMusic()],
-      ['🔊', `Sound: ${this.muted ? 'OFF' : 'ON'}`, 'Tap to switch', () => { this.muted = !this.muted; setMuted(this.muted); save.setMuted(this.muted); }],
+      ['⚙️', 'Settings', 'Sound, accessibility, language, save', () => this.openScreen('settings', 'more')],
     ];
     const tw = (WORLD_W - 32 - 10) / 2;
     tiles.forEach(([icon, name, sub, go], i) => {
@@ -4629,38 +4703,186 @@ export class Game {
     y += 20;
     if (!p.topRuns.length) row('No runs yet', '-');
     p.topRuns.forEach((h, i) => row(`#${i + 1}`, `${h} layers`));
+    // Duels: every friend challenge played, with a rematch on the same seed.
+    y += 6;
+    const wins = p.duels.filter((d) => d.mine > d.theirs).length;
+    this.text(`DUELS · ${wins} won, ${p.duels.length - wins} lost`, 16, y + 8, 12, '#ffd34d', 900, 'left');
+    y += 20;
+    if (!p.duels.length) row('Enter a friend’s code to duel', '-');
+    for (const d of p.duels.slice(0, 8)) {
+      const won = d.mine > d.theirs;
+      this.card(16, y, WORLD_W - 32, 44, 'rgba(48,30,52,0.95)');
+      this.text(`${won ? '🏆' : '💥'} ${d.mine} vs ${d.theirs}`, 32, y + 15, 13, won ? '#8fdc93' : '#ff9a8a', 700, 'left');
+      this.text(`${d.code} · ${new Date(d.at).toLocaleDateString()}`, 32, y + 32, 10, 'rgba(255,255,255,0.6)', 600, 'left');
+      this.pill(WORLD_W - 116, y + 6, 84, 'REMATCH', f, () => {
+        const c = decodeChallenge(d.code);
+        if (c) this.startRun(c.level, 'challenge', { challenge: c });
+      }, 'quiet');
+      y += 50;
+    }
     this.screenEnd(f, y - f.y0);
+  }
+
+  private recordDuel(): void {
+    const c = this.challenge!;
+    const code = encodeChallenge(c);
+    const p = this.progress;
+    p.duels = [{ code, level: c.level, theirs: c.score, mine: this.height, at: Date.now() }, ...p.duels].slice(0, 30);
+    p.persist();
+    track('duel', { won: this.height > c.score });
   }
 
   // ---------------------------------------------------- friend challenges
 
-  /** Text box for a friend's challenge code (a real input, so phone keyboards work). */
-  private openCodeInput(): void {
+  /**
+   * Text box for codes (a real input, so phone keyboards work): a friend's challenge code or invite
+   * code, or a save-transfer code from another device.
+   */
+  private openCodeInput(kind: 'friend' | 'save' = 'friend'): void {
     if (this.codeInput) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,15,0.7);z-index:10;padding:16px;';
+    const title = kind === 'save' ? 'Paste a save code' : 'Friend’s code';
+    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge code (K3F9Q-7-42) or an invite code (INV-…)';
     wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px Fredoka,system-ui,sans-serif;color:#fff;display:grid;gap:12px">
-      <label for="challenge-code" style="font-weight:900;font-size:18px">Friend’s challenge code</label>
-      <input id="challenge-code" autocomplete="off" autocapitalize="characters" placeholder="e.g. K3F9Q-7-42" style="font:700 20px Fredoka,system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;text-transform:uppercase">
-      <div style="display:flex;gap:10px"><button type="button" data-close style="flex:1;padding:12px;border-radius:22px;border:0;background:rgba(255,255,255,0.15);color:#fff;font-weight:900">Cancel</button>
-      <button style="flex:1;padding:12px;border-radius:22px;border:0;background:#ffd34d;color:#4a2a00;font-weight:900">Play</button></div>
+      <label for="code-box" style="font-weight:700;font-size:18px">${title}</label>
+      <p style="margin:0;font-size:13px;opacity:.75">${hint}</p>
+      <input id="code-box" autocomplete="off" ${kind === 'save' ? '' : 'autocapitalize="characters"'} placeholder="${kind === 'save' ? 'SS1.…' : 'e.g. K3F9Q-7-42'}" style="font:700 18px Fredoka,system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;${kind === 'save' ? '' : 'text-transform:uppercase'}">
+      <div style="display:flex;gap:10px"><button type="button" data-close style="flex:1;padding:12px;border-radius:22px;border:0;background:rgba(255,255,255,0.15);color:#fff;font-weight:700">Cancel</button>
+      <button style="flex:1;padding:12px;border-radius:22px;border:0;background:#ffd34d;color:#4a2a00;font-weight:700">${kind === 'save' ? 'Restore' : 'Go'}</button></div>
       <p data-error style="margin:0;color:#ff9a8a;min-height:1em;font-size:13px"></p></form>`;
     document.body.appendChild(wrap);
     const input = wrap.querySelector('input')!;
+    const error = (msg: string) => { wrap.querySelector('[data-error]')!.textContent = msg; };
     this.codeInput = input;
     const close = () => { wrap.remove(); this.codeInput = null; };
     wrap.querySelector('[data-close]')!.addEventListener('click', close);
     wrap.querySelector('form')!.addEventListener('submit', (e) => {
       e.preventDefault();
-      const c = decodeChallenge(input.value);
-      if (!c) {
-        wrap.querySelector('[data-error]')!.textContent = 'That code doesn’t look right. It looks like K3F9Q-7-42.';
+      const value = input.value.trim();
+      if (kind === 'save') {
+        void importSave(value).then((ok) => {
+          if (!ok) return error('That save code is damaged or incomplete.');
+          track('save_import');
+          location.reload();
+        });
         return;
       }
+      if (/^INV-[A-Z0-9]{6}$/i.test(value)) {
+        const p = this.progress;
+        if (value.toUpperCase() === p.inviteCode) return error('That’s your own invite code. Send it to a friend!');
+        if (p.seen.includes('invite:used')) return error('You’ve already used an invite code on this device.');
+        p.seen.push('invite:used');
+        p.persist();
+        close();
+        this.bankCoins(cfg.inviteReward);
+        this.celebrate('WELCOME GIFT!', `A friend invited you: +${cfg.inviteReward} coins`);
+        track('invite_redeemed');
+        return;
+      }
+      const c = decodeChallenge(value);
+      if (!c) return error('That code doesn’t look right. It looks like K3F9Q-7-42 or INV-ABC123.');
       close();
       this.startRun(c.level, 'challenge', { challenge: c });
     });
     setTimeout(() => input.focus(), 50);
+  }
+
+  // ------------------------------------------------------------- settings
+
+  private setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips'): void {
+    settings[key] = !settings[key];
+    saveSettings();
+    if (key === 'haptics') setHaptics(settings.haptics);
+    track('setting', { key, on: settings[key] });
+  }
+
+  private drawSettings(): void {
+    const p = this.progress;
+    const f = this.screenBegin(t('settings'));
+    let y = f.y0 + 4;
+    const toggle = (icon: string, label: string, note: string, on: boolean, go: () => void) => {
+      this.card(16, y, WORLD_W - 32, 56);
+      this.text(icon, 40, y + 28, 20, '#fff', 400);
+      this.fitText(label, 64, y + 20, 200, 14, '#fff', 'left', 700);
+      this.fitText(note, 64, y + 39, 200, 10.5, 'rgba(255,255,255,0.65)', 'left');
+      // Switch.
+      const sx = WORLD_W - 84;
+      this.ctx.fillStyle = on ? '#2a9d5c' : 'rgba(255,255,255,0.2)';
+      this.roundRect(sx, y + 16, 52, 26, 13);
+      this.ctx.fill();
+      this.dot(on ? sx + 39 : sx + 13, y + 29, 10, '#fff');
+      this.listTap(16, y, WORLD_W - 32, 56, f, go);
+      y += 62;
+    };
+    const header = (label: string) => {
+      this.text(label, 20, y + 10, 12, '#ffd34d', 700, 'left');
+      y += 24;
+    };
+    header('SOUND & FEEL');
+    toggle('🎵', t('music'), 'Calm generated music', this.musicOn, () => this.toggleMusic());
+    toggle('🔊', t('sound'), 'Chops, coins and cheers', !this.muted, () => { this.muted = !this.muted; setMuted(this.muted); save.setMuted(this.muted); });
+    toggle('📳', t('haptics'), 'Taps you feel on PERFECTs and hits', settings.haptics, () => this.setting('haptics'));
+    header('ACCESSIBILITY');
+    toggle('🌙', t('reducedMotion'), 'No screen shake, flashes or confetti', settings.reducedMotion, () => this.setting('reducedMotion'));
+    toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
+    toggle('🤝', t('assist'), 'Slower layers, bigger PERFECT zone', settings.assist, () => this.setting('assist'));
+    toggle('🎬', t('clips'), clipsSupported() ? 'Save the last seconds of a run as a video' : 'Not supported on this device', settings.clips && clipsSupported(), () => { if (clipsSupported()) this.setting('clips'); else this.showToast('Video recording isn’t supported here'); });
+    // Language picker.
+    this.card(16, y, WORLD_W - 32, 56);
+    this.text('🌐', 40, y + 28, 20, '#fff', 400);
+    this.text(t('language'), 64, y + 20, 14, '#fff', 700, 'left');
+    this.text('Menus and tips', 64, y + 39, 10.5, 'rgba(255,255,255,0.65)', 600, 'left');
+    const li = LANGS.findIndex((l) => l.id === settings.lang);
+    this.pill(WORLD_W - 150, y + 12, 118, LANGS[li].name, f, () => {
+      settings.lang = LANGS[(li + 1) % LANGS.length].id;
+      saveSettings();
+      track('setting', { key: 'lang', value: settings.lang });
+    }, 'quiet');
+    y += 62;
+
+    header('FRIENDS');
+    this.card(16, y, WORLD_W - 32, 96);
+    this.text('Your invite code', 32, y + 20, 13, '#fff', 700, 'left');
+    this.text(p.inviteCode, 32, y + 44, 20, '#ffd34d', 700, 'left');
+    this.fitText(`Friends who enter it get ${cfg.inviteReward} coins. Rewards for you need online accounts (coming later).`, 32, y + 74, WORLD_W - 64, 10.5, 'rgba(255,255,255,0.65)', 'left');
+    this.pill(WORLD_W - 116, y + 26, 84, 'COPY', f, () => this.copy(p.inviteCode, 'Invite code copied!'), 'gold');
+    y += 104;
+    this.pill(16, y, WORLD_W - 32, 'ENTER A FRIEND’S CODE', f, () => this.openCodeInput('friend'), 'quiet');
+    y += 44;
+
+    header('SAVE TRANSFER');
+    this.card(16, y, WORLD_W - 32, 112);
+    this.wrapLeft('Move your progress to another device: copy your save code here, then paste it there. (Automatic cloud save needs Game Center / Google Play Games, set up when the game is published.)', 32, y + 18, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)');
+    this.pill(32, y + 70, (WORLD_W - 80) / 2, 'COPY SAVE CODE', f, () => {
+      void exportSave().then((code) => {
+        this.saveCode = code;
+        this.copy(code, `Save code copied (${code.length} characters)`);
+        track('save_export', { size: code.length });
+      });
+    }, 'gold');
+    this.pill(48 + (WORLD_W - 80) / 2, y + 70, (WORLD_W - 80) / 2, 'PASTE A CODE', f, () => this.openCodeInput('save'), 'quiet');
+    y += 120;
+    if (this.saveCode) {
+      this.fitText(this.saveCode, WORLD_W / 2, y + 6, WORLD_W - 40, 10, 'rgba(255,255,255,0.5)');
+      y += 20;
+    }
+
+    header('PRIVACY & DATA');
+    const counts = analyticsSummary();
+    this.card(16, y, WORLD_W - 32, 84);
+    this.wrapLeft('Gameplay stats stay on this device. Nothing is sent anywhere unless the developer turns on analytics in a future update (it would be listed in the privacy policy).', 32, y + 18, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)');
+    this.fitText(`On-device log: ${counts.reduce((a, b) => a + b[1], 0)} events · ${counts.slice(0, 3).map(([n, c]) => `${n} ${c}`).join(' · ')}`, 32, y + 68, WORLD_W - 64, 10, 'rgba(255,255,255,0.55)', 'left');
+    y += 92;
+    this.text('Sushi Stack · made with Capacitor', WORLD_W / 2, y + 10, 10, 'rgba(255,255,255,0.4)', 600);
+    y += 24;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  /** Copies text to the clipboard, falling back to showing it. */
+  private copy(text: string, ok: string): void {
+    navigator.clipboard?.writeText(text).then(() => this.showToast(ok), () => this.showToast(text.length > 40 ? 'Copy failed: long-press the code below' : text));
+    if (!navigator.clipboard) this.showToast(text.length > 40 ? 'Copy failed: long-press the code below' : text);
   }
 
   /** Builds the share card image and opens the share sheet (or shows the card if there isn't one). */
@@ -4881,8 +5103,8 @@ export class Game {
     ctx.fillStyle = 'rgba(20,10,25,0.78)';
     ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     this.qaCover();
-    this.text('CHEF BEATEN!', cx, midY - 150, 30, '#ffd34d', 700);
-    this.text('Pick a perk for the rest of this run', cx, midY - 118, 14, '#ffffff', 600);
+    this.fitText(t('chefBeaten'), cx, midY - 150, WORLD_W - 40, 30, '#ffd34d', 'center', 700);
+    this.fitText(t('pickPerk'), cx, midY - 118, WORLD_W - 40, 14, '#ffffff', 'center');
     const cw = 116;
     const ch = 196;
     const gap = 10;
@@ -4907,7 +5129,7 @@ export class Game {
       if (have) this.text(`owned x${have}`, x + cw / 2, y + ch - 14, 10, '#2a9d5c', 700);
       this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.choosePerk(id) });
     });
-    this.text('Tap a card', cx, midY + 132, 12, 'rgba(255,255,255,0.7)', 600);
+    this.text(t('tapCard'), cx, midY + 132, 12, 'rgba(255,255,255,0.7)', 600);
   }
 
   /** Before a run: choose which owned boosters to use (unpicked ones stay in the bag). */
@@ -4926,7 +5148,7 @@ export class Game {
     this.card(20, y, WORLD_W - 40, h, '#2a1a33');
     const title = pk.mode === 'journey' ? `LEVEL ${pk.level} · ${chefFor(pk.level).name}` : pk.mode === 'special' ? 'DAILY SPECIAL' : pk.mode === 'zen' ? 'ZEN' : pk.mode === 'time' ? 'TIME ATTACK' : 'FRIEND CHALLENGE';
     this.fitText(title, cx, y + 26, WORLD_W - 80, 18, '#ffffff', 'center', 700);
-    this.text('Pick boosters for this run · the rest stay in your bag', cx, y + 50, 11.5, 'rgba(255,255,255,0.75)', 600);
+    this.fitText(t('pickBoosters'), cx, y + 50, WORLD_W - 60, 11.5, 'rgba(255,255,255,0.75)');
     owned.forEach((b, i) => {
       const bx = 36 + (i % 3) * 112;
       const by = y + 70 + Math.floor(i / 3) * 96;
@@ -4955,9 +5177,9 @@ export class Game {
     });
     const by = y + h - 64;
     const all = pk.picked.size === owned.length;
-    this.button(36, by, 96, 44, 'BACK', () => { this.picker = null; }, 'quiet');
+    this.button(36, by, 96, 44, t('back'), () => { this.picker = null; }, 'quiet');
     this.button(140, by, 96, 44, all ? 'NONE' : 'ALL', () => { pk.picked = new Set(all ? [] : owned.map((b) => b.id)); }, 'quiet');
-    this.button(244, by, 120, 44, pk.picked.size ? `START (${pk.picked.size})` : 'START', () => {
+    this.button(244, by, 120, 44, pk.picked.size ? `${t('start')} (${pk.picked.size})` : t('start'), () => {
       this.progress.lastBoosters = [...pk.picked];
       this.progress.persist();
       this.picker = null;

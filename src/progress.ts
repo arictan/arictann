@@ -114,6 +114,8 @@ export class Progress {
   achClaimed: Partial<Record<StatId, number>> = save.json('achClaimed', {}); // tiers paid out
   gallery = save.json('gallery', { pic: 0, tiles: [] as number[], perfects: 0, done: [] as number[] });
   lastDay = save.json('lastDay', '');
+  duels: { code: string; level: number; theirs: number; mine: number; at: number }[] = save.json('duels', []);
+  installId: string = save.json('installId', '');
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -178,12 +180,23 @@ export class Progress {
     save.setJson('achClaimed', this.achClaimed);
     save.setJson('gallery', this.gallery);
     save.setJson('lastDay', this.lastDay);
+    save.setJson('duels', this.duels);
+    save.setJson('installId', this.installId);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */
   stat(id: StatId, amount = 1, best = false): void {
     const v = this.stats[id] ?? 0;
     this.stats[id] = best ? Math.max(v, amount) : v + amount;
+  }
+
+  /** This player's invite code, made once per install. */
+  get inviteCode(): string {
+    if (!this.installId) {
+      this.installId = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+      this.persist();
+    }
+    return `INV-${this.installId}`;
   }
 
   /** Counts one more day played (for the Loyal Chef achievement). */

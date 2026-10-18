@@ -49,3 +49,30 @@ export async function shareCard(card: HTMLCanvasElement, code: string, score: nu
   } catch { /* cancelled or blocked */ }
   return false;
 }
+
+/** Shares a highlight clip; on the web without a share sheet it downloads the file instead. */
+export async function shareClip(file: File, score: number): Promise<void> {
+  const text = `My Sushi Stack run: ${score} layers!`;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      const saved = await Filesystem.writeFile({ path: file.name, data: btoa(bin), directory: Directory.Cache });
+      await Share.share({ title: 'Sushi Stack', text, files: [saved.uri], dialogTitle: 'Share your clip' });
+    } catch { /* cancelled */ }
+    return;
+  }
+  try {
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], text, title: 'Sushi Stack' });
+      return;
+    }
+  } catch { return; /* cancelled */ }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}

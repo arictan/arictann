@@ -6,11 +6,19 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 
 const native = Capacitor.isNativePlatform();
 
+let hapticsOn = true;
+
+/** Haptics can be switched off in Settings. */
+export function setHaptics(on: boolean): void {
+  hapticsOn = on;
+}
+
 export const haptic = {
-  light: () => { if (native) void Haptics.impact({ style: ImpactStyle.Light }); },
-  medium: () => { if (native) void Haptics.impact({ style: ImpactStyle.Medium }); },
-  success: () => { if (native) void Haptics.notification({ type: NotificationType.Success }); },
+  light: () => { if (native && hapticsOn) void Haptics.impact({ style: ImpactStyle.Light }); },
+  medium: () => { if (native && hapticsOn) void Haptics.impact({ style: ImpactStyle.Medium }); },
+  success: () => { if (native && hapticsOn) void Haptics.notification({ type: NotificationType.Success }); },
   error: () => {
+    if (!hapticsOn) return;
     if (native) void Haptics.notification({ type: NotificationType.Error });
     else navigator.vibrate?.(80);
   },
