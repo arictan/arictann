@@ -1,3 +1,4 @@
+import { FONT } from './font';
 import { Capacitor } from '@capacitor/core';
 import { sfx, unlockAudio, setMuted } from './audio';
 import { askForReminders, haptic, save, scheduleReminder } from './platform';
@@ -32,9 +33,26 @@ const COLORS: Record<Ingredient, string> = {
   avocado: '#9bc53d',
   cucumber: '#3f8f4a',
   egg: '#ffcf3f',
+  ebi: '#ff9e7a',
+  unagi: '#7a3f1d',
+  tofu: '#f3e7cc',
+  ikura: '#ff5a1f',
 };
 
-interface Recipe { name: string; pattern: Ingredient[] }
+/**
+ * Ingredients unlocked further along the journey, each with its own twist:
+ * Ebi arrives a little narrower but a PERFECT on it counts double for the combo;
+ * Unagi is slippery and slides on a little after you tap; Tofu wobbles as it moves;
+ * Ikura pops into bonus coins on a PERFECT.
+ */
+const NEW_INGREDIENTS: { kind: Ingredient; level: number; name: string; tip: string }[] = [
+  { kind: 'ebi', level: 8, name: 'Ebi (shrimp)', tip: 'Arrives a bit narrower, but a PERFECT counts double for your combo!' },
+  { kind: 'unagi', level: 15, name: 'Unagi (eel)', tip: 'Slippery! It slides on a little after you tap. Drop it early.' },
+  { kind: 'tofu', level: 25, name: 'Tofu', tip: 'Wobbly! Its speed jiggles as it moves. Watch the rhythm.' },
+  { kind: 'ikura', level: 35, name: 'Ikura (salmon roe)', tip: 'A PERFECT pops it into bonus coins!' },
+];
+
+interface Recipe { name: string; pattern: Ingredient[]; level?: number }
 
 const RECIPES: Recipe[] = [
   { name: 'Salmon Maki', pattern: ['rice', 'nori', 'salmon'] },
@@ -42,7 +60,13 @@ const RECIPES: Recipe[] = [
   { name: 'Tuna Classic', pattern: ['rice', 'tuna', 'avocado'] },
   { name: 'Green Roll', pattern: ['rice', 'cucumber', 'avocado', 'nori'] },
   { name: 'Rainbow Roll', pattern: ['rice', 'salmon', 'tuna', 'egg', 'avocado', 'cucumber'] },
+  { name: 'Ebi Tempura Roll', pattern: ['rice', 'ebi', 'avocado', 'nori'], level: 8 },
+  { name: 'Unagi Dragon Roll', pattern: ['rice', 'unagi', 'avocado', 'cucumber'], level: 15 },
+  { name: 'Inari Tofu Stack', pattern: ['rice', 'tofu', 'egg'], level: 25 },
+  { name: 'Ikura Gunkan', pattern: ['rice', 'nori', 'ikura'], level: 35 },
+  { name: 'Deluxe Omakase', pattern: ['rice', 'ebi', 'unagi', 'tofu', 'ikura', 'salmon'], level: 45 },
 ];
+const BASIC_RECIPES = RECIPES.filter((r) => !r.level); // always available (puzzles, missions)
 
 type SpecialLayer = 'golden' | 'ice' | 'wasabi' | 'mystery';
 
@@ -61,6 +85,32 @@ const FEVER_TIME = 5; // seconds of Fever after every 10 PERFECTs in a row
 const TIME_ATTACK = 60; // seconds
 const HEIGHT_MILESTONES = [50, 100, 250, 500, 1000];
 const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
+
+/** Perks offered after each boss (pick 1 of 3); they last for the rest of the run and stack. */
+type PerkId = 'wide' | 'magnet' | 'coins' | 'steady' | 'shield' | 'regrow' | 'fever' | 'chance' | 'tips' | 'stickers';
+const PERKS: Record<PerkId, { icon: string; name: string; desc: string }> = {
+  wide: { icon: '🍙', name: 'Bigger Rolls', desc: 'Your roll grows 20 wider, and so does its maximum' },
+  magnet: { icon: '🧲', name: 'Sharp Eye', desc: 'PERFECT zone +2' },
+  coins: { icon: '💰', name: 'Big Tipper', desc: '+15% coins for the rest of the run' },
+  steady: { icon: '🐢', name: 'Calm Hands', desc: 'The next 5 layers move slowly' },
+  shield: { icon: '🛡️', name: 'Bodyguard', desc: 'Blocks the next 2 chef attacks' },
+  regrow: { icon: '🌱', name: 'Quick Regrowth', desc: 'PERFECT streaks regrow the roll faster' },
+  fever: { icon: '🔥', name: 'Hot Kitchen', desc: 'Fever starts 2 PERFECTs sooner' },
+  chance: { icon: '❤️', name: 'Lucky Charm', desc: 'One free Second Chance' },
+  tips: { icon: '🤝', name: 'Charming', desc: 'Chefs help you 50% more often' },
+  stickers: { icon: '🎴', name: 'Collector', desc: '+1 sticker pack per chef beaten' },
+};
+
+/** Features open up as the journey goes on, so new players aren't shown everything at once. */
+const UNLOCKS: { id: string; level: number; name: string; desc: string }[] = [
+  { id: 'shop', level: 2, name: 'Shop', desc: 'Spend coins on boosters, plates, flags, sushi sets and effects' },
+  { id: 'gift', level: 2, name: 'Daily Gift & Missions', desc: 'Come back every day, and finish missions to raise your Chef Rank' },
+  { id: 'modes', level: 3, name: 'Game Modes', desc: 'Zen, Time Attack, 40 puzzles, the Daily Special and friend challenges' },
+  { id: 'map', level: 3, name: 'Chef Journey Map', desc: 'See every chef and replay them for 3 stars' },
+  { id: 'events', level: 4, name: 'Events', desc: 'World Tour, holidays, the daily race, the weekend cup and your crew' },
+  { id: 'restaurant', level: 5, name: 'Restaurant', desc: 'Spend stars to renovate your own sushi restaurant' },
+  { id: 'more', level: 6, name: 'Pass, Companions & Album', desc: 'The Sushi Pass, sous-chef companions, stickers and more' },
+];
 
 /** Puzzle p (0-based): fixed layer count, width and speed, with a slice budget. */
 export function puzzleConfig(p: number) {
@@ -88,6 +138,7 @@ interface Projectile { kind: 'knife' | 'patty'; x: number; y: number; vx: number
 interface Splat { x: number; y: number; r: number; life: number; seed: number } // screen units
 
 const ATTACK_INFO: Record<Attack, { label: string; line: string; windup: number }> = {
+  flurry: { label: 'KNIFE FLURRY!', line: 'RAAAGH!', windup: 1.1 },
   knife: { label: 'KNIFE THROW!', line: 'Catch this!', windup: 1.0 },
   slam: { label: 'TABLE SLAM!', line: 'Hmph!', windup: 0.9 },
   splat: { label: 'SOY SPLASH!', line: 'Oops, soy sauce!', windup: 0.7 },
@@ -182,7 +233,7 @@ export class Game {
   private banner: { title: string; sub: string; life: number } | null = null; // "LEVEL 3" when a new boss arrives
 
   // Long-term progress: journey, missions, collections, records.
-  private progress = new Progress(RECIPES.map((r) => r.name));
+  private progress = new Progress(BASIC_RECIPES.map((r) => r.name));
   private startLevel = 1; // the chef this run started on
   private specialWon = false;
   private gated = 0; // stars needed at the gate that ended this run (0 = none)
@@ -227,6 +278,17 @@ export class Game {
   private pageScroll = 0; // scroll position for the other scrolling screens
   private codeInput: HTMLInputElement | null = null;
   private screenBack: Mode = 'title'; // where BACK goes from the newer screens
+
+  // Depth update: perks, rage, coaching, booster picker.
+  private perks: Partial<Record<PerkId, number>> = {};
+  private perkChoice: PerkId[] | null = null; // three perks waiting for the player to pick one
+  private shieldHits = 0;
+  private rage = 0; // boss rage phase this order: 0 none, 1 rage, 2 final fury
+  private flurryLeft = 0;
+  private flurryT = 0;
+  private tip: { title: string; text: string; t: number } | null = null; // coaching card
+  private picker: { level: number; mode: RunMode; opts: { puzzle?: number; challenge?: Challenge }; picked: Set<BoosterId> } | null = null;
+  private picked: Set<BoosterId> | null = null; // boosters chosen for the current run
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
@@ -302,10 +364,10 @@ export class Game {
     this.offX = (w / this.scale - WORLD_W) / 2;
     const cs = getComputedStyle(this.safeProbe);
     this.insets = {
-      top: parseFloat(cs.paddingTop) / this.scale,
-      right: parseFloat(cs.paddingRight) / this.scale,
-      bottom: parseFloat(cs.paddingBottom) / this.scale,
-      left: parseFloat(cs.paddingLeft) / this.scale,
+      top: (parseFloat(cs.paddingTop) || 0) / this.scale,
+      right: (parseFloat(cs.paddingRight) || 0) / this.scale,
+      bottom: (parseFloat(cs.paddingBottom) || 0) / this.scale,
+      left: (parseFloat(cs.paddingLeft) || 0) / this.scale,
     };
   }
 
@@ -439,11 +501,19 @@ export class Game {
    * Starts a run. Journey runs start at a chef level (by default the furthest one open); other modes
    * pick their own setup. Every run is seeded so a challenge code can replay it.
    */
-  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge } = {}): void {
+  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge; picked?: Set<BoosterId> } = {}): void {
     if (mode === 'journey' && !this.progress.canEnter(level)) {
       this.showToast(`Star gate: ${starsNeeded(level)}★ needed to enter level ${level} (you have ${this.progress.totalStars}★)`);
       return;
     }
+    // Choose boosters before the run (they're only used up if picked). Puzzles never use boosters.
+    const owned = BOOSTERS.filter((b) => (this.boosters[b.id] ?? 0) > 0);
+    if (!opts.picked && mode !== 'puzzle' && owned.length) {
+      const last = new Set(this.progress.lastBoosters.filter((id) => owned.some((b) => b.id === id)) as BoosterId[]);
+      this.picker = { level, mode, opts, picked: last };
+      return;
+    }
+    this.picked = opts.picked ?? new Set();
     this.runMode = mode;
     this.challenge = opts.challenge ?? null;
     this.puzzle = opts.puzzle ?? 0;
@@ -464,7 +534,7 @@ export class Game {
     // Boosters bought in the shop are used up here (Second Chance only when it saves you).
     // Puzzles are fixed challenges, so boosters stay in the bag.
     const use = (id: BoosterId) => {
-      if (mode === 'puzzle' || !this.boosters[id]) return false;
+      if (mode === 'puzzle' || !this.boosters[id] || !this.picked!.has(id)) return false;
       this.boosters[id]--;
       return true;
     };
@@ -480,6 +550,10 @@ export class Game {
     const streak = use('streak');
     this.chanceUsed = false;
     save.setBoosters(this.boosters);
+    this.perks = {};
+    this.perkChoice = null;
+    this.shieldHits = 0;
+    this.flurryLeft = 0;
 
     // Companions.
     const lv = (id: string) => (this.progress.companions.includes(id) ? companionLevel(this.progress.shards[id] ?? 0) : 0);
@@ -509,10 +583,12 @@ export class Game {
     if (ws >= 5) this.steady = Math.max(this.steady, 3);
     this.announceChef();
 
-    const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > levelW && 'wide base', this.boosters.chance && mode !== 'puzzle' && mode !== 'zen' && 'second chance',
+    const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > levelW && 'wide base', this.picked.has('chance') && mode !== 'zen' && 'second chance',
       this.magnet && 'magnet', this.shield && 'shield', this.lucky && 'lucky', this.shortOrders && 'short orders', streak && 'hot streak'].filter(Boolean);
     if (active.length) this.popup(WORLD_W / 2, this.top.y - 76, `Boosters: ${active.join(' · ')}`, '#9fe3ff', 13, 2.2);
     if (ws >= 3) this.popup(WORLD_W / 2, this.top.y - 96, `🔥 Win streak ${ws}: ${ws >= 8 ? 'hot start, steady hands, free Second Chance' : ws >= 5 ? 'hot start + steady hands' : 'hot start'}`, '#ffb703', 13, 2.4);
+    if (this.progress.tutorial === 0) this.coach('TAP TO DROP', 'Tap anywhere when the layer is over the stack', 8);
+    else if (this.progress.tutorial === 1) this.coach('AIM FOR PERFECT', 'Line it up exactly for a PERFECT and keep the full width', 6);
   }
 
   private changeTheme(apply: () => void): void {
@@ -589,9 +665,10 @@ export class Game {
   private newOrder(): void {
     const n = this.level - 1;
     this.orderStats = { drops: 0, perfects: 0, slices: 0 };
+    this.rage = 0;
     if (this.runMode === 'puzzle') {
       const cfg = puzzleConfig(this.puzzle);
-      this.order = { recipe: RECIPES[this.puzzle % RECIPES.length], length: cfg.layers, start: this.height, reward: 0 };
+      this.order = { recipe: BASIC_RECIPES[this.puzzle % BASIC_RECIPES.length], length: cfg.layers, start: this.height, reward: 0 };
       return;
     }
     if (this.special) {
@@ -600,7 +677,10 @@ export class Game {
       return;
     }
     // Early levels use the simple recipes; the full menu opens up further along the journey.
-    const recipe = RECIPES[Math.floor(this.rand() * Math.min(RECIPES.length, 2 + n))];
+    // Recipes with newer ingredients join the menu at their level; the newest one is a bit more likely.
+    const pool = RECIPES.filter((r) => (r.level ?? 0) <= this.level);
+    const fresh = pool.filter((r) => r.level && r.level > this.level - 5);
+    const recipe = fresh.length && this.rand() < 0.4 ? fresh[0] : pool[Math.floor(this.rand() * Math.min(pool.length, 2 + n))];
     // Orders grow to 12 layers early on, then keep growing slowly in endless mode (up to 20).
     const endless = Math.min(8, Math.max(0, Math.floor((this.level - STORY_LEVELS) / 10)));
     const length = Math.min(5 + Math.floor(n / 2), 12) + endless + this.chef.extra - (this.shortOrders ? 2 : 0);
@@ -624,6 +704,9 @@ export class Game {
       if (c.wobble) v *= 1 + 0.35 * Math.sin(this.time * 2.2);
     }
     if (this.moving?.special === 'ice') v *= 1.6;
+    if (this.moving?.kind === 'tofu') v *= 1 + 0.3 * Math.sin(this.time * 14);
+    if (this.rage) v *= 1 + 0.12 * this.rage;
+    if (this.progress.tutorial < 2 && this.height < 4) v *= 0.6; // first run: gentle start
     if (this.fever > 0) v *= 0.5;
     if (this.steady > 0) v *= 0.55;
     if (this.easy && this.height < 10) v *= 0.8;
@@ -634,7 +717,16 @@ export class Game {
     const top = this.top;
     // Alternate the side each layer slides in from.
     const x = this.moveDir > 0 ? -top.w * 0.5 : WORLD_W - top.w * 0.5;
-    this.moving = { x, y: top.y - LAYER_H, w: top.w, kind: this.nextIngredient(), origin: x };
+    const kind = this.nextIngredient();
+    // Ebi arrives a little narrower than the stack.
+    const w = kind === 'ebi' ? Math.max(20, top.w * 0.85) : top.w;
+    this.moving = { x, y: top.y - LAYER_H, w, kind, origin: x };
+    const intro = NEW_INGREDIENTS.find((n) => n.kind === kind);
+    if (intro && !this.progress.seen.includes(kind)) {
+      this.progress.seen.push(kind);
+      this.progress.persist();
+      this.coach(`NEW: ${intro.name}`, intro.tip, 4);
+    }
     // About one layer in eight is special (never in puzzles, never in the first few layers).
     if (this.runMode !== 'puzzle' && this.height >= 3 && this.rand() < 0.12) {
       const r = this.rand();
@@ -682,6 +774,8 @@ export class Game {
     for (let i = this.buttons.length - 1; i >= 0; i--) {
       const b = this.buttons[i];
       if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+        this.pressed = { x: b.x, y: b.y, t: this.time };
+        sfx.tap();
         b.onTap();
         return;
       }
@@ -708,18 +802,28 @@ export class Game {
 
   private drop(): void {
     const m = this.moving;
-    if (!m) return;
+    if (!m || this.perkChoice) return;
+    if (m.kind === 'unagi') {
+      // Slippery: the eel slides on a little after the tap.
+      m.x += 10 * this.moveDir;
+      m.origin += 10 * this.moveDir;
+    }
     const top = this.top;
     const dx = m.x - top.x;
+    if (this.progress.tutorial === 0) {
+      this.progress.tutorial = 1;
+      this.coach('Line them up!', 'Drop each layer exactly on the one below for a PERFECT. PERFECTs build your combo.', 3.5);
+    }
 
-    const tol = (this.chef.tight && this.runMode !== 'puzzle' ? TIGHT_TOL : PERFECT_TOL) + (this.magnet ? 4 : 0) + (this.fever > 0 ? 8 : 0);
+    const tol = (this.chef.tight && this.runMode !== 'puzzle' ? TIGHT_TOL : PERFECT_TOL) + (this.magnet ? 4 : 0) + (this.fever > 0 ? 8 : 0) + (this.perks.magnet ?? 0) * 2;
     if (Math.abs(dx) <= tol) {
       m.origin -= dx;
       m.x = top.x;
-      this.combo++;
+      this.combo += m.kind === 'ebi' ? 2 : 1; // ebi counts double
       this.orderStats.perfects++;
+      if (this.progress.tutorial === 1) this.progress.tutorial = 2;
       if (this.combo >= 3 && m.w < this.baseW) {
-        const grow = Math.min(REGROW, this.baseW - m.w);
+        const grow = Math.min(REGROW + (this.perks.regrow ?? 0) * 4, this.baseW - m.w);
         m.x -= grow / 2;
         m.w += grow;
       }
@@ -730,7 +834,9 @@ export class Game {
         this.addCoins(this.combo / 5 * 3, cx, m.y - 44, 'Streak bonus!');
         this.slowmo = 0.45; // a beat of slow motion to savour the streak
       }
-      if (this.combo % 10 === 0 && this.fever <= 0 && this.runMode !== 'puzzle') this.startFever();
+      const feverEvery = Math.max(5, 10 - (this.perks.fever ?? 0) * 2);
+      if (this.combo % feverEvery === 0 && this.fever <= 0 && this.runMode !== 'puzzle') this.startFever();
+      if (m.kind === 'ikura') this.addCoins(3 + Math.floor(this.level / 5), cx, m.y - 88, 'Ikura pop!');
       if (m.special === 'golden') this.addCoins(5 + Math.min(this.level, 50), cx, m.y - 66, 'Golden x3!');
       if (m.special === 'mystery') {
         const b = BOOSTERS[Math.floor(this.rand() * BOOSTERS.length)];
@@ -761,7 +867,7 @@ export class Game {
           this.spawnMoving();
           return;
         }
-        if ((this.boosters.chance || this.freeChance) && !this.chanceUsed && this.runMode !== 'puzzle') {
+        if (((this.boosters.chance && this.picked?.has('chance')) || this.freeChance) && !this.chanceUsed && this.runMode !== 'puzzle') {
           // Second Chance: lose the layer, keep the roll. A win-streak chance is free.
           if (this.freeChance) this.freeChance = false;
           else this.boosters.chance--;
@@ -795,6 +901,10 @@ export class Game {
       }
       m.special = undefined;
       this.orderStats.slices++;
+      if (this.progress.tutorial === 2 || (this.progress.tutorial === 1 && this.height >= 3)) {
+        this.progress.tutorial = 3;
+        this.coach('Sliced!', 'The part hanging over the edge gets cut off. Stay centred to keep your roll wide.', 3.5);
+      }
       if (this.runMode === 'puzzle' && this.orderStats.slices > puzzleConfig(this.puzzle).maxSlices) {
         this.fall({ ...m }, dx > 0 ? 1 : -1);
         this.moving = null;
@@ -1100,14 +1210,22 @@ export class Game {
    * and the player's own play tips the odds: perfect streaks earn help, sloppy drops invite attacks.
    */
   private maybeChefEvent(): void {
-    if (this.mode !== 'playing' || this.calmChefs || this.event || this.introIn > 0 || this.height < 3 || this.sinceEvent < 3) return;
+    if (this.mode !== 'playing' || this.calmChefs || this.event || this.introIn > 0 || this.height < 3 || this.sinceEvent < (this.rage ? 2 : 3)) return;
+    if (this.progress.tutorial < 4) return; // no attacks until the first order is served
     const c = this.chef;
     const sloppy = this.combo === 0;
-    const bad = this.shield ? 0 : c.mean + (sloppy ? 0.08 : 0);
-    const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06) * (this.lucky ? 2 : 1);
+    const bad = this.shield ? 0 : (c.mean + (sloppy ? 0.08 : 0)) * (1 + this.rage * 0.6);
+    const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06) * (this.lucky ? 2 : 1) * (1 + (this.perks.tips ?? 0) * 0.5);
     const r = this.rand();
     if (r < bad) {
-      const kind = c.attacks[Math.floor(this.rand() * c.attacks.length)];
+      // Raging bosses add a flurry of knives to their moves.
+      const kind: Attack = this.rage && this.rand() < 0.4 ? 'flurry' : c.attacks[Math.floor(this.rand() * c.attacks.length)];
+      if (this.shieldHits > 0) {
+        this.shieldHits--;
+        this.popup(WORLD_W / 2, this.top.y - 60, '🛡️ Bodyguard blocked an attack!', '#9fe3ff', 15, 1.6);
+        this.sinceEvent = 0;
+        return;
+      }
       this.startEvent(kind, true, ATTACK_INFO[kind].windup, ATTACK_INFO[kind].line);
     } else if (r < bad + good) {
       const helps: Help[] = ['slow', 'tip'];
@@ -1159,6 +1277,10 @@ export class Game {
     const handY = this.bossY() - 20 * s + this.camY; // world units
     const top = this.top;
     switch (kind) {
+      case 'flurry':
+        this.flurryLeft = 3;
+        this.flurryT = 0;
+        break;
       case 'knife': {
         const m = this.moving;
         if (!m) return;
@@ -1335,6 +1457,11 @@ export class Game {
       this.showToast(`Recipe mastered: ${recipe}! +50 coins`);
     }
     this.openChest(beatLevel);
+    if (this.perks.stickers) this.openPacks(this.perks.stickers);
+    if (this.progress.tutorial < 4) {
+      this.progress.tutorial = 4;
+      this.coach('Order served!', 'Every order beats a chef and opens the next level. Watch out: from now on chefs fight back!', 4);
+    }
     this.earnTokens(this.special ? 3 : 1);
     this.addXp(15 + (flawless ? 10 : 0) + (this.special ? 50 : 0));
     this.crewOrder();
@@ -1361,6 +1488,67 @@ export class Game {
     this.newOrder();
     // The next boss steps in after the beaten one has had a moment to react.
     this.introIn = 1.2;
+    // Pick a perk for the rest of the run (journey and challenges).
+    if (this.runMode === 'journey' || this.runMode === 'challenge') {
+      const ids = Object.keys(PERKS) as PerkId[];
+      const choice: PerkId[] = [];
+      while (choice.length < 3) {
+        const id = ids[Math.floor(this.rand() * ids.length)];
+        if (!choice.includes(id)) choice.push(id);
+      }
+      this.perkChoice = choice;
+    }
+  }
+
+  /** Boss levels (every 10th) rage at half the order; endless Legends hit a final fury near the end. */
+  private updateRage(real: number): void {
+    if (this.flurryLeft > 0 && (this.flurryT -= real) <= 0) {
+      this.flurryLeft--;
+      this.flurryT = 0.4;
+      this.runEvent('knife');
+    }
+    if (this.runMode === 'puzzle' || this.calmChefs || this.level % 10 !== 0) return;
+    const done = (this.height - this.order.start) / this.order.length;
+    const phase = done >= 0.85 && this.level > STORY_LEVELS ? 2 : done >= 0.5 ? 1 : 0;
+    if (phase > this.rage) {
+      this.rage = phase;
+      this.banner = { title: phase === 2 ? 'FINAL FURY!' : 'RAGE MODE!', sub: phase === 2 ? 'Everything faster. Hold on!' : 'Faster layers, more attacks, knife flurries', life: 2.2 };
+      this.bubble = { text: phase === 2 ? 'ENOUGH!!!' : 'Now I’m angry!', life: 1.8 };
+      this.shake = 14;
+      sfx.die();
+      haptic.error();
+    }
+  }
+
+  private choosePerk(id: PerkId): void {
+    this.perks[id] = (this.perks[id] ?? 0) + 1;
+    this.perkChoice = null;
+    const t = this.top;
+    switch (id) {
+      case 'wide': {
+        this.baseW += 20;
+        const grow = Math.min(20, this.baseW - t.w);
+        t.x -= grow / 2;
+        t.w += grow;
+        if (this.moving) {
+          const mc = this.moving.x + this.moving.w / 2;
+          this.moving.w = t.w;
+          this.moving.x = mc - t.w / 2;
+        }
+        break;
+      }
+      case 'steady': this.steady += 5; break;
+      case 'shield': this.shieldHits += 2; break;
+      case 'chance': this.freeChance = true; break;
+      case 'coins': this.foxBonus += 0.15; break;
+    }
+    this.popup(WORLD_W / 2, t.y - 70, `${PERKS[id].icon} ${PERKS[id].name}!`, '#ffd34d', 18, 1.5);
+    sfx.serve();
+  }
+
+  /** Coaching card at the bottom of the screen (first run, new ingredients, new features). */
+  private coach(title: string, text: string, t = 3.5): void {
+    this.tip = { title, text, t };
   }
 
   private fall(layer: Layer, side: number): void {
@@ -1399,6 +1587,8 @@ export class Game {
       this.best = this.height;
       this.newBest = true;
       save.setBest(this.best);
+      // Remember the shape of the record stack for the ghost.
+      p.bestShape = this.stack.slice(0, 400).map((l) => [Math.round(l.x), Math.round(l.w)]);
     }
     if (counts && !this.revived) {
       for (const reward of p.endRun(this.height)) {
@@ -1490,7 +1680,7 @@ export class Game {
       dt *= 0.35;
     }
     if (this.mode === 'playing') {
-      if (this.fever > 0) this.fever -= real;
+      if (this.fever > 0 && !this.perkChoice) this.fever -= real;
       if (this.runMode === 'time' && (this.timeLeft -= real) <= 0) {
         this.timeLeft = 0;
         this.timeUp();
@@ -1514,7 +1704,9 @@ export class Game {
       this.toast = next ? { text: next, life: this.toastQueue.length ? 1.4 : 2 } : null;
     }
 
-    if (m && this.mode !== 'dead') {
+    if (this.tip && (this.tip.t -= real) <= 0) this.tip = null;
+    if (this.mode === 'playing' && !this.perkChoice) this.updateRage(real);
+    if (m && this.mode !== 'dead' && !this.perkChoice && !this.picker) {
       const step = this.speed() * dt * this.moveDir;
       m.x += step;
       m.origin += step;
@@ -1619,10 +1811,12 @@ export class Game {
     // Only draw the layers that are on screen; tall stacks can have hundreds.
     const minY = this.camY - LAYER_H;
     const maxY = this.camY + this.viewH;
+    this.drawGhost(minY, maxY);
     for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
     for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) drawFlag(ctx, this.equip.flag, f.x, f.y, f.hue);
     if (this.mode !== 'title') {
-      this.drawMarker(this.progress.lastRun, 'LAST', 'rgba(255,255,255,0.35)', minY, maxY);
+      // LAST only when it differs from BEST, so the two lines never sit on top of each other.
+      if (this.progress.lastRun !== this.best) this.drawMarker(this.progress.lastRun, 'LAST', 'rgba(255,255,255,0.35)', minY, maxY);
       this.drawMarker(this.best, 'BEST', '#ffd34d', minY, maxY);
       if (this.challenge) this.drawMarker(this.challenge.score, 'FRIEND', '#ff8fb8', minY, maxY);
     }
@@ -1683,10 +1877,12 @@ export class Game {
       }
     }
     ctx.globalAlpha = 1;
+    this.qaSkip = true;
     for (const pp of this.popups) {
       ctx.globalAlpha = Math.min(1, pp.life * 2);
       this.text(pp.text, pp.x, pp.y, pp.size, pp.color);
     }
+    this.qaSkip = false;
     ctx.globalAlpha = 1;
     ctx.restore();
 
@@ -1801,6 +1997,42 @@ export class Game {
         ctx.fillStyle = 'rgba(150,80,0,0.35)';
         ctx.fillRect(x, y, w, 3);
         break;
+      case 'ebi':
+        // Curved white bands of a shrimp.
+        ctx.strokeStyle = 'rgba(255,240,230,0.85)';
+        ctx.lineWidth = 3;
+        for (let i = start; i < end; i++) {
+          const gx = l.origin + i * 12;
+          ctx.beginPath();
+          ctx.arc(gx + 6, y + h + 4, 12, Math.PI * 1.2, Math.PI * 1.8);
+          ctx.stroke();
+        }
+        break;
+      case 'unagi':
+        // Glossy grilled eel with sauce marks.
+        ctx.fillStyle = 'rgba(40,15,5,0.45)';
+        for (let i = start; i < end; i++) ctx.fillRect(l.origin + i * 12 + 2, y + 4, 7, h - 8);
+        ctx.fillStyle = 'rgba(255,200,120,0.35)';
+        ctx.fillRect(x, y + 3, w, 3);
+        break;
+      case 'tofu':
+        ctx.strokeStyle = 'rgba(180,150,100,0.35)';
+        ctx.lineWidth = 1;
+        for (let i = start; i < end; i++) ctx.strokeRect(l.origin + i * 12 + 1, y + 4, 10, h - 8);
+        break;
+      case 'ikura':
+        for (let i = start; i < end; i++) {
+          for (let row = 0; row < 2; row++) {
+            const gx = l.origin + i * 12 + (row ? 6 : 0) + 3;
+            ctx.fillStyle = '#ff7b3a';
+            ctx.beginPath();
+            ctx.arc(gx, y + 7 + row * 10, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.fillRect(gx - 2, y + 4 + row * 10, 2, 2);
+          }
+        }
+        break;
     }
     // Special layers get a distinct finish.
     switch (l.special) {
@@ -1840,7 +2072,7 @@ export class Game {
         ctx.fillStyle = 'rgba(123,44,191,0.65)';
         ctx.fillRect(x, y, w, h);
         ctx.fillStyle = '#e0aaff';
-        ctx.font = '900 14px system-ui, sans-serif';
+        ctx.font = `900 14px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         for (let i = start; i < end; i += 3) ctx.fillText('?', l.origin + i * 12 + 6, y + h / 2 + 1);
@@ -1856,17 +2088,67 @@ export class Game {
 
   private text(str: string, x: number, y: number, size: number, color = '#fff', weight = 800, align: CanvasTextAlign = 'center'): void {
     const { ctx } = this;
-    ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `${Math.min(weight, 700)} ${size}px ${FONT}`;
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = color;
     ctx.fillText(str, x, y);
+    if (this.qaTexts && !this.qaSkip) this.qaRecord(str, x, y, size, align);
+  }
+
+  // ------------------------------------------------------- layout checker
+  // In dev builds, window.__qa() lists text that runs off screen or overlaps other text, so every
+  // screen can be checked automatically at any phone size.
+
+  private qaTexts: { str: string; x0: number; y0: number; x1: number; y1: number }[] | null = null;
+  private qaClip: [number, number] | null = null; // vertical clip of the scrolling list being drawn
+  private qaSkip = false; // floating score popups move and fade, so they aren't checked
+
+  /** A full-screen overlay hides everything drawn before it. */
+  private qaCover(): void {
+    if (this.qaTexts) this.qaTexts.length = 0;
+  }
+
+  private qaRecord(str: string, x: number, y: number, size: number, align: CanvasTextAlign): void {
+    const { ctx } = this;
+    const w = ctx.measureText(str).width;
+    const left = align === 'left' ? x : align === 'right' ? x - w : x - w / 2;
+    // Convert to screen pixels through the current transform, then back to world units.
+    const m = ctx.getTransform();
+    const k = this.scale * this.dpr;
+    const p0 = new DOMPoint(left, y - size * 0.5).matrixTransform(m);
+    const p1 = new DOMPoint(left + w, y + size * 0.5).matrixTransform(m);
+    const r = { str, x0: p0.x / k - this.offX, y0: p0.y / k, x1: p1.x / k - this.offX, y1: p1.y / k };
+    const cy = (r.y0 + r.y1) / 2;
+    if (this.qaClip && (cy < this.qaClip[0] || cy > this.qaClip[1])) return; // hidden by the list's clip
+    this.qaTexts!.push(r);
+  }
+
+  /** Renders one frame while recording text, then reports problems. */
+  qa(): { offscreen: string[]; overlaps: string[] } {
+    this.qaTexts = [];
+    this.render();
+    const t = this.qaTexts;
+    this.qaTexts = null;
+    const visible = t.filter((r) => r.y1 > 0 && r.y0 < this.viewH && r.str.trim());
+    const offscreen = visible.filter((r) => r.x0 < -this.offX - 1 || r.x1 > WORLD_W + this.offX + 1).map((r) => `${r.str} [${Math.round(r.x0)}..${Math.round(r.x1)}]`);
+    const overlaps: string[] = [];
+    for (let i = 0; i < visible.length; i++) {
+      for (let j = i + 1; j < visible.length; j++) {
+        const a = visible[i];
+        const b = visible[j];
+        const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+        const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        if (ox > 2 && oy > Math.min(a.y1 - a.y0, b.y1 - b.y0) * 0.35) overlaps.push(`"${a.str}" × "${b.str}"`);
+      }
+    }
+    return { offscreen, overlaps };
   }
 
   private holding(): Holding {
     const e = this.event;
     if (!e) return null;
-    return e.kind === 'knife' ? 'knife' : e.kind === 'slam' ? 'fist' : e.kind === 'patch' ? 'patty' : null;
+    return e.kind === 'knife' || e.kind === 'flurry' ? 'knife' : e.kind === 'slam' ? 'fist' : e.kind === 'patch' ? 'patty' : null;
   }
 
   private drawBossBody(x: number, y: number, s: number): void {
@@ -1885,7 +2167,7 @@ export class Game {
     if (this.banner && this.mode === 'playing') {
       // New boss: level banner under the order card, on the side away from the chef.
       // Sized to fit long endless-mode rules, and kept on screen.
-      ctx.font = '700 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.font = `700 12px ${FONT}`;
       const bw = Math.min(WORLD_W - 16, Math.max(210, ctx.measureText(this.banner.sub).width + 24));
       const bx = Math.max(8 + bw / 2, Math.min(WORLD_W - 8 - bw / 2, this.cardX() + 118));
       const byc = this.insets.top + 182;
@@ -1900,7 +2182,7 @@ export class Game {
     if (!e || this.mode !== 'playing') {
       // Name badge pinned on the uniform.
       const tag = c.name.toUpperCase();
-      ctx.font = '800 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.font = `800 11px ${FONT}`;
       const tw = ctx.measureText(tag).width + 16;
       const tx = Math.max(tw / 2 + 4, Math.min(WORLD_W - tw / 2 - 4, x));
       ctx.fillStyle = c.accent;
@@ -1917,7 +2199,7 @@ export class Game {
       const label = e.bad ? ATTACK_INFO[e.kind as Attack].label : HELP_INFO[e.kind as Help].label;
       const ly = chestY;
       const pulse = 1 + 0.08 * Math.sin(this.time * 20);
-      ctx.font = '900 16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.font = `900 16px ${FONT}`;
       const lw = ctx.measureText(label).width + 26;
       ctx.save();
       ctx.translate(Math.max(lw / 2 + 8, Math.min(WORLD_W - lw / 2 - 8, x)), ly);
@@ -1931,7 +2213,7 @@ export class Game {
 
     if (!this.bubble) return;
     // Speech bubble beside the chef's mouth, toward the middle of the screen; it stays above the stack.
-    ctx.font = '800 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    ctx.font = `800 13px ${FONT}`;
     const bw = ctx.measureText(this.bubble.text).width + 20;
     const right = x < WORLD_W / 2;
     const bx = Math.max(6, Math.min(WORLD_W - 6 - bw, right ? x + 28 * s : x - 28 * s - bw));
@@ -2112,7 +2394,7 @@ export class Game {
       ctx.globalAlpha = Math.min(1, (t - 0.15) * 5, (1.3 - t) * 5);
       ctx.lineWidth = 5;
       ctx.strokeStyle = 'rgba(40,15,20,0.8)';
-      ctx.font = '900 26px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.font = `900 26px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.strokeText('ORDER UP!', peak.x, peak.y - 50);
       this.text('ORDER UP!', peak.x, peak.y - 50, 26, '#ffd34d', 900);
@@ -2190,6 +2472,7 @@ export class Game {
   }
 
   private drawTopBar(): void {
+    this.qaClip = null;
     const { ctx } = this;
     const top = this.insets.top;
     const mb = this.muteButton();
@@ -2210,13 +2493,44 @@ export class Game {
 
   /** Draws a tappable button and registers its hit area for this frame. */
   private button(x: number, y: number, w: number, h: number, label: string, onTap: () => void, style: 'primary' | 'gold' | 'quiet' = 'primary'): void {
-    const { ctx } = this;
-    ctx.fillStyle = style === 'gold' ? '#ffd34d' : style === 'quiet' ? 'rgba(255,255,255,0.15)' : '#ff8a5b';
-    this.roundRect(x, y, w, h, h / 2);
-    ctx.fill();
-    this.text(label, x + w / 2, y + h / 2 + 1, 15, style === 'gold' ? '#4a2a00' : '#ffffff', 800);
+    this.drawButton(x, y, w, h, label, style, h >= 40 ? 15 : 12.5);
     this.buttons.push({ x, y, w, h, onTap });
   }
+
+  /** Rounded "candy" button: gradient face, darker base for depth, soft top shine, and a press dip. */
+  private drawButton(x: number, y: number, w: number, h: number, label: string, style: 'primary' | 'gold' | 'quiet', size: number): void {
+    const { ctx } = this;
+    const pressed = this.pressed && this.pressed.x === x && this.pressed.y === y && this.time - this.pressed.t < 0.15;
+    const dy = pressed ? 2 : 0;
+    const [top, bottom, base, ink] = style === 'gold' ? ['#ffe27a', '#ffc23d', '#c98a12', '#4a2a00'] : style === 'quiet' ? ['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.12)', 'rgba(0,0,0,0.25)', '#ffffff'] : ['#ffa07a', '#ff7a45', '#c4501f', '#ffffff'];
+    const r = Math.min(h / 2, 22);
+    if (!pressed) {
+      ctx.fillStyle = base;
+      this.roundRect(x, y + 3, w, h, r);
+      ctx.fill();
+    }
+    const g = ctx.createLinearGradient(0, y + dy, 0, y + dy + h);
+    g.addColorStop(0, top);
+    g.addColorStop(1, bottom);
+    ctx.fillStyle = g;
+    this.roundRect(x, y + dy, w, h, r);
+    ctx.fill();
+    if (style !== 'quiet') {
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      this.roundRect(x + 6, y + dy + 3, w - 12, h * 0.32, r * 0.6);
+      ctx.fill();
+    }
+    // Shrink the label to fit if it's long.
+    let s2 = size;
+    ctx.font = `700 ${s2}px ${FONT}`;
+    while (s2 > 9 && ctx.measureText(label).width > w - 14) {
+      s2 -= 0.5;
+      ctx.font = `700 ${s2}px ${FONT}`;
+    }
+    this.text(label, x + w / 2, y + dy + h / 2 + 1, s2, ink, 700);
+  }
+
+  private pressed: { x: number; y: number; t: number } | null = null;
 
   private openShop(): void {
     this.shopFrom = this.mode;
@@ -2233,12 +2547,13 @@ export class Game {
   private drawToast(): void {
     if (!this.toast) return;
     const { ctx } = this;
-    const y = this.viewH - this.insets.bottom - 110;
+    // Sits above the coaching card when one is showing.
+    const y = this.viewH - this.insets.bottom - (this.tip && this.mode === 'playing' ? 180 : 110);
     ctx.globalAlpha = Math.min(1, this.toast.life * 3);
     ctx.fillStyle = 'rgba(20,10,20,0.88)';
     this.roundRect(40, y, WORLD_W - 80, 40, 20);
     ctx.fill();
-    this.text(this.toast.text, WORLD_W / 2, y + 21, 14, '#fff', 700);
+    this.fitText(this.toast.text, WORLD_W / 2, y + 21, WORLD_W - 104, 14, '#fff', 'center', 700);
     ctx.globalAlpha = 1;
   }
 
@@ -2329,7 +2644,7 @@ export class Game {
       return;
     }
 
-    this.text(String(this.height), cx, top + 64, 50, '#fff', 900);
+    this.text(String(this.height), cx, top + 62, this.fever > 0 && this.mode === 'playing' ? 42 : 50, '#fff', 900);
     if (this.mode === 'playing' && this.fever > 0) {
       // Fever: golden glow around the screen edges.
       const g = ctx.createRadialGradient(cx, midY, this.viewH * 0.3, cx, midY, this.viewH * 0.75);
@@ -2337,7 +2652,23 @@ export class Game {
       g.addColorStop(1, `rgba(255,170,0,${0.25 + 0.1 * Math.sin(this.time * 10)})`);
       ctx.fillStyle = g;
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
-      this.text(`FEVER ${this.fever.toFixed(1)}s`, cx, top + 88, 14, '#ffd34d', 900);
+      this.text(`FEVER ${this.fever.toFixed(1)}s`, cx, top + 91, 13, '#ffd34d', 900);
+    }
+    if (this.mode === 'playing' && this.rage > 0) {
+      // Boss rage: pulsing red edges.
+      const g = ctx.createRadialGradient(cx, midY, this.viewH * 0.32, cx, midY, this.viewH * 0.78);
+      g.addColorStop(0, 'rgba(255,40,40,0)');
+      g.addColorStop(1, `rgba(220,20,20,${(this.rage === 2 ? 0.34 : 0.22) + 0.08 * Math.sin(this.time * 7)})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    }
+    if (this.mode === 'playing') {
+      // Perks picked this run, as a small icon row under the top bar.
+      const icons = (Object.keys(this.perks) as PerkId[]).map((id) => {
+        const n = id === 'shield' ? this.shieldHits : this.perks[id]!;
+        return id === 'shield' && !n ? '' : `${PERKS[id].icon}${n > 1 ? n : ''}`;
+      }).filter(Boolean);
+      if (icons.length) this.fitText(icons.join(' '), 16 + this.insets.left, top + 64, 110, 14, '#fff', 'left', 600);
     }
     if (this.mode === 'playing' && this.runMode === 'time') {
       this.text(`⏱ ${Math.ceil(this.timeLeft)}s`, WORLD_W - 70, top + 64, 22, this.timeLeft < 10 ? '#ff6b6b' : '#ffffff', 900);
@@ -2474,14 +2805,24 @@ export class Game {
     ctx.restore();
     this.buttons.push({ x: cx - 170, y: top + 182, w: 340, h: 56, onTap: () => this.startRun() });
 
-    // Gift (with Maki the cat) and modes.
+    this.announceUnlocks();
+    // Gift (with Maki the cat) and modes. Locked features show the level that opens them.
     const ready = this.giftReady();
-    this.button(30, top + 250, 165, 42, ready ? '   DAILY GIFT' : '   GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
-    this.text(ready ? '😺' : '😸', 52, top + 271 + (ready ? Math.sin(this.time * 6) * 3 : 0), 22, '#fff', 400);
-    this.button(205, top + 250, 165, 42, 'MODES', () => this.openScreen('modes'));
-    const specialDone = p.specialDay === dayKey();
-    this.button(30, top + 300, 340, 40, specialDone ? 'DAILY SPECIAL ✓ (practice)' : 'DAILY SPECIAL · +150 COINS', () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
-    this.drawMissions(top + 350);
+    if (this.lockedAt('gift')) this.lockedButton(30, top + 250, 165, 42, 'gift', 'GIFT');
+    else {
+      this.button(30, top + 250, 165, 42, ready ? '   DAILY GIFT' : '   GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.text(ready ? '😺' : '😸', 52, top + 271 + (ready ? Math.sin(this.time * 6) * 3 : 0), 22, '#fff', 400);
+    }
+    if (this.lockedAt('modes')) {
+      this.lockedButton(205, top + 250, 165, 42, 'modes', 'MODES');
+      this.lockedButton(30, top + 300, 340, 40, 'modes', 'DAILY SPECIAL');
+    } else {
+      this.button(205, top + 250, 165, 42, 'MODES', () => this.openScreen('modes'));
+      const specialDone = p.specialDay === dayKey();
+      this.button(30, top + 300, 340, 40, specialDone ? 'DAILY SPECIAL ✓ (practice)' : 'DAILY SPECIAL · +150 COINS', () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
+    }
+    if (this.lockedAt('gift')) this.drawHowTo(top + 350);
+    else this.drawMissions(top + 350);
 
     // Event ticker.
     const tour = currentTour();
@@ -2495,25 +2836,97 @@ export class Game {
     ctx.fillRect(-this.offX, navY, WORLD_W + this.offX * 2, 62 + this.insets.bottom);
     const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3);
     const moreBadge = this.passClaimable() > 0;
-    const nav: [string, string, () => void, boolean][] = [
-      ['🗺️', 'MAP', () => this.openMap(), false],
-      ['🎉', 'EVENTS', () => this.openScreen('events'), eventsBadge],
-      ['🛒', 'SHOP', () => this.openShop(), false],
-      ['🏯', 'RESTAURANT', () => this.openScreen('restaurant'), p.starPool >= areaCost(p.restaurant.r + p.restaurant.michelin, 1)],
-      ['☰', 'MORE', () => this.openScreen('more'), moreBadge],
+    const nav: [string, string, () => void, boolean, string][] = [
+      ['🗺️', 'MAP', () => this.openMap(), false, 'map'],
+      ['🎉', 'EVENTS', () => this.openScreen('events'), eventsBadge, 'events'],
+      ['🛒', 'SHOP', () => this.openShop(), false, 'shop'],
+      ['🏯', 'RESTAURANT', () => this.openScreen('restaurant'), p.starPool >= areaCost(p.restaurant.r + p.restaurant.michelin, 1), 'restaurant'],
+      ['☰', 'MORE', () => this.openScreen('more'), moreBadge, 'more'],
     ];
     const nw = WORLD_W / nav.length;
-    nav.forEach(([icon, label, go, badge], i) => {
+    nav.forEach(([icon, label, open, badge, id], i) => {
       const x = i * nw;
+      const lock = this.lockedAt(id);
+      let go = open;
+      if (lock) {
+        // Locked: dimmed icon with a padlock and the level that opens it.
+        ctx.globalAlpha = 0.35;
+        this.text(icon, x + nw / 2, navY + 22, 22, '#fff', 400);
+        ctx.globalAlpha = 1;
+        this.text('🔒', x + nw / 2 + 13, navY + 30, 12, '#fff', 400);
+        this.text(`LV ${lock}`, x + nw / 2, navY + 46, 9.5, 'rgba(255,255,255,0.55)', 700);
+        go = () => this.lockedToast(id);
+        this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go });
+        return;
+      }
       this.text(icon, x + nw / 2, navY + 22, 22, '#fff', 400);
-      this.text(label, x + nw / 2, navY + 46, 9.5, 'rgba(255,255,255,0.8)', 800);
-      if (badge) {
+      this.text(label, x + nw / 2, navY + 46, 9.5, 'rgba(255,255,255,0.8)', 700);
+      if (!p.seen.includes(`feature:${id}:visited`) && UNLOCKS.some((u) => u.id === id && p.unlocked <= u.level + 1)) {
+        // "NEW" tag until the player first visits a freshly opened feature.
+        go = () => { p.seen.push(`feature:${id}:visited`); p.persist(); open(); };
+        ctx.fillStyle = '#2a9d5c';
+        this.roundRect(x + nw / 2 + 2, navY + 2, 30, 14, 7);
+        ctx.fill();
+        this.text('NEW', x + nw / 2 + 17, navY + 9.5, 8.5, '#fff', 700);
+      } else if (badge) {
         ctx.fillStyle = '#ff3b3b';
         ctx.beginPath();
         ctx.arc(x + nw / 2 + 16, navY + 10, 5, 0, Math.PI * 2);
         ctx.fill();
       }
       this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go });
+    });
+  }
+
+  /** The level a home feature opens at, or 0 when it's already open. */
+  private lockedAt(id: string): number {
+    const u = UNLOCKS.find((x) => x.id === id);
+    return u && this.progress.unlocked < u.level ? u.level : 0;
+  }
+
+  private lockedToast(id: string): void {
+    const u = UNLOCKS.find((x) => x.id === id)!;
+    this.showToast(`🔒 ${u.name} opens at level ${u.level}`);
+    haptic.light();
+  }
+
+  private lockedButton(x: number, y: number, w: number, h: number, id: string, label: string): void {
+    const u = UNLOCKS.find((v) => v.id === id)!;
+    this.drawButton(x, y, w, h, `🔒 ${label} · LV ${u.level}`, 'quiet', 13);
+    this.buttons.push({ x, y, w, h, onTap: () => this.lockedToast(id) });
+  }
+
+  /** Celebrates each feature the first time it opens. Long-time players get them all quietly. */
+  private announceUnlocks(): void {
+    if (this.celebration) return;
+    const p = this.progress;
+    for (const u of UNLOCKS) {
+      const key = `feature:${u.id}`;
+      if (p.unlocked < u.level || p.seen.includes(key)) continue;
+      p.seen.push(key);
+      p.persist();
+      if (p.unlocked <= u.level + 1) {
+        this.celebrate(`🔓 ${u.name.toUpperCase()}`, u.desc, 3.2);
+        return;
+      }
+    }
+  }
+
+  /** First-session card in place of missions: the three things to know. */
+  private drawHowTo(y: number): void {
+    const { ctx } = this;
+    ctx.fillStyle = 'rgba(20,10,25,0.93)';
+    this.roundRect(24, y, WORLD_W - 48, 134, 16);
+    ctx.fill();
+    this.text('HOW TO PLAY', WORLD_W / 2, y + 20, 13, '#ffd34d', 700);
+    const lines: [string, string][] = [
+      ['👆', 'Tap to drop the sliding layer on the stack'],
+      ['✂️', 'Whatever hangs over the edge gets sliced off'],
+      ['👨‍🍳', 'Finish the chef’s order to beat them'],
+    ];
+    lines.forEach(([icon, t], i) => {
+      this.text(icon, 50, y + 50 + i * 28, 17, '#fff', 400);
+      this.text(t, 70, y + 50 + i * 28, 12.5, '#fff', 600, 'left');
     });
   }
 
@@ -2541,6 +2954,28 @@ export class Game {
     const w = p.weekly;
     const nextGoal = WEEKLY_GOALS.find((g) => w.best < g.height);
     this.text(nextGoal ? `Weekly challenge: best ${w.best} · reach ${nextGoal.height} for +${nextGoal.reward}` : `Weekly challenge complete! Best ${w.best}`, WORLD_W / 2, y + 126, 11, '#9fe3ff', 700);
+  }
+
+  /** Ghost of the best run: faint outlines of its layers around the current height. */
+  private drawGhost(minY: number, maxY: number): void {
+    const shape = this.progress.bestShape;
+    if (this.mode !== 'playing' || !shape.length || (this.runMode !== 'journey' && this.runMode !== 'time' && this.runMode !== 'challenge')) return;
+    const { ctx } = this;
+    const from = Math.max(1, this.height - 6);
+    const to = Math.min(shape.length - 1, this.height + 8);
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.5;
+    for (let i = from; i <= to; i++) {
+      const y = -LAYER_H * (i + 1);
+      if (y < minY || y > maxY) continue;
+      const [x, w] = shape[i];
+      ctx.strokeStyle = `rgba(200,230,255,${i > this.height ? 0.35 : 0.18})`;
+      this.roundRect(x, y, w, LAYER_H, 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+    if (to > this.height + 1) this.text('👻 your best run', shape[to][0] + shape[to][1] / 2, -LAYER_H * (to + 1) - 10, 10, 'rgba(200,230,255,0.6)', 600);
   }
 
   /** Dashed line across the stack at a past height, so players can see their record coming. */
@@ -2593,6 +3028,7 @@ export class Game {
     ctx.beginPath();
     ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
     ctx.clip();
+    this.qaClip = [areaTop, areaTop + areaH];
     const first = Math.max(0, Math.floor((this.mapScroll - 100) / MAP_ROW));
     const last = Math.min(count - 1, Math.ceil((this.mapScroll + areaH) / MAP_ROW));
     // The path between chefs: gold where it's been walked, dashed ahead.
@@ -2717,6 +3153,7 @@ export class Game {
     ctx.beginPath();
     ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
     ctx.clip();
+    this.qaClip = [areaTop, areaTop + areaH];
     let contentH = 0;
     const y0 = areaTop - this.albumScroll;
 
@@ -2791,7 +3228,7 @@ export class Game {
       this.text('SHOP COLLECTIONS · own every item in a tab (+200 coins)', 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
       y += 24;
       for (const t of TABS) {
-        if (t.cat === 'booster') continue;
+        if (t.cat === 'booster' || t.cat === 'deals') continue;
         const items = CATALOG[t.cat as Cosmetic].filter((i) => !i.earn);
         const have = items.filter((i) => this.owned[t.cat as Cosmetic].includes(i.id)).length;
         const done = have === items.length;
@@ -2888,7 +3325,7 @@ export class Game {
   /** Left-aligned wrapped text (max two lines). */
   private wrapLeft(str: string, x: number, y: number, maxW: number, size: number, color: string): void {
     const { ctx } = this;
-    ctx.font = `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `600 ${size}px ${FONT}`;
     const words = str.split(' ');
     let line = '';
     let lines = 0;
@@ -2948,6 +3385,7 @@ export class Game {
     ctx.beginPath();
     ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
     ctx.clip();
+    this.qaClip = [areaTop, areaTop + areaH];
     if (deals) this.drawDeals(areaTop - this.shopScroll, { areaTop, areaH });
     items.forEach((item, i) => {
       const x = 16 + (i % 2) * (cw + gap);
@@ -3154,11 +3592,13 @@ export class Game {
     ctx.beginPath();
     ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
     ctx.clip();
+    this.qaClip = [areaTop, areaTop + areaH];
     return { areaTop, areaH, backY, y0: areaTop - this.pageScroll };
   }
 
   private screenEnd(frame: { areaTop: number; areaH: number; backY: number }, contentH: number): void {
     this.ctx.restore();
+    this.qaClip = null;
     this.listMax = Math.max(0, contentH - frame.areaH + 10);
     this.pageScroll = Math.min(this.pageScroll, this.listMax);
     this.button(16, frame.backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.screenBack; }, 'quiet');
@@ -3171,19 +3611,23 @@ export class Game {
     if (hh > 0) this.buttons.push({ x, y: hy, w, h: hh, onTap });
   }
 
+  /** Panel with a soft drop shadow and a faint inner edge. */
   private card(x: number, y: number, w: number, h: number, fill = 'rgba(48,30,52,0.95)'): void {
-    this.ctx.fillStyle = fill;
+    const { ctx } = this;
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    this.roundRect(x, y + 3, w, h, 14);
+    ctx.fill();
+    ctx.fillStyle = fill;
     this.roundRect(x, y, w, h, 14);
-    this.ctx.fill();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   /** A small pill button inside a list. */
   private pill(x: number, y: number, w: number, label: string, frame: { areaTop: number; areaH: number }, onTap: () => void, style: 'primary' | 'gold' | 'quiet' = 'primary'): void {
-    const { ctx } = this;
-    ctx.fillStyle = style === 'gold' ? '#ffd34d' : style === 'quiet' ? 'rgba(255,255,255,0.15)' : '#ff8a5b';
-    this.roundRect(x, y, w, 32, 16);
-    ctx.fill();
-    this.text(label, x + w / 2, y + 16.5, 12, style === 'gold' ? '#4a2a00' : '#fff', 900);
+    this.drawButton(x, y, w, 32, label, style, 12);
     this.listTap(x, y, w, 32, frame, onTap);
   }
 
@@ -3758,9 +4202,9 @@ export class Game {
     if (this.codeInput) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,15,0.7);z-index:10;padding:16px;';
-    wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px system-ui,sans-serif;color:#fff;display:grid;gap:12px">
+    wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px Fredoka,system-ui,sans-serif;color:#fff;display:grid;gap:12px">
       <label for="challenge-code" style="font-weight:900;font-size:18px">Friend’s challenge code</label>
-      <input id="challenge-code" autocomplete="off" autocapitalize="characters" placeholder="e.g. K3F9Q-7-42" style="font:700 20px system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;text-transform:uppercase">
+      <input id="challenge-code" autocomplete="off" autocapitalize="characters" placeholder="e.g. K3F9Q-7-42" style="font:700 20px Fredoka,system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;text-transform:uppercase">
       <div style="display:flex;gap:10px"><button type="button" data-close style="flex:1;padding:12px;border-radius:22px;border:0;background:rgba(255,255,255,0.15);color:#fff;font-weight:900">Cancel</button>
       <button style="flex:1;padding:12px;border-radius:22px;border:0;background:#ffd34d;color:#4a2a00;font-weight:900">Play</button></div>
       <p data-error style="margin:0;color:#ff9a8a;min-height:1em;font-size:13px"></p></form>`;
@@ -3797,7 +4241,7 @@ export class Game {
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillStyle = '#fff';
-    c.font = '900 110px system-ui, sans-serif';
+    c.font = `900 110px ${FONT}`;
     c.fillText('SUSHI STACK', 540, 140);
     // The top of the player's actual stack.
     const layers = this.stack.slice(-14);
@@ -3810,12 +4254,12 @@ export class Game {
       c.fill();
     });
     c.fillStyle = '#ffd34d';
-    c.font = '900 220px system-ui, sans-serif';
+    c.font = `900 220px ${FONT}`;
     c.fillText(String(this.height), 540, 360);
     c.fillStyle = '#fff';
-    c.font = '800 54px system-ui, sans-serif';
+    c.font = `800 54px ${FONT}`;
     c.fillText(`layers · level ${this.level}`, 540, 490);
-    c.font = '700 44px system-ui, sans-serif';
+    c.font = `700 44px ${FONT}`;
     c.fillText(`Can you beat me? Code: ${code}`, 540, 1270);
     void shareCard(card, code, this.height).then((ok) => {
       if (!ok) this.shareOverlay = { image: card, code };
@@ -3837,7 +4281,7 @@ export class Game {
       ctx.fillRect(-4, -2.5, 8, 5);
       ctx.restore();
     }
-    if (this.celebration) {
+    if (this.celebration && !this.perkChoice && !this.picker) {
       const t = this.celebration.t;
       const k = Math.min(1, t * 3);
       const pop = 1 + 0.15 * Math.max(0, Math.sin(Math.min(1, (2 - t) * 3) * Math.PI));
@@ -3845,23 +4289,31 @@ export class Game {
       ctx.save();
       ctx.translate(cx, midY - 120);
       ctx.scale(pop, pop);
-      ctx.fillStyle = 'rgba(20,10,25,0.85)';
-      this.roundRect(-170, -42, 340, 84, 20);
+      // Long subtitles wrap onto a second line inside a taller card.
+      ctx.font = `600 12px ${FONT}`;
+      const two = ctx.measureText(this.celebration.sub).width > 300;
+      const hh = two ? 50 : 42;
+      ctx.fillStyle = 'rgba(20,10,25,0.9)';
+      this.roundRect(-170, -hh, 340, hh * 2, 20);
       ctx.fill();
       ctx.strokeStyle = '#ffd34d';
       ctx.lineWidth = 3;
       ctx.stroke();
-      this.text(this.celebration.title, 0, -12, 24, '#ffd34d', 900);
-      this.text(this.celebration.sub, 0, 18, 12, '#ffffff', 700);
+      this.fitText(this.celebration.title, 0, two ? -20 : -12, 310, 24, '#ffd34d', 'center', 700);
+      this.wrapText(this.celebration.sub, 0, two ? 10 : 18, 300, 12, '#ffffff');
       ctx.restore();
       ctx.globalAlpha = 1;
     }
 
     const blocker = () => this.buttons.push({ x: -this.offX, y: 0, w: WORLD_W + this.offX * 2, h: this.viewH, onTap: () => undefined });
+    if (this.mode === 'playing' && !this.perkChoice && !this.paused) this.drawCoach();
+    if (this.perkChoice && this.mode === 'playing') this.drawPerkChoice(blocker);
+    if (this.picker) this.drawPicker(blocker);
     if (this.adOverlay) {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.92)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+      this.qaCover();
       this.card(40, midY - 130, WORLD_W - 80, 260, '#1e1e2e');
       this.text('TEST AD', cx, midY - 92, 24, '#ffd34d', 900);
       this.text('(simulated — real AdMob ads play in the phone app)', cx, midY - 64, 11, 'rgba(255,255,255,0.7)', 600);
@@ -3876,6 +4328,7 @@ export class Game {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+      this.qaCover();
       this.card(30, midY - 140, WORLD_W - 60, 280, '#2a1a33');
       this.text(pr.name, cx, midY - 104, 22, '#fff', 900);
       this.text(pr.price, cx, midY - 76, 18, '#ffd34d', 900);
@@ -3891,6 +4344,7 @@ export class Game {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.85)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+      this.qaCover();
       const iw = 220;
       const ih = iw * 1.25;
       ctx.drawImage(o.image, cx - iw / 2, midY - ih / 2 - 70, iw, ih);
@@ -3908,6 +4362,7 @@ export class Game {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+      this.qaCover();
       this.card(24, midY - 190, WORLD_W - 48, 380, '#2a1a33');
       this.text(`${set.name} · ${have.filter((x: number) => x > 0).length}/9`, cx, midY - 160, 20, '#fff', 900);
       this.text(`Complete the set: +${SET_REWARD(this.setDetail)} coins`, cx, midY - 136, 11, '#ffd34d', 700);
@@ -3926,22 +4381,158 @@ export class Game {
     }
   }
 
-  /** Draws text wrapped to a width, centred on x, starting at y. */
-  private wrapText(str: string, x: number, y: number, maxW: number, size: number, color: string): void {
+  /** Coaching card at the bottom, plus a tapping finger for the very first drops. */
+  private drawCoach(): void {
     const { ctx } = this;
-    ctx.font = `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    const cx = WORLD_W / 2;
+    if (this.progress.tutorial === 0 && this.moving) {
+      const bob = Math.abs(Math.sin(this.time * 5)) * 10;
+      const fy = this.viewH * 0.68;
+      ctx.strokeStyle = `rgba(255,255,255,${0.5 - (this.time % 0.8) / 1.6})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(cx, fy - 22, 14 + ((this.time % 0.8) / 0.8) * 22, 0, Math.PI * 2);
+      ctx.stroke();
+      this.text('👆', cx, fy + bob, 40, '#fff', 400);
+    }
+    const tip = this.tip;
+    if (!tip) return;
+    const a = Math.min(1, tip.t * 2.5);
+    const h = 62;
+    const y = this.viewH - this.insets.bottom - h - 18 + (1 - a) * 20;
+    ctx.globalAlpha = a;
+    this.card(24, y, WORLD_W - 48, h, 'rgba(255,248,235,0.97)');
+    ctx.fillStyle = '#ff8a5b';
+    this.roundRect(24, y, 8, h, 4);
+    ctx.fill();
+    this.text(tip.title, 46, y + 20, 14, '#c4501f', 700, 'left');
+    this.fitText(tip.text, 46, y + 42, WORLD_W - 100, 12, '#4a2618', 'left');
+    ctx.globalAlpha = 1;
+  }
+
+  /** Single-line text that shrinks to fit maxW. */
+  private fitText(str: string, x: number, y: number, maxW: number, size: number, color: string, align: CanvasTextAlign = 'center', weight = 600): void {
+    const { ctx } = this;
+    let s2 = size;
+    ctx.font = `${weight} ${s2}px ${FONT}`;
+    while (s2 > 8 && ctx.measureText(str).width > maxW) {
+      s2 -= 0.5;
+      ctx.font = `${weight} ${s2}px ${FONT}`;
+    }
+    this.text(str, x, y, s2, color, weight, align);
+  }
+
+  /** After each chef in a journey: pick one of three perks for the rest of the run. */
+  private drawPerkChoice(blocker: () => void): void {
+    const { ctx } = this;
+    const cx = WORLD_W / 2;
+    const midY = this.viewH / 2;
+    blocker();
+    ctx.fillStyle = 'rgba(20,10,25,0.78)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    this.text('CHEF BEATEN!', cx, midY - 150, 30, '#ffd34d', 700);
+    this.text('Pick a perk for the rest of this run', cx, midY - 118, 14, '#ffffff', 600);
+    const cw = 116;
+    const ch = 196;
+    const gap = 10;
+    const x0 = cx - (cw * 3 + gap * 2) / 2;
+    this.perkChoice!.forEach((id, i) => {
+      const pk = PERKS[id];
+      const x = x0 + i * (cw + gap);
+      const y = midY - 92 + Math.sin(this.time * 3 + i) * 3;
+      const have = this.perks[id] ?? 0;
+      this.card(x, y, cw, ch, 'rgba(255,248,235,0.97)');
+      ctx.strokeStyle = '#ffd34d';
+      ctx.lineWidth = 3;
+      this.roundRect(x, y, cw, ch, 14);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,138,91,0.18)';
+      ctx.beginPath();
+      ctx.arc(x + cw / 2, y + 44, 30, 0, Math.PI * 2);
+      ctx.fill();
+      this.text(pk.icon, x + cw / 2, y + 46, 32, '#fff', 400);
+      this.wrapText(pk.name, x + cw / 2, y + 96, cw - 14, 13.5, '#4a2618', 700);
+      this.wrapText(pk.desc, x + cw / 2, y + 134, cw - 16, 11, '#7a5a48');
+      if (have) this.text(`owned x${have}`, x + cw / 2, y + ch - 14, 10, '#2a9d5c', 700);
+      this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.choosePerk(id) });
+    });
+    this.text('Tap a card', cx, midY + 132, 12, 'rgba(255,255,255,0.7)', 600);
+  }
+
+  /** Before a run: choose which owned boosters to use (unpicked ones stay in the bag). */
+  private drawPicker(blocker: () => void): void {
+    const { ctx } = this;
+    const pk = this.picker!;
+    const cx = WORLD_W / 2;
+    const owned = BOOSTERS.filter((b) => (this.boosters[b.id] ?? 0) > 0);
+    blocker();
+    ctx.fillStyle = 'rgba(20,10,25,0.8)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    const rows = Math.ceil(owned.length / 3);
+    const h = 150 + rows * 96;
+    const y = Math.max(this.insets.top + 50, this.viewH / 2 - h / 2);
+    this.card(20, y, WORLD_W - 40, h, '#2a1a33');
+    const title = pk.mode === 'journey' ? `LEVEL ${pk.level} · ${chefFor(pk.level).name}` : pk.mode === 'special' ? 'DAILY SPECIAL' : pk.mode === 'zen' ? 'ZEN' : pk.mode === 'time' ? 'TIME ATTACK' : 'FRIEND CHALLENGE';
+    this.fitText(title, cx, y + 26, WORLD_W - 80, 18, '#ffffff', 'center', 700);
+    this.text('Pick boosters for this run · the rest stay in your bag', cx, y + 50, 11.5, 'rgba(255,255,255,0.75)', 600);
+    owned.forEach((b, i) => {
+      const bx = 36 + (i % 3) * 112;
+      const by = y + 70 + Math.floor(i / 3) * 96;
+      const on = pk.picked.has(b.id);
+      this.card(bx, by, 104, 86, on ? 'rgba(255,211,77,0.22)' : 'rgba(255,255,255,0.07)');
+      if (on) {
+        ctx.strokeStyle = '#ffd34d';
+        ctx.lineWidth = 2.5;
+        this.roundRect(bx, by, 104, 86, 14);
+        ctx.stroke();
+      }
+      ctx.fillStyle = b.color;
+      ctx.beginPath();
+      ctx.arc(bx + 52, by + 26, 17, 0, Math.PI * 2);
+      ctx.fill();
+      this.text(b.glyph, bx + 52, by + 27, 14, '#fff', 700);
+      this.fitText(b.name, bx + 52, by + 56, 96, 11.5, '#fff', 'center', 700);
+      this.text(`x${this.boosters[b.id]}`, bx + 52, by + 73, 10.5, 'rgba(255,255,255,0.65)', 600);
+      // Tick box in the corner.
+      ctx.fillStyle = on ? '#2a9d5c' : 'rgba(255,255,255,0.18)';
+      ctx.beginPath();
+      ctx.arc(bx + 90, by + 14, 9, 0, Math.PI * 2);
+      ctx.fill();
+      if (on) this.text('✓', bx + 90, by + 15, 12, '#fff', 700);
+      this.buttons.push({ x: bx, y: by, w: 104, h: 86, onTap: () => { if (on) pk.picked.delete(b.id); else pk.picked.add(b.id); } });
+    });
+    const by = y + h - 64;
+    const all = pk.picked.size === owned.length;
+    this.button(36, by, 96, 44, 'BACK', () => { this.picker = null; }, 'quiet');
+    this.button(140, by, 96, 44, all ? 'NONE' : 'ALL', () => { pk.picked = new Set(all ? [] : owned.map((b) => b.id)); }, 'quiet');
+    this.button(244, by, 120, 44, pk.picked.size ? `START (${pk.picked.size})` : 'START', () => {
+      this.progress.lastBoosters = [...pk.picked];
+      this.progress.persist();
+      this.picker = null;
+      this.startRun(pk.level, pk.mode, { ...pk.opts, picked: pk.picked });
+    }, 'gold');
+  }
+
+  /** Draws text wrapped to a width, centred on x, starting at y. */
+  private wrapText(str: string, x: number, y: number, maxW: number, size: number, color: string, weight = 600): number {
+    const { ctx } = this;
+    ctx.font = `${weight} ${size}px ${FONT}`;
     const words = str.split(' ');
     let line = '';
     let yy = y;
     for (const w of words) {
       const test = line ? `${line} ${w}` : w;
       if (ctx.measureText(test).width > maxW && line) {
-        this.text(line, x, yy, size, color, 600);
+        this.text(line, x, yy, size, color, weight);
+        ctx.font = `${weight} ${size}px ${FONT}`;
         line = w;
         yy += size * 1.35;
       } else line = test;
     }
-    if (line) this.text(line, x, yy, size, color, 600);
+    if (line) this.text(line, x, yy, size, color, weight);
+    return yy + size * 1.35;
   }
 
   private panel(y: number, title: string, sub: string): void {

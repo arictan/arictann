@@ -99,6 +99,12 @@ export class Progress {
   ads = save.json('ads', { day: '', chests: 0, vipChest: false });
   streakMilestone = save.json('streakMilestone', 0); // highest daily-streak milestone celebrated
 
+  // ---- added with the depth update
+  tutorial = save.json('tutorial', 0); // first-run coaching step (4 = done)
+  seen: string[] = save.json('seen', []); // ingredients and features already introduced
+  lastBoosters: string[] = save.json('lastBoosters', []); // booster picker remembers the last choice
+  bestShape: [number, number][] = save.json('bestShape', []); // [x, width] of every layer in the best run (the ghost)
+
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
     if (this.weekly.week !== weekKey()) this.weekly = { week: weekKey(), best: 0, claimed: [] };
@@ -151,6 +157,10 @@ export class Progress {
     save.setJson('piggy', this.piggy);
     save.setJson('ads', this.ads);
     save.setJson('streakMilestone', this.streakMilestone);
+    save.setJson('tutorial', this.tutorial);
+    save.setJson('seen', this.seen);
+    save.setJson('lastBoosters', this.lastBoosters);
+    save.setJson('bestShape', this.bestShape);
   }
 
   /** Permanent coin bonus from Chef Rank: +5% per rank, up to double. */

@@ -69,6 +69,7 @@ export const sfx = {
   fever: () => [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.12, 'square', 0.06, undefined, i * 0.05)),
   celebrate: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.25, 'triangle', 0.12, undefined, i * 0.09)),
   coin: () => tone(1400, 0.06, 'square', 0.05, 2000),
+  tap: () => tone(660, 0.04, 'sine', 0.06, 880),
   die: () => { tone(220, 0.45, 'sawtooth', 0.12, 55); hiss(0.3, 0.2, 300); },
 };
 

@@ -4,7 +4,7 @@
 export type Hair = 'short' | 'bun' | 'bob' | 'bald' | 'spiky' | 'ponytail' | 'twinbuns' | 'gray' | 'curly' | 'long' | 'mohawk';
 export type Hat = 'hachimaki' | 'cap' | 'toque' | 'bandana' | 'none' | 'shades' | 'gold' | 'beanie' | 'visor' | 'flower' | 'crown';
 export type Face = 'none' | 'mustache' | 'beard' | 'glasses' | 'elder' | 'goatee' | 'freckles';
-export type Attack = 'knife' | 'slam' | 'splat';
+export type Attack = 'knife' | 'slam' | 'splat' | 'flurry';
 export type Help = 'slow' | 'patch' | 'tip';
 export type Holding = 'knife' | 'fist' | 'patty' | null;
 

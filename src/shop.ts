@@ -1,3 +1,5 @@
+import { FONT } from './font';
+
 // Everything players can spend coins on. Backgrounds are free and rotate during play, so coins go to these.
 
 export type Cat = 'deals' | 'booster' | 'plate' | 'flag' | 'set' | 'fx';
@@ -71,7 +73,7 @@ export const FLAGS: Item[] = [
   { id: 'album', name: 'Album Master', price: 0, earn: 'Complete a sticker album' },
 ];
 
-export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg';
+export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg' | 'ebi' | 'unagi' | 'tofu' | 'ikura';
 
 // Cosmetic: recolours every layer.
 export const SETS: (Item & { colors: Partial<Record<Ingredient, string>> })[] = [
@@ -347,7 +349,7 @@ export function drawPlate(ctx: CanvasRenderingContext2D, id: string, cx: number,
         ctx.lineWidth = 1.6 * s;
         ctx.stroke();
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.font = `900 ${9 * s}px system-ui, sans-serif`;
+        ctx.font = `900 ${9 * s}px ${FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(city[1].toUpperCase(), cx, y + 7.5 * s);
@@ -479,7 +481,7 @@ export function drawFlag(ctx: CanvasRenderingContext2D, id: string, x: number, y
       ctx.fillStyle = '#ffd34d';
       ctx.fillRect(x, ty - 1, 20, 13);
       ctx.fillStyle = '#7a4a00';
-      ctx.font = '900 10px system-ui, sans-serif';
+      ctx.font = `900 10px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('7', x + 10, ty + 6);
