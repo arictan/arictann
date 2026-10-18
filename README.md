@@ -62,6 +62,15 @@ Apple builds require a Mac with Xcode.
    **App Privacy → "Data Not Collected"**. Encryption export compliance is already answered: `ITSAppUsesNonExemptEncryption = NO`.
 5. Test the build through TestFlight, then submit it for review.
 
+### 3. Optional: online leaderboards
+The game keeps local records (top 10 runs and a weekly challenge). To add real leaderboards, first set up the store accounts:
+- **iOS:** enable *Game Center* for the app in App Store Connect, create a leaderboard (for example `best_height`), and add the Game Center capability in Xcode.
+- **Android:** create a Play Games Services project in the Play Console, with a leaderboard of the same purpose.
+- Then add a Capacitor game-services plugin and submit the score where the game ends a run (`endRun()` in `src/game.ts`).
+
+### Notifications
+The game schedules at most one local reminder a day, using `@capacitor/local-notifications`. No server is involved. On Android 13+ and on iOS, the permission prompt appears after the player claims their first daily gift.
+
 ### Store listing copy (starter)
 **Subtitle:** Stack it. Slice it. Serve it.
 **Description:** Drop each layer of rice, salmon, tuna and nori onto your roll, and line it up perfectly or watch the edges

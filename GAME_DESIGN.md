@@ -25,6 +25,26 @@ tap to drop it on the stack. Anything hanging over the edge gets sliced off, so 
 | Serving | When an order is complete, a flag pick is planted on the stack and you earn coins: 2 × the average layer width. Wider stacks pay more. |
 | Score | Layers stacked. Best score and banked coins are saved on the device. |
 
+## Long-term progress (retention systems)
+Inspired by what keeps players in Royal Match, Block Blast and Subway Surfers. Everything is saved on the device.
+
+| System | How it works |
+|---|---|
+| **Chef Journey (50 levels)** | Beating a chef unlocks the next one for good. TAP TO PLAY continues from the furthest chef. The **Map** shows all 50 chefs on a winding path, and you can replay any unlocked chef. |
+| **Stars** | Each chef awards 1–3 stars based on the share of PERFECT drops in their order (60%+ = 3 stars, 30%+ = 2 stars). The best result is kept, which gives a reason to replay. |
+| **Missions + Chef Rank** | Three missions are active at a time, such as "Land 15 PERFECTs", "Dodge 2 knife throws" or "Serve 2 Green Roll". Each pays 25 coins. Finishing all three raises **Chef Rank** (+5% coins forever, up to +100%) and deals a harder set. |
+| **"Your best" lines** | A gold dashed BEST line and a faint LAST line on the stack show your record and your previous run while you climb. |
+| **7-day gift streak** | The gift pays 20, 30, 40, 50, 60 and 80 coins, then 300 on day 7, which is more than days 1–6 combined. The first day 7 also unlocks the exclusive **Golden Week** flag; later ones add 2 bonus boosters. Missing a day resets the streak. |
+| **Daily Special** | One 10-layer order per day, with the same chef and recipe for everyone (seeded by date). Clearing it pays 150 coins once per day; after that it's practice. |
+| **Boss chests** | Every chef beaten opens a free chest: 10–35 + level coins, a 30% chance of a booster, and 1 piece toward exclusives (10 pieces = **Dragon Plate**, 25 = **Phoenix FX**). |
+| **Album** | **Chef cards**: one for each chef beaten, with stars. **Recipe book**: serve each recipe 10 times for +50 coins. **Shop collections**: own every item in a tab for +200 coins. **Exclusives**: progress toward items that can only be earned. |
+| **Weekly challenge** | Stack 20, 40 and 70 in a single run during the week for +50, +120 and +250 coins. It resets every Monday. **Records** shows Chef Rank, stars, best height and your top 10 runs. |
+| **Gentle comeback** | After 3 quick losses in a row (under 8 layers), the next run's first 10 layers move 20% slower. The player isn't told, and it resets after a decent run. |
+| **Reminders** | At most one local notification a day, scheduled for 6:30 pm the next evening when the app goes to the background: "Your daily gift is ready!" or "Chef X is waiting for you at level N". Permission is requested only after the player claims their first daily gift. |
+| **Exclusive items** | Golden Week flag (7-day streak), Dragon Plate and Phoenix FX (chest pieces), and the Legend sushi set (beat level 50). |
+
+Real online leaderboards (Game Center and Google Play Games) need the store accounts set up first. See the README.
+
 ## Levels and boss chefs
 Each order is a level, and each level has a boss chef who watches you work. The chef:
 - moves left and right to follow the sliding layer, watching it and pointing at it,
@@ -90,8 +110,28 @@ The chance of help is the chef's kindness × 6% normally, × 15% with a combo, o
 | 28 | Chef Akane | Smaller PERFECT zone, 50% faster, 2 extra layers |
 | 29 | Master Tanaka | Smaller PERFECT zone, 55% faster, surges, 1 extra layer |
 | 30 | Emperor Chef Ren | Final boss: 60% faster, surges, smaller PERFECT zone, 2 extra layers |
+| 31 | Chef Sora | 45% faster, surges, 1 extra layer |
+| 32 | Chef Wei | 50% faster, 1 extra layer |
+| 33 | Chef Ji-woo | Smaller PERFECT zone, 45% faster, surges |
+| 34 | Chef Kaori | 45% faster, 3 extra layers |
+| 35 | Chef Minh | 55% faster |
+| 36 | Chef Suki | Smaller PERFECT zone, 2 extra layers |
+| 37 | Chef Ryota | 55% faster, surges, 1 extra layer |
+| 38 | Chef Hye-jin | Smaller PERFECT zone, 50% faster, surges |
+| 39 | Chef Tomo | 60% faster |
+| 40 | Chef Xiao | Smaller PERFECT zone, 3 extra layers |
+| 41 | Chef Natsu | 60% faster, surges |
+| 42 | Chef Dae | Smaller PERFECT zone, 60% faster |
+| 43 | Chef Chiyo | 55% faster, surges, 3 extra layers |
+| 44 | Chef Arata | 65% faster |
+| 45 | Chef Yuna | Smaller PERFECT zone, 60% faster, surges |
+| 46 | Chef Long | 70% faster |
+| 47 | Chef Hikari | Smaller PERFECT zone, 3 extra layers |
+| 48 | Master Fujimoto | Smaller PERFECT zone, 70% faster, surges, 2 extra |
+| 49 | Grand Master Liang | Smaller PERFECT zone, 75% faster, surges, 2 extra |
+| 50 | Dragon Chef Tatsu | LEGEND: 80% faster, surges, smaller PERFECT zone, 3 extra |
 
-After level 30 the bosses repeat, 10% faster on each lap. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
+After level 50 the bosses repeat, 10% faster on each lap. Layer speed never exceeds 560 units/s. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
 
 ## Scenes (free)
 Each run plays through 10 backgrounds in a random order, and the scene crossfades to the next one every time an order is served:

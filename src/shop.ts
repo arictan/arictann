@@ -3,7 +3,7 @@
 export type Cat = 'booster' | 'plate' | 'flag' | 'set' | 'fx';
 export type Cosmetic = Exclude<Cat, 'booster'>;
 
-export interface Item { id: string; name: string; price: number }
+export interface Item { id: string; name: string; price: number; earn?: string } // `earn` = exclusive: can't be bought, only earned
 
 export type BoosterId = 'chance' | 'double' | 'slow' | 'wide' | 'magnet' | 'shield' | 'lucky' | 'short' | 'streak';
 
@@ -22,7 +22,7 @@ export const BOOSTERS: Booster[] = [
   { id: 'streak', name: 'Hot Streak', desc: 'Start on a 3x combo', price: 35, color: '#e63946', glyph: '3x' },
 ];
 
-export type PlateId = 'classic' | 'geta' | 'slate' | 'bamboo' | 'wave' | 'gold' | 'marble' | 'sakura' | 'neon' | 'lacquer' | 'ice' | 'diamond';
+export type PlateId = 'classic' | 'geta' | 'slate' | 'bamboo' | 'wave' | 'gold' | 'marble' | 'sakura' | 'neon' | 'lacquer' | 'ice' | 'diamond' | 'dragon';
 
 // Cosmetic: the plate your roll sits on.
 export const PLATES: (Item & { id: PlateId })[] = [
@@ -38,9 +38,10 @@ export const PLATES: (Item & { id: PlateId })[] = [
   { id: 'ice', name: 'Ice Crystal', price: 500 },
   { id: 'neon', name: 'Neon Tray', price: 600 },
   { id: 'diamond', name: 'Diamond Plate', price: 900 },
+  { id: 'dragon', name: 'Dragon Plate', price: 0, earn: '10 chest pieces' },
 ];
 
-export type FlagId = 'pennant' | 'star' | 'heart' | 'fish' | 'crown' | 'lantern' | 'fan' | 'rainbow';
+export type FlagId = 'pennant' | 'star' | 'heart' | 'fish' | 'crown' | 'lantern' | 'fan' | 'rainbow' | 'week';
 
 // Cosmetic: the pick planted on the stack for every served order.
 export const FLAGS: (Item & { id: FlagId })[] = [
@@ -52,6 +53,7 @@ export const FLAGS: (Item & { id: FlagId })[] = [
   { id: 'lantern', name: 'Lantern Pick', price: 200 },
   { id: 'rainbow', name: 'Rainbow Flag', price: 300 },
   { id: 'crown', name: 'Crown Pick', price: 500 },
+  { id: 'week', name: 'Golden Week', price: 0, earn: '7-day gift streak' },
 ];
 
 export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg';
@@ -66,6 +68,7 @@ export const SETS: (Item & { colors: Partial<Record<Ingredient, string>> })[] = 
   { id: 'ink', name: 'Ink & Paper', price: 450, colors: { rice: '#f2f2f2', nori: '#111111', salmon: '#9a9a9a', tuna: '#555555', avocado: '#c4c4c4', cucumber: '#7a7a7a', egg: '#dadada' } },
   { id: 'neon', name: 'Neon', price: 700, colors: { rice: '#e8fbff', nori: '#1a1030', salmon: '#ff5ec4', tuna: '#ff2a6d', avocado: '#7dff6a', cucumber: '#00f0c8', egg: '#fff04a' } },
   { id: 'golden', name: 'Golden', price: 1200, colors: { rice: '#fff4d6', nori: '#3a2a08', salmon: '#f2b84b', tuna: '#d4952a', avocado: '#e8d27a', cucumber: '#b8a046', egg: '#ffd84f' } },
+  { id: 'legend', name: 'Legend', price: 0, earn: 'Beat level 50', colors: { rice: '#fdf0d5', nori: '#14080e', salmon: '#c1121f', tuna: '#780000', avocado: '#ffd34d', cucumber: '#e09f3e', egg: '#fff3b0' } },
 ];
 
 export type Shape = 'square' | 'heart' | 'star' | 'petal' | 'coin' | 'bubble' | 'fire' | 'bolt';
@@ -80,6 +83,7 @@ export const EFFECTS: (Item & { shape: Shape; colors: string[] })[] = [
   { id: 'coins', name: 'Coin Shower', price: 300, shape: 'coin', colors: ['#ffd34d'] },
   { id: 'fire', name: 'Fire', price: 500, shape: 'fire', colors: ['#ff6b1a', '#ffb703', '#ff3d3d'] },
   { id: 'bolt', name: 'Lightning', price: 800, shape: 'bolt', colors: ['#fff04a', '#9fe3ff'] },
+  { id: 'phoenix', name: 'Phoenix', price: 0, earn: '25 chest pieces', shape: 'fire', colors: ['#ff006e', '#ffbe0b', '#8338ec', '#fb5607'] },
 ];
 
 export const CATALOG: Record<Cosmetic, Item[]> = { plate: PLATES, flag: FLAGS, set: SETS, fx: EFFECTS };
@@ -267,6 +271,26 @@ export function drawPlate(ctx: CanvasRenderingContext2D, id: string, cx: number,
       for (let i = 0; i < 4; i++) drawShape(ctx, 'star', x + (40 + i * 64) * s, y + 7 * s, 4 * s, '#ffffff', 0);
       break;
     }
+    case 'dragon': {
+      const g = ctx.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, '#9d0208');
+      g.addColorStop(1, '#370617');
+      ctx.fillStyle = g;
+      rr(ctx, x, y, w, h, 7 * s);
+      ctx.fill();
+      ctx.strokeStyle = '#ffba08';
+      ctx.lineWidth = 1.2 * s;
+      for (let i = 0; i * 12 * s < w - 12 * s; i++) {
+        ctx.beginPath();
+        ctx.arc(x + (10 + i * 12) * s, y + 9 * s, 5 * s, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#ffd34d';
+      ctx.lineWidth = 1.8 * s;
+      rr(ctx, x, y, w, h, 7 * s);
+      ctx.stroke();
+      break;
+    }
     default:
       ctx.fillStyle = '#f4f7fb';
       rr(ctx, x, y, w, h, 7 * s);
@@ -360,6 +384,15 @@ export function drawFlag(ctx: CanvasRenderingContext2D, id: string, x: number, y
       });
       break;
     }
+    case 'week':
+      ctx.fillStyle = '#ffd34d';
+      ctx.fillRect(x, ty - 1, 20, 13);
+      ctx.fillStyle = '#7a4a00';
+      ctx.font = '900 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('7', x + 10, ty + 6);
+      break;
     default:
       ctx.fillStyle = `hsl(${hue} 80% 60%)`;
       ctx.beginPath();

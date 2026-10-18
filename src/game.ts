@@ -1,5 +1,6 @@
 import { sfx, unlockAudio, setMuted } from './audio';
-import { haptic, save } from './platform';
+import { askForReminders, haptic, save, scheduleReminder } from './platform';
+import { MAX_LEVEL, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, type MissionKind } from './progress';
 import { THEMES, drawBackdrop, makeSpecks, type Theme } from './themes';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
 import { CHEFS, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
@@ -14,6 +15,7 @@ const PERFECT_TOL = 5; // drops this close to the layer below snap into place
 const TIGHT_TOL = 3; // perfect window for chefs with the "precise" rule
 const REGROW = 8; // width regained per perfect once a streak reaches 3
 const GRAVITY = 1400;
+const MAP_ROW = 118; // vertical spacing of chefs on the journey map
 
 
 const COLORS: Record<Ingredient, string> = {
@@ -69,7 +71,8 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album';
+type AlbumTab = 'chefs' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
 
@@ -150,6 +153,19 @@ export class Game {
   private splats: Splat[] = [];
   private banner: { title: string; sub: string; life: number } | null = null; // "LEVEL 3" when a new boss arrives
 
+  // Long-term progress: journey, missions, collections, records.
+  private progress = new Progress(RECIPES.map((r) => r.name));
+  private startLevel = 1; // the chef this run started on
+  private special = false; // playing today's Daily Special
+  private specialWon = false;
+  private easy = false; // gentler start after several quick losses in a row
+  private orderStats = { drops: 0, perfects: 0, slices: 0 };
+  private toastQueue: string[] = [];
+  private mapScroll = 0;
+  private albumScroll = 0;
+  private listMax = 0; // max scroll for the map or album, set while drawing
+  private albumTab: AlbumTab = 'chefs';
+
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas not supported');
@@ -158,27 +174,28 @@ export class Game {
     this.resize();
     this.reset();
     new ResizeObserver(() => this.resize()).observe(canvas);
-    // In the shop a tap fires on release, so the list can be dragged to scroll; everywhere else it fires on press.
+    // On scrolling screens (shop, map, album) a tap fires on release, so lists can be dragged;
+    // everywhere else it fires on press.
     canvas.addEventListener('pointerdown', (e) => {
-      if (this.mode === 'shop') this.drag = { x: e.clientX, y: e.clientY, startScroll: this.shopScroll, moved: false };
+      if (this.scrolling) this.drag = { x: e.clientX, y: e.clientY, startScroll: this.scrollPos, moved: false };
       else this.onTap(e.clientX, e.clientY);
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!this.drag) return;
       const dy = (e.clientY - this.drag.y) / this.scale;
       if (Math.abs(dy) > 8) this.drag.moved = true;
-      if (this.drag.moved) this.shopScroll = Math.max(0, Math.min(this.shopMaxScroll, this.drag.startScroll - dy));
+      if (this.drag.moved) this.scrollPos = this.drag.startScroll - dy;
     });
     canvas.addEventListener('pointerup', () => {
       if (this.drag && !this.drag.moved) this.onTap(this.drag.x, this.drag.y);
       this.drag = null;
     });
     canvas.addEventListener('wheel', (e) => {
-      if (this.mode === 'shop') this.shopScroll = Math.max(0, Math.min(this.shopMaxScroll, this.shopScroll + e.deltaY / this.scale));
+      if (this.scrolling) this.scrollPos += e.deltaY / this.scale;
     }, { passive: true });
     // Space or Enter also drops, for keyboard players on desktop.
     window.addEventListener('keydown', (e) => {
-      if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && this.mode !== 'shop') {
+      if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !this.scrolling) {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
         this.onTap(rect.left + rect.width / 2, rect.top + rect.height * 0.75);
@@ -186,8 +203,26 @@ export class Game {
     });
   }
 
+  private get scrolling(): boolean {
+    return this.mode === 'shop' || this.mode === 'map' || this.mode === 'album';
+  }
+
+  private get scrollPos(): number {
+    return this.mode === 'shop' ? this.shopScroll : this.mode === 'map' ? this.mapScroll : this.albumScroll;
+  }
+
+  private set scrollPos(v: number) {
+    const max = this.mode === 'shop' ? this.shopMaxScroll : this.listMax;
+    v = Math.max(0, Math.min(max, v));
+    if (this.mode === 'shop') this.shopScroll = v;
+    else if (this.mode === 'map') this.mapScroll = v;
+    else this.albumScroll = v;
+  }
+
   pause(): void {
-    this.paused = this.mode === 'playing';
+    // One reminder a day at most, pointing at the next chef to beat.
+    const next = CHEFS[Math.min(this.progress.unlocked, MAX_LEVEL) - 1];
+    void scheduleReminder('Sushi Stack', this.giftReady() ? 'Your daily gift is ready! 🎁' : `${next.name} is waiting for you at level ${this.progress.unlocked}.`);
   }
 
   private resize(): void {
@@ -221,16 +256,16 @@ export class Game {
   }
 
   private get level(): number {
-    return this.ordersServed + 1;
+    return this.startLevel + this.ordersServed;
   }
 
-  /** Bosses go in order; after the tenth they repeat, a little faster each lap. */
+  /** Bosses go in order; after the last one they repeat, a little faster each lap. */
   private get chef(): Chef {
-    return CHEFS[this.ordersServed % CHEFS.length];
+    return CHEFS[(this.level - 1) % CHEFS.length];
   }
 
   private get lap(): number {
-    return Math.floor(this.ordersServed / CHEFS.length);
+    return Math.floor((this.level - 1) / CHEFS.length);
   }
 
   private react(mood: Mood, life: number, line?: string): void {
@@ -240,7 +275,7 @@ export class Game {
 
   /** How worked up the chef is: rises as the order nears completion. */
   private chefMood(): Mood {
-    if (this.mode === 'dead') return 'angry';
+    if (this.mode === 'dead') return this.specialWon ? 'happy' : 'angry';
     if (this.event) return this.event.bad ? 'angry' : 'happy';
     if (this.reaction) return this.reaction.mood;
     const left = this.order.length - (this.height - this.order.start);
@@ -253,7 +288,7 @@ export class Game {
 
   private announceChef(): void {
     const c = this.chef;
-    this.banner = { title: `LEVEL ${this.level}`, sub: c.rule, life: 2.4 };
+    this.banner = { title: this.special ? 'DAILY SPECIAL' : `LEVEL ${this.level}`, sub: c.rule, life: 2.4 };
     this.bubble = { text: c.intro, life: 2.2 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
@@ -299,7 +334,23 @@ export class Game {
     this.camY = this.targetCam();
   }
 
-  private startRun(): void {
+  /** Level of today's Daily Special chef: the same for everyone on a given day. */
+  private specialLevel(): number {
+    return 5 + (daySeed() % 15);
+  }
+
+  /** Retry from the chef that beat you (or today's special). */
+  private retry(): void {
+    if (this.special) this.startRun(this.specialLevel(), true);
+    else this.startRun(Math.min(this.level, MAX_LEVEL));
+  }
+
+  /** Starts a run at a chef level (by default, the furthest one unlocked on the journey). */
+  private startRun(level = this.progress.unlocked, special = false): void {
+    this.startLevel = level;
+    this.special = special;
+    this.specialWon = false;
+    this.easy = this.progress.lossStreak >= 3;
     // Boosters bought in the shop are used up here (Second Chance only when it saves you).
     const use = (id: BoosterId) => {
       if (!this.boosters[id]) return false;
@@ -344,15 +395,71 @@ export class Game {
 
   private addCoins(n: number, x: number, y: number, label: string): void {
     if (this.doubleCoins) n *= 2;
+    n = Math.round(n * this.progress.coinBonus);
     this.runCoins += n;
     this.popup(x, y, `${label} +${n} coins`, '#ffd34d', 16);
+    this.mission('coinsRun', this.runCoins);
+  }
+
+  /** Coins that go straight to the bank (mission rewards, chests, gifts), saved immediately. */
+  private bankCoins(n: number): void {
+    this.bank += n;
+    save.setCoins(this.bank);
+  }
+
+  private mission(kind: MissionKind, amount = 1, recipe?: string): void {
+    const { done, rankUp } = this.progress.track(kind, amount, recipe);
+    for (const m of done) {
+      this.bankCoins(25);
+      this.showToast(`✓ ${missionText(m)}  +25`);
+      sfx.perfect(5);
+    }
+    if (rankUp) {
+      const reward = 50 + this.progress.rank * 10;
+      this.bankCoins(reward);
+      this.showToast(`CHEF RANK ${this.progress.rank}! +${reward} coins, +5% coins forever`);
+      haptic.success();
+    }
+  }
+
+  /** A free chest for every boss beaten: coins, sometimes a booster, and a piece toward an exclusive. */
+  private openChest(level: number): void {
+    const coins = 10 + Math.floor(Math.random() * 25) + level;
+    this.bankCoins(coins);
+    const parts = [`+${coins} coins`];
+    if (Math.random() < 0.3) {
+      const b = BOOSTERS[Math.floor(Math.random() * BOOSTERS.length)];
+      this.boosters[b.id] = (this.boosters[b.id] ?? 0) + 1;
+      save.setBoosters(this.boosters);
+      parts.push(b.name);
+    }
+    const p = ++this.progress.pieces;
+    this.progress.persist();
+    if (p === PIECES_FOR.dragon) this.unlockExclusive('plate', 'dragon', 'Dragon Plate');
+    else if (p === PIECES_FOR.phoenix) this.unlockExclusive('fx', 'phoenix', 'Phoenix FX');
+    else if (p < PIECES_FOR.phoenix) parts.push(`piece ${p}/${p < PIECES_FOR.dragon ? PIECES_FOR.dragon : PIECES_FOR.phoenix}`);
+    this.showToast(`Chest: ${parts.join(' · ')}`);
+  }
+
+  private unlockExclusive(cat: Cosmetic, id: string, name: string): void {
+    if (this.owned[cat].includes(id)) return;
+    this.owned[cat].push(id);
+    save.setOwned(cat, this.owned[cat]);
+    this.showToast(`EXCLUSIVE UNLOCKED: ${name}!`);
+    haptic.success();
   }
 
   private newOrder(): void {
-    const n = this.ordersServed;
-    // Early orders use the simple recipes; the full menu opens up as you serve more.
+    const n = this.level - 1;
+    this.orderStats = { drops: 0, perfects: 0, slices: 0 };
+    if (this.special) {
+      // Everyone gets the same Daily Special: one long order of a set recipe.
+      this.order = { recipe: RECIPES[daySeed() % RECIPES.length], length: 10 - (this.shortOrders ? 2 : 0), start: this.height, reward: 0 };
+      return;
+    }
+    // Early levels use the simple recipes; the full menu opens up further along the journey.
     const recipe = RECIPES[Math.floor(Math.random() * Math.min(RECIPES.length, 2 + n))];
-    const length = Math.min(5 + n, 12) + this.chef.extra - (this.shortOrders ? 2 : 0);
+    const length = Math.min(5 + Math.floor(n / 2), 12) + this.chef.extra - (this.shortOrders ? 2 : 0);
     this.order = { recipe, length: Math.max(3, length), start: this.height, reward: 0 };
   }
 
@@ -363,9 +470,11 @@ export class Game {
 
   private speed(): number {
     const c = this.chef;
-    let v = Math.min(130 + this.height * 5, 400) * c.speed * (1 + this.lap * 0.1);
+    // Speed builds with the stack and with how far along the journey this chef is.
+    let v = Math.min(Math.min(130 + this.height * 4 + (this.level - 1) * 5, 400) * c.speed * (1 + this.lap * 0.1), 560);
     if (c.wobble) v *= 1 + 0.35 * Math.sin(this.time * 2.2);
     if (this.steady > 0) v *= 0.55;
+    if (this.easy && this.height < 10) v *= 0.8;
     return this.slowStart && this.height < 15 ? v * 0.7 : v;
   }
 
@@ -418,10 +527,13 @@ export class Game {
         this.drop();
         break;
       case 'dead':
-        if (this.time - this.deadAt > 0.7) this.startRun();
+        if (this.time - this.deadAt > 0.7) this.retry();
         break;
       case 'shop':
         this.shopSel = null;
+        break;
+      case 'map':
+      case 'album':
         break;
     }
   }
@@ -436,6 +548,7 @@ export class Game {
       m.origin -= dx;
       m.x = top.x;
       this.combo++;
+      this.orderStats.perfects++;
       if (this.combo >= 3 && m.w < this.baseW) {
         const grow = Math.min(REGROW, this.baseW - m.w);
         m.x -= grow / 2;
@@ -446,6 +559,8 @@ export class Game {
       this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
       if (this.combo % 5 === 0) this.addCoins(this.combo / 5 * 3, cx, m.y - 44, 'Streak bonus!');
       if (this.mode === 'playing' && !this.bubble) this.react('impressed', 0.7, this.combo >= 3 ? ['Sugoi!', 'Beautiful!', 'Perfect cut!'][this.combo % 3] : undefined);
+      this.mission('perfects');
+      this.mission('streak', this.combo);
       this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 18 + this.combo * 2);
       sfx.perfect(this.combo);
       haptic.medium();
@@ -479,6 +594,7 @@ export class Game {
       this.fall({ ...m, x: cutX, w: m.w - overlap }, dx > 0 ? 1 : -1);
       m.x = keepX;
       m.w = overlap;
+      this.orderStats.slices++;
       this.place(m);
       if (this.mode === 'playing' && !this.reaction) this.react('wince', 0.5);
       sfx.slice();
@@ -488,6 +604,8 @@ export class Game {
 
   private place(layer: Layer): void {
     this.stack.push(layer);
+    this.orderStats.drops++;
+    this.mission('height', this.height);
     this.order.reward += layer.w / BASE_W;
     sfx.drop();
     if (this.height % 25 === 0) this.addCoins(10, WORLD_W / 2, layer.y - 80, `${this.height} layers!`);
@@ -606,11 +724,13 @@ export class Game {
         break;
       }
       case 'slow':
+        this.mission('help');
         this.steady = 3;
         this.popup(WORLD_W / 2, top.y - 50, 'Next 3 layers slowed!', '#9fe3ff', 16, 1.6);
         sfx.serve();
         break;
       case 'patch': {
+        this.mission('help');
         const x = this.chefX;
         const dx = top.x + top.w / 2 - x;
         const dy = top.y - handY;
@@ -619,6 +739,7 @@ export class Game {
         break;
       }
       case 'tip':
+        this.mission('help');
         this.addCoins(3 + this.level * 2, WORLD_W / 2, top.y - 50, 'Tip!');
         for (let i = 0; i < 16; i++) {
           const a = -Math.PI / 2 + (Math.random() - 0.5) * 2;
@@ -658,6 +779,7 @@ export class Game {
         } else if (p.target && !p.dodged) {
           p.dodged = true;
           this.popup(WORLD_W / 2, this.top.y - 40, 'DODGED!', '#8fdc93', 20);
+          this.mission('dodge');
           this.react('shock', 0.8, 'What?!');
         }
         if (p.target !== m) p.vy += 900 * dt;
@@ -696,13 +818,38 @@ export class Game {
   private serve(): void {
     const top = this.top;
     const coins = Math.max(1, Math.round(this.order.reward * 2));
+    const beatLevel = this.level;
+    const beaten = this.chef;
+    const recipe = this.order.recipe.name;
+    const stars = Progress.starsFor(this.orderStats.perfects, this.orderStats.drops);
+    const flawless = this.orderStats.slices === 0;
     this.ordersServed++;
     this.banner = null;
     // The finished roll pops up, then drops down to a customer at the bottom corner.
     this.dish = { recipe: this.order.recipe, t: 0, from: { x: top.x + top.w / 2, y: top.y - this.camY - 30 }, side: -this.chefSide, look: Math.random(), ate: false };
     this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
-    this.addCoins(coins + 5 * this.ordersServed, WORLD_W / 2, top.y - 34, `${CHEFS[(this.ordersServed - 1) % CHEFS.length].name} beaten!`);
-    this.react('happy', 1.2, CHEFS[(this.ordersServed - 1) % CHEFS.length].beaten);
+    this.addCoins(coins + 5 * beatLevel, WORLD_W / 2, top.y - 34, `${beaten.name} beaten!`);
+    this.popup(WORLD_W / 2, top.y - 58, '★'.repeat(stars) + '☆'.repeat(3 - stars), '#ffd34d', 26, 1.6);
+    this.react('happy', 1.2, beaten.beaten);
+
+    // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
+    if (!this.special && this.progress.beat(beatLevel, stars)) {
+      this.showToast(beatLevel === MAX_LEVEL ? 'JOURNEY COMPLETE! You beat all 50 chefs!' : `New chef card: ${beaten.name}!`);
+      if (beatLevel === MAX_LEVEL) this.unlockExclusive('set', 'legend', 'Legend sushi set');
+    }
+    this.mission('serve');
+    this.mission('beat');
+    this.mission('recipe', 1, recipe);
+    if (flawless) this.mission('flawless');
+    if (this.progress.served(recipe)) {
+      this.bankCoins(50);
+      this.showToast(`Recipe mastered: ${recipe}! +50 coins`);
+    }
+    this.openChest(beatLevel);
+    if (this.special) {
+      this.winSpecial();
+      return;
+    }
     // A new scene for every order served.
     this.changeTheme(() => { this.themeIdx = (this.themeIdx + 1) % this.themeOrder.length; });
     this.popup(WORLD_W / 2, this.camY + this.viewH * 0.3, this.theme.name, 'rgba(255,255,255,0.8)', 15);
@@ -733,6 +880,11 @@ export class Game {
     this.shake = 10;
     sfx.die();
     haptic.error();
+    this.endRun();
+  }
+
+  /** Banks the run's coins and records it (top runs, weekly challenge, loss streak). */
+  private endRun(): void {
     this.bank += this.runCoins;
     save.setCoins(this.bank);
     if (this.height > this.best) {
@@ -740,6 +892,27 @@ export class Game {
       this.newBest = true;
       save.setBest(this.best);
     }
+    for (const reward of this.progress.endRun(this.height)) {
+      this.bankCoins(reward);
+      this.showToast(`Weekly challenge reward! +${reward} coins`);
+    }
+  }
+
+  /** Daily Special cleared: pays once per day, then shows the results screen as a win. */
+  private winSpecial(): void {
+    this.specialWon = true;
+    this.mode = 'dead';
+    this.deadAt = this.time;
+    this.moving = null;
+    this.event = null;
+    this.projectiles = [];
+    this.bubble = { text: this.chef.beaten, life: 99 };
+    if (this.progress.specialDay !== dayKey()) {
+      this.progress.specialDay = dayKey();
+      this.progress.persist();
+      this.addCoins(150, WORLD_W / 2, this.top.y - 80, 'Daily Special!');
+    }
+    this.endRun();
   }
 
   private sparkle(x: number, y: number, w: number, n: number): void {
@@ -768,7 +941,11 @@ export class Game {
 
     const m = this.moving;
     this.fade = Math.min(1, this.fade + dt / 1.5);
-    if (this.toast && (this.toast.life -= dt) <= 0) this.toast = null;
+    if (this.toast && (this.toast.life -= dt) <= 0) {
+      const next = this.toastQueue.shift();
+      // Move through a backlog faster so news doesn't pile up.
+      this.toast = next ? { text: next, life: this.toastQueue.length ? 1.4 : 2 } : null;
+    }
 
     if (m && this.mode !== 'dead') {
       const step = this.speed() * dt * this.moveDir;
@@ -847,8 +1024,10 @@ export class Game {
     drawBackdrop(ctx, this.theme, this.specks, this.time, this.camY, -this.offX, bw, this.viewH, 1, this.prevTheme ? this.fade : 1);
 
     this.buttons = [];
-    if (this.mode === 'shop') {
-      this.drawShop();
+    if (this.mode === 'shop' || this.mode === 'map' || this.mode === 'album') {
+      if (this.mode === 'shop') this.drawShop();
+      else if (this.mode === 'map') this.drawMap();
+      else this.drawAlbum();
       this.drawTopBar();
       this.drawToast();
       return;
@@ -865,6 +1044,10 @@ export class Game {
     const maxY = this.camY + this.viewH;
     for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
     for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) drawFlag(ctx, this.equip.flag, f.x, f.y, f.hue);
+    if (this.mode !== 'title') {
+      this.drawMarker(this.progress.lastRun, 'LAST', 'rgba(255,255,255,0.35)', minY, maxY);
+      this.drawMarker(this.best, 'BEST', '#ffd34d', minY, maxY);
+    }
     if (this.moving && this.mode !== 'dead') {
       this.drawLayer(this.moving);
       if (this.steady > 0) {
@@ -1392,7 +1575,8 @@ export class Game {
   }
 
   private showToast(text: string): void {
-    this.toast = { text, life: 1.8 };
+    if (this.toast) this.toastQueue.push(text);
+    else this.toast = { text, life: 2.2 };
   }
 
   private drawToast(): void {
@@ -1427,20 +1611,33 @@ export class Game {
       this.showToast(`Next gift in ${hours} hour${hours === 1 ? '' : 's'}`);
       return;
     }
-    // Coming back on consecutive days grows the gift, up to day 7.
+    // Coming back on consecutive days grows the gift; day 7 is worth more than days 1-6 together.
     const streak = save.giftDay() === Game.day(-1) ? save.giftStreak() + 1 : 1;
-    const reward = 20 + 10 * (Math.min(streak, 7) - 1);
+    const day = ((streak - 1) % 7) + 1;
+    const reward = STREAK_REWARDS[day - 1];
     save.setGift(Game.day(), streak);
-    this.bank += reward;
-    save.setCoins(this.bank);
-    this.showToast(`+${reward} coins · Day ${streak} streak`);
+    this.bankCoins(reward);
+    this.showToast(`Day ${day} gift: +${reward} coins (${streak}-day streak)`);
+    if (day === 7) {
+      if (!this.owned.flag.includes('week')) {
+        this.unlockExclusive('flag', 'week', 'Golden Week flag');
+      } else {
+        for (let i = 0; i < 2; i++) {
+          const b = BOOSTERS[Math.floor(Math.random() * BOOSTERS.length)];
+          this.boosters[b.id] = (this.boosters[b.id] ?? 0) + 1;
+          this.showToast(`Bonus booster: ${b.name}`);
+        }
+        save.setBoosters(this.boosters);
+      }
+    }
     sfx.serve();
     haptic.success();
+    void askForReminders();
   }
 
   /** The cheapest cosmetic the player doesn't own yet: shown after each run as something to save toward. */
   private nextGoal() {
-    const all = (Object.keys(CATALOG) as Cosmetic[]).flatMap((c) => CATALOG[c].filter((i) => !this.owned[c].includes(i.id)));
+    const all = (Object.keys(CATALOG) as Cosmetic[]).flatMap((c) => CATALOG[c].filter((i) => !i.earn && !this.owned[c].includes(i.id)));
     return all.sort((a, b) => a.price - b.price)[0];
   }
 
@@ -1456,18 +1653,29 @@ export class Game {
 
     if (this.mode === 'title') {
       const pulse = 0.6 + 0.4 * Math.sin(this.time * 4);
-      this.text('SUSHI', cx, top + 120, 60, '#ffffff', 900);
-      this.text('STACK', cx, top + 176, 60, '#ff8a5b', 900);
+      this.text('SUSHI', cx, top + 98, 52, '#ffffff', 900);
+      this.text('STACK', cx, top + 146, 52, '#ff8a5b', 900);
       if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 16, 'rgba(255,255,255,0.75)', 700);
+      const lvl = this.progress.unlocked;
       ctx.globalAlpha = pulse;
-      this.text('TAP TO PLAY', cx, top + 236, 20);
+      this.text('TAP TO PLAY', cx, top + 194, 20);
       ctx.globalAlpha = 1;
-      this.text('Then tap to drop each layer on the stack.', cx, top + 264, 14, 'rgba(255,255,255,0.65)', 500);
+      this.text(`Level ${lvl}: ${CHEFS[lvl - 1].name}`, cx, top + 219, 14, 'rgba(255,255,255,0.75)', 600);
       const ready = this.giftReady();
-      this.button(40, top + 296, 152, 44, ready ? 'DAILY GIFT' : 'GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
-      this.button(208, top + 296, 152, 44, 'SHOP', () => this.openShop());
+      this.button(30, top + 240, 165, 42, ready ? 'DAILY GIFT' : 'GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.button(205, top + 240, 165, 42, 'SHOP', () => this.openShop());
+      this.button(30, top + 290, 165, 42, 'MAP', () => this.openMap());
+      this.button(205, top + 290, 165, 42, 'ALBUM', () => this.openAlbum());
+      const specialDone = this.progress.specialDay === dayKey();
+      this.button(30, top + 340, 340, 42, specialDone ? 'DAILY SPECIAL ✓ (practice)' : 'DAILY SPECIAL · +150 COINS', () => this.startRun(this.specialLevel(), true), specialDone ? 'quiet' : 'gold');
+      this.drawMissions(top + 396);
       const stocked = BOOSTERS.reduce((n, b) => n + (this.boosters[b.id] ?? 0), 0);
-      if (stocked) this.text(`${stocked} booster${stocked === 1 ? '' : 's'} ready for your next run`, cx, top + 360, 12, 'rgba(255,255,255,0.75)', 600);
+      if (stocked) {
+        ctx.fillStyle = 'rgba(20,10,25,0.93)';
+        this.roundRect(90, top + 536, WORLD_W - 180, 22, 11);
+        ctx.fill();
+        this.text(`${stocked} booster${stocked === 1 ? '' : 's'} ready for your next run`, cx, top + 547, 11, '#9fe3ff', 700);
+      }
       return;
     }
 
@@ -1485,39 +1693,332 @@ export class Game {
       ctx.globalAlpha = t;
       ctx.fillStyle = 'rgba(30,15,30,0.5)';
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
-      // The boss gloats over the result.
+      // The boss gloats over the result (or cheers, after a Daily Special win).
       const ds = 1.5;
-      const dy = Math.max(top + 120, midY - 100 - 72 * ds);
+      const dy = Math.max(top + 120, midY - 110 - 72 * ds);
       this.drawBossBody(WORLD_W / 2, dy, ds);
       this.drawBossLabels(WORLD_W / 2, dy, ds);
-      ctx.fillStyle = 'rgba(42,26,51,0.94)';
-      this.roundRect(30, midY - 100, WORLD_W - 60, 270, 18);
+      ctx.fillStyle = 'rgba(42,26,51,0.95)';
+      this.roundRect(24, midY - 110, WORLD_W - 48, 290, 18);
       ctx.fill();
-      this.panel(midY - 25, this.newBest ? 'NEW BEST!' : 'DROPPED IT!', `${this.height} layers   ·   Best ${this.best}`);
-      this.text(`${this.ordersServed} order${this.ordersServed === 1 ? '' : 's'} served   ·   +${this.runCoins} coins`, cx, midY + 15, 15, '#ffd34d', 700);
+      const title = this.specialWon ? 'SPECIAL CLEARED!' : this.newBest ? 'NEW BEST!' : 'DROPPED IT!';
+      this.panel(midY - 35, title, this.special ? `Daily Special · ${this.height} layer${this.height === 1 ? '' : 's'}` : `Level ${this.level} · ${this.height} layer${this.height === 1 ? '' : 's'} · Best ${this.best}`);
+      const beaten = this.ordersServed;
+      this.text(`${beaten} chef${beaten === 1 ? '' : 's'} beaten   ·   +${this.runCoins} coins`, cx, midY + 4, 15, '#ffd34d', 700);
       // Near-miss nudge: the most effective "one more try" prompt.
       const gap = this.best - this.height;
-      if (!this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, midY + 40, 14, '#ffb4a2', 700);
+      if (!this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, midY + 27, 14, '#ffb4a2', 700);
+      // The mission closest to done.
+      const m = [...this.progress.missions].sort((a2, b2) => b2.progress / b2.target - a2.progress / a2.target)[0];
+      if (m) this.text(`Mission: ${missionText(m)}  ${m.progress}/${m.target}`, cx, midY + 50, 12, 'rgba(255,255,255,0.8)', 600);
 
-      // Progress toward the next plate keeps coins meaningful between runs.
+      // Progress toward the next item keeps coins meaningful between runs.
       const goal = this.nextGoal();
       if (goal) {
         const have = Math.min(this.bank, goal.price);
         const can = this.bank >= goal.price;
-        this.text(can ? `You can buy the ${goal.name}!` : `Next: ${goal.name}  ${have}/${goal.price}`, cx, midY + 68, 14, can ? '#ffd34d' : 'rgba(255,255,255,0.85)', 700);
+        this.text(can ? `You can buy the ${goal.name}!` : `Next: ${goal.name}  ${have}/${goal.price}`, cx, midY + 74, 13, can ? '#ffd34d' : 'rgba(255,255,255,0.85)', 700);
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        this.roundRect(70, midY + 82, WORLD_W - 140, 7, 3.5);
+        this.roundRect(70, midY + 86, WORLD_W - 140, 7, 3.5);
         ctx.fill();
         ctx.fillStyle = '#ffd34d';
-        this.roundRect(70, midY + 82, (WORLD_W - 140) * (have / goal.price), 7, 3.5);
+        this.roundRect(70, midY + 86, (WORLD_W - 140) * (have / goal.price), 7, 3.5);
         ctx.fill();
       }
       if (this.time - this.deadAt > 0.7) {
-        this.button(50, midY + 108, 140, 44, 'SHOP', () => this.openShop(), goal && this.bank >= goal.price ? 'gold' : 'quiet');
-        this.button(210, midY + 108, 140, 44, 'RETRY', () => this.startRun());
+        this.button(36, midY + 112, 104, 46, 'MAP', () => this.openMap(), 'quiet');
+        this.button(148, midY + 112, 104, 46, 'SHOP', () => this.openShop(), goal && this.bank >= goal.price ? 'gold' : 'quiet');
+        this.button(260, midY + 112, 104, 46, 'RETRY', () => this.retry());
       }
       ctx.globalAlpha = 1;
     }
+  }
+
+  /** Mission card: Chef Rank and the three current missions with progress bars. */
+  private drawMissions(y: number): void {
+    const { ctx } = this;
+    const p = this.progress;
+    ctx.fillStyle = 'rgba(20,10,25,0.93)';
+    this.roundRect(24, y, WORLD_W - 48, 134, 16);
+    ctx.fill();
+    this.text(`CHEF RANK ${p.rank}`, 40, y + 18, 13, '#ffd34d', 900, 'left');
+    this.text(`+${Math.round((p.coinBonus - 1) * 100)}% coins · finish all 3 to rank up`, WORLD_W - 40, y + 18, 11, 'rgba(255,255,255,0.7)', 600, 'right');
+    p.missions.forEach((m, i) => {
+      const my = y + 42 + i * 30;
+      const done = m.progress >= m.target;
+      this.text(`${done ? '✓ ' : ''}${missionText(m)}`, 40, my, 12, done ? '#8fdc93' : '#ffffff', 700, 'left');
+      this.text(`${m.progress}/${m.target}`, WORLD_W - 40, my, 12, 'rgba(255,255,255,0.8)', 700, 'right');
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      this.roundRect(40, my + 9, WORLD_W - 80, 4, 2);
+      ctx.fill();
+      ctx.fillStyle = done ? '#8fdc93' : '#ff8a5b';
+      this.roundRect(40, my + 9, (WORLD_W - 80) * Math.min(1, m.progress / m.target), 4, 2);
+      ctx.fill();
+    });
+    const w = p.weekly;
+    const nextGoal = WEEKLY_GOALS.find((g) => w.best < g.height);
+    this.text(nextGoal ? `Weekly challenge: best ${w.best} · reach ${nextGoal.height} for +${nextGoal.reward}` : `Weekly challenge complete! Best ${w.best}`, WORLD_W / 2, y + 126, 11, '#9fe3ff', 700);
+  }
+
+  /** Dashed line across the stack at a past height, so players can see their record coming. */
+  private drawMarker(height: number, label: string, color: string, minY: number, maxY: number): void {
+    if (height <= 0) return;
+    const y = -LAYER_H * (height + 1);
+    if (y < minY - 20 || y > maxY + 20) return;
+    const { ctx } = this;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(-this.offX, y);
+    ctx.lineTo(WORLD_W + this.offX, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    this.text(`${label} ${height}`, WORLD_W - 8, y - 9, 11, color, 900, 'right');
+  }
+
+  // --------------------------------------------------------------- map
+
+  private openMap(): void {
+    this.shopFrom = this.mode === 'map' ? this.shopFrom : this.mode;
+    this.mode = 'map';
+    // Start scrolled to the next chef to beat.
+    this.listMax = 1e6;
+    this.mapScroll = Math.max(0, (this.progress.unlocked - 1) * MAP_ROW - this.viewH * 0.3);
+  }
+
+  private drawMap(): void {
+    const { ctx } = this;
+    const top = this.insets.top;
+    const p = this.progress;
+    ctx.fillStyle = 'rgba(20,10,25,0.6)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.text('CHEF JOURNEY', WORLD_W / 2, top + 31, 22, '#fff', 900);
+    this.text(`★ ${p.totalStars}/${MAX_LEVEL * 3}   ·   ${p.unlocked - 1 + (p.stars[MAX_LEVEL - 1] ? 1 : 0)}/${MAX_LEVEL} chefs beaten`, WORLD_W / 2, top + 58, 12, '#ffd34d', 700);
+
+    const backY = this.viewH - this.insets.bottom - 60;
+    const areaTop = top + 76;
+    const areaH = backY - 10 - areaTop;
+    this.listMax = Math.max(0, MAX_LEVEL * MAP_ROW + 40 - areaH);
+    this.mapScroll = Math.min(this.mapScroll, this.listMax);
+    const nodeX = (i: number) => (i % 2 ? 282 : 118);
+    const nodeY = (i: number) => areaTop + 62 + i * MAP_ROW - this.mapScroll;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
+    ctx.clip();
+    const first = Math.max(0, Math.floor((this.mapScroll - 100) / MAP_ROW));
+    const last = Math.min(MAX_LEVEL - 1, Math.ceil((this.mapScroll + areaH) / MAP_ROW));
+    // The path between chefs: gold where it's been walked, dashed ahead.
+    for (let i = first; i < last; i++) {
+      ctx.strokeStyle = i + 2 <= p.unlocked ? '#ffd34d' : 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 5;
+      ctx.setLineDash(i + 2 <= p.unlocked ? [] : [6, 8]);
+      ctx.beginPath();
+      ctx.moveTo(nodeX(i), nodeY(i));
+      ctx.bezierCurveTo(nodeX(i), nodeY(i) + MAP_ROW * 0.6, nodeX(i + 1), nodeY(i + 1) - MAP_ROW * 0.6, nodeX(i + 1), nodeY(i + 1));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for (let i = first; i <= last; i++) {
+      const level = i + 1;
+      const c = CHEFS[i];
+      const x = nodeX(i);
+      const y = nodeY(i);
+      const open = level <= p.unlocked;
+      const stars = p.stars[i] || 0;
+      const current = level === p.unlocked && !stars;
+      this.drawPortrait(c, x, y, 40, open, stars === 3 ? 'happy' : 'calm');
+      ctx.lineWidth = current ? 4 + Math.sin(this.time * 6) * 1.5 : 2.5;
+      ctx.strokeStyle = current ? '#ffd34d' : open ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(x, y, 40, 0, Math.PI * 2);
+      ctx.stroke();
+      // Label beside the node, toward the middle.
+      const lx = i % 2 ? x - 52 : x + 52;
+      const align: CanvasTextAlign = i % 2 ? 'right' : 'left';
+      this.text(`LEVEL ${level}`, lx, y - 20, 11, 'rgba(255,255,255,0.65)', 800, align);
+      this.text(open ? c.name : '???', lx, y - 2, 14, open ? '#fff' : 'rgba(255,255,255,0.5)', 800, align);
+      this.text('★'.repeat(stars) + '☆'.repeat(3 - stars), lx, y + 18, 15, stars ? '#ffd34d' : 'rgba(255,255,255,0.3)', 900, align);
+      if (current) {
+        const pw = 64;
+        const px = align === 'left' ? lx : lx - pw;
+        ctx.fillStyle = '#ff8a5b';
+        this.roundRect(px, y + 30, pw, 20, 10);
+        ctx.fill();
+        this.text('PLAY ▶', px + pw / 2, y + 40.5, 11, '#fff', 900);
+      }
+      if (open && y + 44 > areaTop && y - 44 < areaTop + areaH) {
+        const hy = Math.max(y - 44, areaTop);
+        this.buttons.push({ x: Math.min(x - 44, lx - (align === 'right' ? 130 : 0)), y: hy, w: 88 + 130, h: Math.min(y + 50, areaTop + areaH) - hy, onTap: () => this.startRun(level) });
+      }
+    }
+    ctx.restore();
+    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom === 'map' ? 'title' : this.shopFrom; }, 'quiet');
+  }
+
+  /** A chef's face in a circle; greyed out with a lock when not yet reached. */
+  private drawPortrait(c: Chef, x: number, y: number, r: number, open: boolean, mood: Mood): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = open ? c.accent : '#3a3340';
+    ctx.fill();
+    ctx.clip();
+    drawChef(ctx, c, x, y + r * 0.2, r / 47, mood, x, y + 200, this.time);
+    if (!open) {
+      ctx.fillStyle = 'rgba(20,12,24,0.78)';
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      this.roundRect(x - r * 0.3, y - r * 0.05, r * 0.6, r * 0.45, 3);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = r * 0.09;
+      ctx.beginPath();
+      ctx.arc(x, y - r * 0.05, r * 0.2, Math.PI, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // -------------------------------------------------------------- album
+
+  private openAlbum(): void {
+    this.shopFrom = this.mode;
+    this.mode = 'album';
+    this.albumScroll = 0;
+  }
+
+  private drawAlbum(): void {
+    const { ctx } = this;
+    const top = this.insets.top;
+    const p = this.progress;
+    ctx.fillStyle = 'rgba(20,10,25,0.6)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.text('ALBUM', WORLD_W / 2, top + 31, 24, '#fff', 900);
+    const tabs: { id: AlbumTab; label: string }[] = [{ id: 'chefs', label: 'CHEF CARDS' }, { id: 'recipes', label: 'COLLECTIONS' }, { id: 'records', label: 'RECORDS' }];
+    const tabW = (WORLD_W - 32 - 12) / 3;
+    tabs.forEach((t, i) => {
+      const x = 16 + i * (tabW + 6);
+      const on = t.id === this.albumTab;
+      ctx.fillStyle = on ? '#ff8a5b' : 'rgba(255,255,255,0.12)';
+      this.roundRect(x, top + 56, tabW, 30, 15);
+      ctx.fill();
+      this.text(t.label, x + tabW / 2, top + 72, 12, on ? '#fff' : 'rgba(255,255,255,0.8)', 800);
+      this.buttons.push({ x, y: top + 56, w: tabW, h: 30, onTap: () => { this.albumTab = t.id; this.albumScroll = 0; } });
+    });
+
+    const backY = this.viewH - this.insets.bottom - 60;
+    const areaTop = top + 98;
+    const areaH = backY - 10 - areaTop;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
+    ctx.clip();
+    let contentH = 0;
+    const y0 = areaTop - this.albumScroll;
+
+    if (this.albumTab === 'chefs') {
+      const cw = (WORLD_W - 32 - 16) / 3;
+      const chh = 128;
+      CHEFS.forEach((c, i) => {
+        const x = 16 + (i % 3) * (cw + 8);
+        const y = y0 + Math.floor(i / 3) * (chh + 8);
+        if (y + chh < areaTop || y > areaTop + areaH) return;
+        const got = (p.stars[i] || 0) > 0;
+        ctx.fillStyle = got ? 'rgba(255,248,235,0.95)' : 'rgba(255,255,255,0.08)';
+        this.roundRect(x, y, cw, chh, 12);
+        ctx.fill();
+        this.drawPortrait(c, x + cw / 2, y + 46, 34, got, got ? 'happy' : 'calm');
+        this.text(`LV ${i + 1}`, x + cw / 2, y + 92, 10, got ? 'rgba(74,38,24,0.6)' : 'rgba(255,255,255,0.5)', 800);
+        this.text(got ? c.name.replace(/^(Chef|Master|Grand Master|Grand Chef|Emperor Chef|Dragon Chef) /, '') : '???', x + cw / 2, y + 106, 12, got ? '#4a2618' : 'rgba(255,255,255,0.5)', 800);
+        const st = p.stars[i] || 0;
+        this.text('★'.repeat(st) + '☆'.repeat(3 - st), x + cw / 2, y + 120, 11, got ? '#e0a800' : 'rgba(255,255,255,0.25)', 900);
+      });
+      contentH = Math.ceil(CHEFS.length / 3) * (chh + 8);
+    } else if (this.albumTab === 'recipes') {
+      let y = y0;
+      this.text(`RECIPE BOOK · serve each ${RECIPE_GOAL} times (+50 coins)`, 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+      y += 24;
+      for (const r of RECIPES) {
+        const n = Math.min(p.recipeCounts[r.name] ?? 0, RECIPE_GOAL);
+        const done = n >= RECIPE_GOAL;
+        ctx.fillStyle = 'rgba(48,30,52,0.94)';
+        this.roundRect(16, y, WORLD_W - 32, 70, 12);
+        ctx.fill();
+        this.drawDish(70, y + 32, 0.62, 0, r);
+        this.text(r.name, 130, y + 20, 14, '#fff', 800, 'left');
+        ctx.fillStyle = 'rgba(255,255,255,0.15)';
+        this.roundRect(130, y + 36, 180, 6, 3);
+        ctx.fill();
+        ctx.fillStyle = done ? '#8fdc93' : '#ff8a5b';
+        this.roundRect(130, y + 36, 180 * (n / RECIPE_GOAL), 6, 3);
+        ctx.fill();
+        this.text(done ? '✓ MASTERED' : `${n}/${RECIPE_GOAL} served`, 130, y + 56, 11, done ? '#8fdc93' : 'rgba(255,255,255,0.7)', 800, 'left');
+        y += 78;
+      }
+      y += 8;
+      this.text('SHOP COLLECTIONS · own every item in a tab (+200 coins)', 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+      y += 24;
+      for (const t of TABS) {
+        if (t.cat === 'booster') continue;
+        const items = CATALOG[t.cat as Cosmetic].filter((i) => !i.earn);
+        const have = items.filter((i) => this.owned[t.cat as Cosmetic].includes(i.id)).length;
+        const done = have === items.length;
+        ctx.fillStyle = 'rgba(48,30,52,0.94)';
+        this.roundRect(16, y, WORLD_W - 32, 44, 12);
+        ctx.fill();
+        this.text(t.label, 32, y + 22, 13, '#fff', 800, 'left');
+        this.text(done ? '✓ COMPLETE' : `${have}/${items.length} owned`, WORLD_W - 32, y + 22, 12, done ? '#8fdc93' : 'rgba(255,255,255,0.75)', 800, 'right');
+        y += 52;
+      }
+      y += 8;
+      this.text(`EXCLUSIVES · chest pieces: ${p.pieces}`, 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+      y += 24;
+      for (const cat of Object.keys(CATALOG) as Cosmetic[]) {
+        for (const item of CATALOG[cat].filter((i) => i.earn)) {
+          const got = this.owned[cat].includes(item.id);
+          ctx.fillStyle = 'rgba(48,30,52,0.94)';
+          this.roundRect(16, y, WORLD_W - 32, 44, 12);
+          ctx.fill();
+          this.text(item.name, 32, y + 22, 13, got ? '#ffd34d' : '#fff', 800, 'left');
+          this.text(got ? '✓ UNLOCKED' : item.earn!, WORLD_W - 32, y + 22, 11, got ? '#8fdc93' : 'rgba(255,255,255,0.65)', 700, 'right');
+          y += 52;
+        }
+      }
+      contentH = y - y0;
+    } else {
+      let y = y0;
+      const row = (label: string, value: string, color = '#fff') => {
+        ctx.fillStyle = 'rgba(48,30,52,0.94)';
+        this.roundRect(16, y, WORLD_W - 32, 40, 10);
+        ctx.fill();
+        this.text(label, 32, y + 20, 13, 'rgba(255,255,255,0.8)', 700, 'left');
+        this.text(value, WORLD_W - 32, y + 20, 14, color, 900, 'right');
+        y += 46;
+      };
+      row('Chef Rank', `${p.rank}  (+${Math.round((p.coinBonus - 1) * 100)}% coins)`, '#ffd34d');
+      row('Journey stars', `★ ${p.totalStars}/${MAX_LEVEL * 3}`, '#ffd34d');
+      row('Furthest level', `${p.unlocked}`);
+      row('Best height', `${this.best}`);
+      row('Coins', `${this.bank}`, '#ffd34d');
+      y += 6;
+      this.text('WEEKLY CHALLENGE · resets every Monday', 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+      y += 24;
+      WEEKLY_GOALS.forEach((g, i) => row(`Stack ${g.height} in one run`, p.weekly.claimed.includes(i) ? '✓ +' + g.reward : `${p.weekly.best}/${g.height}  ·  +${g.reward}`, p.weekly.claimed.includes(i) ? '#8fdc93' : '#fff'));
+      y += 6;
+      this.text('YOUR TOP RUNS', 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
+      y += 24;
+      if (!p.topRuns.length) row('No runs yet', '-');
+      p.topRuns.forEach((h, i) => row(`#${i + 1}`, `${h} layers`, i === 0 ? '#ffd34d' : '#fff'));
+      contentH = y - y0;
+    }
+    ctx.restore();
+    this.listMax = Math.max(0, contentH - areaH + 10);
+    this.albumScroll = Math.min(this.albumScroll, this.listMax);
+    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom; }, 'quiet');
   }
 
   private openTab(cat: Cat): void {
@@ -1672,6 +2173,8 @@ export class Game {
       this.text('✓ IN USE', x + 12, y + 82, 11, '#8fdc93', 800, 'left');
     } else if (owned) {
       this.text('Tap to use', x + 12, y + 82, 11, 'rgba(255,255,255,0.7)', 700, 'left');
+    } else if (item.earn) {
+      this.text(`★ Earn: ${item.earn}`, x + 12, y + 82, 11, '#9fe3ff', 700, 'left');
     } else {
       ctx.fillStyle = '#ffd34d';
       ctx.beginPath();
@@ -1713,6 +2216,10 @@ export class Game {
       sfx.drop();
       return;
     }
+    if (item.earn) {
+      this.showToast(`Exclusive: unlock it with ${item.earn}`);
+      return;
+    }
     if (this.shopSel !== key) {
       this.shopSel = key;
       if (this.bank < item.price) {
@@ -1731,6 +2238,12 @@ export class Game {
     this.showToast(`${item.name} unlocked!`);
     sfx.serve();
     haptic.success();
+    // Owning every buyable item in a tab completes that collection.
+    const tab = TABS.find((t) => t.cat === cat)!;
+    if (CATALOG[cat].filter((i) => !i.earn).every((i) => this.owned[cat].includes(i.id)) && this.progress.stamp(`set-${cat}`)) {
+      this.bankCoins(200);
+      this.showToast(`Collection complete: ${tab.label}! +200 coins`);
+    }
   }
 
   private panel(y: number, title: string, sub: string): void {
