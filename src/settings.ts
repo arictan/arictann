@@ -2,7 +2,7 @@
 
 import { save } from './platform';
 
-export type Lang = 'en' | 'ja' | 'ko' | 'es' | 'pt' | 'hi';
+export type Lang = 'en' | 'ja' | 'ko' | 'es' | 'pt' | 'hi' | 'tr';
 
 export interface Settings {
   haptics: boolean;
@@ -15,7 +15,7 @@ export interface Settings {
 
 function defaultLang(): Lang {
   const l = (navigator.language || 'en').slice(0, 2).toLowerCase();
-  return (['ja', 'ko', 'es', 'pt', 'hi'] as const).find((x) => x === l) ?? 'en';
+  return (['ja', 'ko', 'es', 'pt', 'hi', 'tr'] as const).find((x) => x === l) ?? 'en';
 }
 
 export const settings: Settings = {

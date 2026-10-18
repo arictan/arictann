@@ -13,7 +13,7 @@ src/chef.ts      boss chefs (50 story chefs + generated endless ones) and how th
 src/meta.ts      avatar, regular customers, story, achievements, gallery, Pass themes
 src/progress.ts  long-term progress (journey, missions, stats), saved on the device
 src/live.ts      date-driven events (World Tour, holidays, race, cup, crew, Pass seasons)
-src/i18n.ts      UI translations (en, ja, ko, es, pt, hi)
+src/i18n.ts      UI translations (en, ja, ko, es, pt, hi, tr)
 src/settings.ts  accessibility and feel settings
 src/analytics.ts on-device event log + hook for a real analytics SDK
 src/config.ts    remote-config defaults + optional URL

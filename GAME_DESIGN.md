@@ -238,7 +238,7 @@ After each run, the results screen shows progress toward the cheapest item you d
 
 **Platform**
 13. **Settings:** music, sound, vibration, reduced motion, colour-blind symbols, assist mode, highlight clips and language. A gear on the home screen keeps them reachable before MORE opens.
-14. **Languages.** The main UI is translated into Japanese, Korean, Spanish, Portuguese and Hindi. Chef lines and item names stay in English.
+14. **Languages.** The main UI is translated into Japanese, Korean, Spanish, Portuguese, Hindi and Turkish. Chef lines and item names stay in English.
 15. **Analytics.** Events (tutorial steps, runs, level beats, perks, purchases, ad rewards) are logged on the device. A hook is ready for Firebase or any other SDK, and nothing is sent by default.
 16. **Remote config.** Balance values (coin boost, perk frequency, rage point, tutorial speed, invite reward, an announcement message) have offline defaults and an optional JSON URL.
 17. **Save transfer.** A compressed, checksummed code moves your progress to another device.

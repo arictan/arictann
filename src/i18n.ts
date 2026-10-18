@@ -10,6 +10,7 @@ export const LANGS: { id: Lang; name: string }[] = [
   { id: 'es', name: 'Español' },
   { id: 'pt', name: 'Português' },
   { id: 'hi', name: 'हिन्दी' },
+  { id: 'tr', name: 'Türkçe' },
 ];
 
 type Dict = Record<string, string>;
@@ -63,6 +64,15 @@ const en: Dict = {
   language: 'Language',
   on: 'ON',
   off: 'OFF',
+  all: 'ALL',
+  none: 'NONE',
+  cont: 'CONTINUE',
+  dailySpecial: 'DAILY SPECIAL',
+  secSound: 'SOUND & FEEL',
+  secAccess: 'ACCESSIBILITY',
+  secFriends: 'FRIENDS',
+  secSave: 'SAVE TRANSFER',
+  secPrivacy: 'PRIVACY & DATA',
 };
 
 const ja: Dict = {
@@ -114,6 +124,15 @@ const ja: Dict = {
   language: '言語',
   on: 'オン',
   off: 'オフ',
+  all: 'すべて',
+  none: 'なし',
+  cont: 'コンティニュー',
+  dailySpecial: '本日のスペシャル',
+  secSound: 'サウンドと操作感',
+  secAccess: 'アクセシビリティ',
+  secFriends: 'フレンド',
+  secSave: 'データ引き継ぎ',
+  secPrivacy: 'プライバシーとデータ',
 };
 
 const ko: Dict = {
@@ -165,6 +184,15 @@ const ko: Dict = {
   language: '언어',
   on: '켜짐',
   off: '꺼짐',
+  all: '전체',
+  none: '없음',
+  cont: '이어하기',
+  dailySpecial: '오늘의 스페셜',
+  secSound: '사운드 및 느낌',
+  secAccess: '접근성',
+  secFriends: '친구',
+  secSave: '데이터 이전',
+  secPrivacy: '개인정보 및 데이터',
 };
 
 const es: Dict = {
@@ -216,6 +244,15 @@ const es: Dict = {
   language: 'Idioma',
   on: 'SÍ',
   off: 'NO',
+  all: 'TODOS',
+  none: 'NINGUNO',
+  cont: 'CONTINUAR',
+  dailySpecial: 'ESPECIAL DEL DÍA',
+  secSound: 'SONIDO Y TACTO',
+  secAccess: 'ACCESIBILIDAD',
+  secFriends: 'AMIGOS',
+  secSave: 'TRANSFERIR PARTIDA',
+  secPrivacy: 'PRIVACIDAD Y DATOS',
 };
 
 const pt: Dict = {
@@ -267,6 +304,15 @@ const pt: Dict = {
   language: 'Idioma',
   on: 'SIM',
   off: 'NÃO',
+  all: 'TODOS',
+  none: 'NENHUM',
+  cont: 'CONTINUAR',
+  dailySpecial: 'ESPECIAL DO DIA',
+  secSound: 'SOM E TOQUE',
+  secAccess: 'ACESSIBILIDADE',
+  secFriends: 'AMIGOS',
+  secSave: 'TRANSFERIR PROGRESSO',
+  secPrivacy: 'PRIVACIDADE E DADOS',
 };
 
 const hi: Dict = {
@@ -318,9 +364,78 @@ const hi: Dict = {
   language: 'भाषा',
   on: 'चालू',
   off: 'बंद',
+  all: 'सभी',
+  none: 'कोई नहीं',
+  cont: 'जारी रखें',
+  dailySpecial: 'आज का स्पेशल',
+  secSound: 'आवाज़ और एहसास',
+  secAccess: 'सुगमता',
+  secFriends: 'दोस्त',
+  secSave: 'सेव ट्रांसफ़र',
+  secPrivacy: 'गोपनीयता और डेटा',
 };
 
-const DICTS: Record<Lang, Dict> = { en, ja, ko, es, pt, hi };
+const tr: Dict = {
+  play: 'OYNA · SEVİYE {n}',
+  gift: 'GÜNLÜK HEDİYE',
+  giftTomorrow: 'YARIN HEDİYE',
+  modes: 'MODLAR',
+  special: 'GÜNÜN ÖZELİ · +150 ALTIN',
+  specialDone: 'GÜNÜN ÖZELİ ✓ (pratik)',
+  map: 'HARİTA',
+  events: 'ETKİNLİK',
+  shop: 'MAĞAZA',
+  restaurant: 'RESTORAN',
+  more: 'DAHA',
+  back: 'GERİ',
+  home: 'ANA SAYFA',
+  retry: 'TEKRAR',
+  next: 'SONRAKİ',
+  share: 'PAYLAŞ',
+  start: 'BAŞLA',
+  done: 'TAMAM',
+  perfect: 'MÜKEMMEL',
+  orderUp: 'SİPARİŞ HAZIR!',
+  newBest: 'YENİ REKOR!',
+  dropped: 'DÜŞTÜ!',
+  paused: 'DURAKLATILDI',
+  tapResume: 'Devam etmek için dokun',
+  level: 'SEVİYE {n}',
+  howTo: 'NASIL OYNANIR',
+  how1: 'Kayan katmanı kuleye bırakmak için dokun',
+  how2: 'Kenardan taşan kısım kesilip düşer',
+  how3: 'Şefi yenmek için siparişini tamamla',
+  tapDrop: 'BIRAKMAK İÇİN DOKUN',
+  tapDropText: 'Katman kulenin üstündeyken herhangi bir yere dokun',
+  aim: 'MÜKEMMELİ HEDEFLE',
+  aimText: 'Tam üst üste getir, genişliğin hiç azalmasın',
+  chefBeaten: 'ŞEF YENİLDİ!',
+  pickPerk: 'Bu oyunun geri kalanı için bir avantaj seç',
+  tapCard: 'Bir karta dokun',
+  pickBoosters: 'Güçlendirici seç · kalanlar çantanda kalır',
+  settings: 'AYARLAR',
+  music: 'Müzik',
+  sound: 'Ses',
+  haptics: 'Titreşim',
+  reducedMotion: 'Az hareket',
+  colorblind: 'Renk körlüğü simgeleri',
+  assist: 'Yardım modu',
+  clips: 'Öne çıkan klipler',
+  language: 'Dil',
+  on: 'AÇIK',
+  off: 'KAPALI',
+  all: 'TÜMÜ',
+  none: 'HİÇBİRİ',
+  cont: 'DEVAM ET',
+  dailySpecial: 'GÜNÜN ÖZELİ',
+  secSound: 'SES VE HİS',
+  secAccess: 'ERİŞİLEBİLİRLİK',
+  secFriends: 'ARKADAŞLAR',
+  secSave: 'KAYIT AKTARIMI',
+  secPrivacy: 'GİZLİLİK VE VERİ',
+};
+
+const DICTS: Record<Lang, Dict> = { en, ja, ko, es, pt, hi, tr };
 
 /** Translated UI string; `{n}` is replaced with the value given. */
 export function t(key: keyof typeof en, n?: number | string): string {

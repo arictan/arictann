@@ -2872,7 +2872,7 @@ export class Game {
       // Optional ad rewards and sharing.
       const canContinue = !this.revived && (this.resultKind === 'lost' || this.resultKind === 'challenge');
       const row1: [string, () => void, 'primary' | 'gold' | 'quiet'][] = [];
-      if (canContinue) row1.push([this.progress.vip ? 'CONTINUE' : '▶ CONTINUE', () => this.watchAd('Continue this run', () => this.revive()), 'gold']);
+      if (canContinue) row1.push([this.progress.vip ? tr('cont') : `▶ ${tr('cont')}`, () => this.watchAd('Continue this run', () => this.revive()), 'gold']);
       if (!this.doubled && this.runCoins > 0) row1.push([`▶ +${this.runCoins}`, () => this.watchAd('Double your coins', () => { this.doubled = true; this.bankCoins(this.runCoins); this.showToast(`Coins doubled: +${this.runCoins}`); }), 'gold']);
       row1.push([tr('share'), () => this.shareRun(), 'quiet']);
       if (this.clip) row1.push(['🎬 CLIP', () => { track('clip_share'); void shareClip(this.clip!, this.height); }, 'quiet']);
@@ -2941,15 +2941,15 @@ export class Game {
     }
     // Gift (with Maki the cat) and modes. Locked features show the level that opens them.
     const ready = this.giftReady();
-    if (this.lockedAt('gift')) this.lockedButton(30, top + 250, 165, 42, 'gift', 'GIFT');
+    if (this.lockedAt('gift')) this.lockedButton(30, top + 250, 165, 42, 'gift', t('gift'));
     else {
       this.button(30, top + 250, 165, 42, '', () => this.claimGift(), ready ? 'gold' : 'quiet');
       this.fitText(ready ? t('gift') : t('giftTomorrow'), 30 + 165 / 2 + 14, top + 272, 165 - 64, 15, ready ? '#4a2a00' : '#ffffff', 'center', 700);
       this.text(ready ? '😺' : '😸', 52, top + 271 + (ready ? Math.sin(this.time * 6) * 3 : 0), 22, '#fff', 400);
     }
     if (this.lockedAt('modes')) {
-      this.lockedButton(205, top + 250, 165, 42, 'modes', 'MODES');
-      this.lockedButton(30, top + 300, 340, 40, 'modes', 'DAILY SPECIAL');
+      this.lockedButton(205, top + 250, 165, 42, 'modes', t('modes'));
+      this.lockedButton(30, top + 300, 340, 40, 'modes', t('dailySpecial'));
     } else {
       this.button(205, top + 250, 165, 42, t('modes'), () => this.openScreen('modes'));
       const specialDone = p.specialDay === dayKey();
@@ -4827,11 +4827,11 @@ export class Game {
       this.text(label, 20, y + 10, 12, '#ffd34d', 700, 'left');
       y += 24;
     };
-    header('SOUND & FEEL');
+    header(t('secSound'));
     toggle('🎵', t('music'), 'Calm generated music', this.musicOn, () => this.toggleMusic());
     toggle('🔊', t('sound'), 'Chops, coins and cheers', !this.muted, () => { this.muted = !this.muted; setMuted(this.muted); save.setMuted(this.muted); });
     toggle('📳', t('haptics'), 'Taps you feel on PERFECTs and hits', settings.haptics, () => this.setting('haptics'));
-    header('ACCESSIBILITY');
+    header(t('secAccess'));
     toggle('🌙', t('reducedMotion'), 'No screen shake, flashes or confetti', settings.reducedMotion, () => this.setting('reducedMotion'));
     toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
     toggle('🤝', t('assist'), 'Slower layers, bigger PERFECT zone', settings.assist, () => this.setting('assist'));
@@ -4849,7 +4849,7 @@ export class Game {
     }, 'quiet');
     y += 62;
 
-    header('FRIENDS');
+    header(t('secFriends'));
     this.card(16, y, WORLD_W - 32, 96);
     this.text('Your invite code', 32, y + 20, 13, '#fff', 700, 'left');
     this.text(p.inviteCode, 32, y + 44, 20, '#ffd34d', 700, 'left');
@@ -4859,7 +4859,7 @@ export class Game {
     this.pill(16, y, WORLD_W - 32, 'ENTER A FRIEND’S CODE', f, () => this.openCodeInput('friend'), 'quiet');
     y += 44;
 
-    header('SAVE TRANSFER');
+    header(t('secSave'));
     this.card(16, y, WORLD_W - 32, 112);
     this.wrapLeft('Move your progress to another device: copy your save code here, then paste it there. (Automatic cloud save needs Game Center / Google Play Games, set up when the game is published.)', 32, y + 18, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)');
     this.pill(32, y + 70, (WORLD_W - 80) / 2, 'COPY SAVE CODE', f, () => {
@@ -4876,7 +4876,7 @@ export class Game {
       y += 20;
     }
 
-    header('PRIVACY & DATA');
+    header(t('secPrivacy'));
     const counts = analyticsSummary();
     this.card(16, y, WORLD_W - 32, 84);
     this.wrapLeft('Gameplay stats stay on this device. Nothing is sent anywhere unless the developer turns on analytics in a future update (it would be listed in the privacy policy).', 32, y + 18, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)');
@@ -5186,7 +5186,7 @@ export class Game {
     const by = y + h - 64;
     const all = pk.picked.size === owned.length;
     this.button(36, by, 96, 44, t('back'), () => { this.picker = null; }, 'quiet');
-    this.button(140, by, 96, 44, all ? 'NONE' : 'ALL', () => { pk.picked = new Set(all ? [] : owned.map((b) => b.id)); }, 'quiet');
+    this.button(140, by, 96, 44, all ? t('none') : t('all'), () => { pk.picked = new Set(all ? [] : owned.map((b) => b.id)); }, 'quiet');
     this.button(244, by, 120, 44, pk.picked.size ? `${t('start')} (${pk.picked.size})` : t('start'), () => {
       this.progress.lastBoosters = [...pk.picked];
       this.progress.persist();
