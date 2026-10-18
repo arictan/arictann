@@ -19,6 +19,7 @@ import { ClipRecorder, clipsSupported } from './clips';
 import { GUEST_SERVES_PER_DAY, STAFF, STYLES, THEMES as REST_THEMES, criticToday, decodeRestaurant, encodeRestaurant, styleText, stylesArray, themeById, themeInSeason, type RestCode, type RestTheme, type StaffId } from './restaurant';
 import { drawRestaurantScene, seatPos, type SceneGuest } from './scene';
 import type { AreaId } from './collect';
+import { DEMOTE, LEAGUES, LEAGUE_SIZE, NEMESIS_AT, NEMESIS_TAUNTS, PROMOTE, QUEST_POT, QUEST_STAGES, currentQuest, leagueRivals, leagueWeek, questSurvivors, settleLeague } from './compete';
 import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
@@ -182,7 +183,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -338,6 +339,7 @@ export class Game {
   private bonus: { left: number; ok: boolean } | null = null;
   private weather: { kind: 'wind' | 'rain'; dir: number } | null = null;
   private lastPerfect = false;
+  private nemesisLevelCached = 0;
   private friendGhost: [number, number][] | null = null; // shape of a friend's run from a ghost code
   private confirmBox: { title: string; text: string; ok: string; go: () => void } | null = null;
   // Intro: logo on every launch; the story panels only the first time.
@@ -359,6 +361,7 @@ export class Game {
     if (!location.search.includes('nointro')) this.intro = { stage: 'logo', t: 0, prev: 0, panel: 0, full: !this.progress.seen.includes('intro') };
     track('app_open', { level: this.progress.unlocked, lang: settings.lang });
     this.scheduleTipReminder();
+    this.checkLeague();
     new ResizeObserver(() => this.resize()).observe(canvas);
     // On scrolling screens (shop, map, album) a tap fires on release, so lists can be dragged;
     // everywhere else it fires on press.
@@ -472,8 +475,9 @@ export class Game {
 
   private announceChef(): void {
     const c = this.chef;
-    this.banner = { title: this.runMode === 'critic' ? '🧐 FOOD CRITIC' : this.special ? 'DAILY SPECIAL' : t('level', this.level), sub: this.runMode === 'critic' ? 'Small PERFECT zone · 2★ for a glowing review' : c.rule, life: 2.4 };
-    this.bubble = { text: c.intro, life: 2.2 };
+    const nem = this.isNemesis();
+    this.banner = { title: this.runMode === 'critic' ? '🧐 FOOD CRITIC' : this.special ? 'DAILY SPECIAL' : nem ? `😈 NEMESIS · LV ${this.level}` : t('level', this.level), sub: this.runMode === 'critic' ? 'Small PERFECT zone · 2★ for a glowing review' : nem ? `Beat you ${this.progress.losses[this.level]} times · stronger now` : c.rule, life: 2.4 };
+    this.bubble = { text: nem ? NEMESIS_TAUNTS[this.level % NEMESIS_TAUNTS.length] : c.intro, life: 2.2 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
     this.switchSides();
@@ -694,7 +698,7 @@ export class Game {
   private mission(kind: MissionKind, amount = 1, recipe?: string): void {
     const st = this.progress;
     switch (kind) {
-      case 'perfects': st.stat('perfects'); this.galleryPerfect(); break;
+      case 'perfects': st.stat('perfects'); this.galleryPerfect(); this.leaguePts(1); break;
       case 'serve': st.stat('served'); break;
       case 'dodge': st.stat('dodges'); break;
       case 'flawless': st.stat('flawless'); break;
@@ -815,6 +819,7 @@ export class Game {
     if (this.rage) v *= 1 + 0.12 * this.rage;
     if (this.progress.tutorial < 2 && this.height < 4) v *= cfg.tutorialSlowdown; // first run: gentle start
     if (settings.assist) v *= 0.82;
+    if (this.isNemesis()) v *= 1 + 0.05 * this.nemesisPower();
     if (this.flipT > 0) v *= 1.4;
     if (this.weather?.kind === 'wind') v *= 1 + 0.28 * this.moveDir * this.weather.dir; // faster with the wind, slower against it
     if (this.fever > 0) v *= 0.5;
@@ -1394,7 +1399,7 @@ export class Game {
     if (this.bonus) return; // the sous chef plays fair
     const c = this.chef;
     const sloppy = this.combo === 0;
-    const bad = this.shield ? 0 : (c.mean + (sloppy ? 0.08 : 0)) * (1 + this.rage * 0.6);
+    const bad = this.shield ? 0 : (c.mean + (sloppy ? 0.08 : 0) + (this.isNemesis() ? 0.04 * this.nemesisPower() : 0)) * (1 + this.rage * 0.6);
     const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06) * (this.lucky ? 2 : 1) * (1 + (this.perks.tips ?? 0) * 0.5);
     const r = this.rand();
     if (r < bad) {
@@ -1656,6 +1661,9 @@ export class Game {
 
     // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
     if (this.journey && beatLevel % 10 === 0 && beatLevel <= STORY_LEVELS) this.queueStory(chapterFor(beatLevel), true);
+    if (this.journey || this.runMode === 'gauntlet') this.leaguePts(10 + (flawless ? 5 : 0));
+    if (this.journey) this.questWin();
+    if (this.journey && this.nemesisLevel() === beatLevel) this.beatNemesis(beatLevel);
     if (this.journey) {
       track('level_beat', { level: beatLevel, stars, flawless });
       // Card copies: beating a chef again levels up their card (Lv 2 = gold uniform).
@@ -1844,6 +1852,13 @@ export class Game {
     p.persist();
     track('run_end', { mode: this.runMode, level: this.level, height: this.height, coins: this.runCoins, served: this.ordersServed, result: this.resultKind });
     if (this.runMode === 'challenge' && this.challenge && !this.revived) this.recordDuel();
+    if (this.journey && this.resultKind === 'lost' && !this.revived) {
+      // A loss counts toward this chef becoming your nemesis; a run with no chef beaten ends the Streak Quest.
+      p.losses[this.level] = (p.losses[this.level] ?? 0) + 1;
+      if (p.losses[this.level] === NEMESIS_AT) this.showToast(`😈 ${this.chef.name} is now your NEMESIS! Beat them for a big reward.`);
+      if (this.ordersServed === 0) this.questLose();
+      p.persist();
+    }
     if (settings.clips) void this.clips.finish().then((f) => { this.clip = f; });
   }
 
@@ -1875,6 +1890,7 @@ export class Game {
     this.projectiles = [];
     this.bubble = { text: this.chef.beaten, life: 99 };
     if (this.runMode === 'special' && this.progress.specialDay !== dayKey()) {
+      this.leaguePts(20);
       this.progress.specialDay = dayKey();
       this.progress.persist();
       this.addCoins(150, WORLD_W / 2, this.top.y - 80, 'Daily Special!');
@@ -2073,6 +2089,8 @@ export class Game {
       else if (this.mode === 'museum') this.drawMuseum();
       else if (this.mode === 'profile') this.drawProfile();
       else if (this.mode === 'calendar') this.drawCalendar();
+      else if (this.mode === 'league') this.drawLeague();
+      else if (this.mode === 'quest') this.drawQuest();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -3215,6 +3233,14 @@ export class Game {
     ctx.stroke();
     this.text('⚙', gx, mb.y + 1, 15, 'rgba(255,255,255,0.85)', 400);
     this.buttons.push({ x: gx - 20, y: mb.y - 20, w: 40, h: 40, onTap: () => this.openScreen('settings') });
+    // Your nemesis taunts you once a day.
+    const nem = this.nemesisLevel();
+    if (nem && !p.seen.includes(`taunt:${dayKey()}`) && !this.celebration) {
+      p.seen = p.seen.filter((k) => !k.startsWith('taunt:'));
+      p.seen.push(`taunt:${dayKey()}`);
+      p.persist();
+      this.showToast(`😈 ${chefFor(nem).name}: “${NEMESIS_TAUNTS[Math.floor(Math.random() * NEMESIS_TAUNTS.length)]}”`);
+    }
     // A one-time announcement from remote config.
     if (cfg.message && !p.seen.includes(`msg:${cfg.message}`)) {
       p.seen.push(`msg:${cfg.message}`);
@@ -3265,7 +3291,7 @@ export class Game {
     }
     ctx.fillStyle = 'rgba(20,10,25,0.95)';
     ctx.fillRect(-this.offX, navY, WORLD_W + this.offX * 2, 62 + this.insets.bottom);
-    const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3);
+    const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3) || (this.quest.stage >= QUEST_STAGES && !this.quest.claimed);
     const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0 || this.calendarReady();
     const nav: [string, string, () => void, boolean, string][] = [
       ['🗺️', t('map'), () => this.openMap(), false, 'map'],
@@ -3465,6 +3491,7 @@ export class Game {
   }
 
   private drawMap(): void {
+    this.nemesisLevelCached = this.nemesisLevel();
     const { ctx } = this;
     const top = this.insets.top;
     const p = this.progress;
@@ -3523,6 +3550,7 @@ export class Game {
       const stars = p.stars[i] || 0;
       const current = level === p.playLevel && !stars;
       this.drawPortrait(c, x, y, 40, open, stars === 3 ? 'happy' : 'calm');
+      if (level === this.nemesisLevelCached) this.text('😈', x + 30, y - 30, 20, '#fff', 400);
       ctx.lineWidth = current ? 4 + Math.sin(this.time * 6) * 1.5 : 2.5;
       ctx.strokeStyle = current ? '#ffd34d' : open ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)';
       ctx.beginPath();
@@ -4133,6 +4161,7 @@ export class Game {
       ['🍣 Chef Journey', `Continue at level ${p.playLevel} · ${chefFor(p.playLevel).name}`, 'PLAY', () => this.startRun()],
       ['🧘 Zen', `No game over, no attacks, calm music · best ${p.zenBest}`, 'RELAX', () => this.startRun(p.playLevel, 'zen')],
       ['⏱ Time Attack', `Stack as high as you can in 60 seconds · best ${p.timeBest}`, 'GO', () => this.startRun(p.playLevel, 'time')],
+      ...(this.nemesisLevel() ? [['😈 Nemesis rematch', `${chefFor(this.nemesisLevel()).name} beat you ${p.losses[this.nemesisLevel()]} times · reward ${this.nemesisReward()} coins`, 'REMATCH', () => this.startRun(this.nemesisLevel())] as [string, string, string, () => void]] : []),
       ['⚔️ Gauntlet', `Boss after boss, no breaks, no perks · best ${p.gauntletBest} chefs`, 'FIGHT', () => this.startRun(Math.max(5, p.playLevel), 'gauntlet')],
       ['🍱 Daily Special', p.specialDay === dayKey() ? 'Cleared today, practice anytime' : 'One special order, +150 coins today', 'PLAY', () => this.startRun(this.specialLevel(), 'special')],
       ['🤝 Friend Challenge', 'Enter a friend’s code and beat their score', 'ENTER CODE', () => this.openCodeInput()],
@@ -4172,6 +4201,23 @@ export class Game {
     const { ctx } = this;
     let y = f.y0 + 4;
     const W = WORLD_W - 32;
+
+    // League and Streak Quest.
+    const half = (W - 8) / 2;
+    const L = LEAGUES[p.league.tier];
+    const myRank = this.leagueTable().findIndex((r) => r.me) + 1;
+    this.card(16, y, half, 84, 'rgba(40,40,80,0.95)');
+    this.text(`${L.icon} ${L.name.toUpperCase()}`, 16 + half / 2, y + 22, 13, '#fff', 700);
+    this.text(`#${myRank} of ${LEAGUE_SIZE}`, 16 + half / 2, y + 44, 16, myRank <= PROMOTE ? '#8fdc93' : '#ffd34d', 700);
+    this.text(`${p.league.pts} pts · ${timeLeft(leagueWeek().end)}`, 16 + half / 2, y + 66, 10, 'rgba(255,255,255,0.7)', 600);
+    this.listTap(16, y, half, 84, f, () => this.openScreen('league', 'events'));
+    const q = this.quest;
+    this.card(24 + half, y, half, 84, 'rgba(90,30,20,0.95)');
+    this.text('🌋 STREAK QUEST', 24 + half + half / 2, y + 22, 13, '#fff', 700);
+    this.text(!q.joined ? 'JOIN · 10,000 coins' : q.out ? 'Knocked out' : q.stage >= QUEST_STAGES ? (q.claimed ? '✓ Cleared' : 'Claim reward!') : `Stage ${q.stage}/${QUEST_STAGES}`, 24 + half + half / 2, y + 44, 13, q.out ? '#ff9a8a' : '#ffd34d', 700);
+    this.text(timeLeft(currentQuest().end), 24 + half + half / 2, y + 66, 10, 'rgba(255,255,255,0.7)', 600);
+    this.listTap(24 + half, y, half, 84, f, () => this.openScreen('quest', 'events'));
+    y += 94;
 
     // World Tour
     const tour = currentTour();
@@ -5514,6 +5560,187 @@ export class Game {
     this.button(WORLD_W - 92 - this.insets.right, this.insets.top + 14, 80, 32, `${t('skip')} ›`, () => this.finishIntro(true), 'quiet');
   }
 
+  // ------------------------------------------------------------ leagues
+
+  private checkLeague(): void {
+    const p = this.progress;
+    const before = p.league;
+    p.league = settleLeague(p.league, p.inviteCode);
+    if (p.league !== before) {
+      const r = p.league.result;
+      if (r) {
+        if (r.coins) this.bankCoins(r.coins);
+        const L = LEAGUES[p.league.tier];
+        this.celebrate(r.moved > 0 ? `${L.icon} PROMOTED TO ${L.name.toUpperCase()}!` : r.moved < 0 ? `${L.icon} Back to ${L.name}` : `${L.icon} STAYED IN ${L.name.toUpperCase()}`, `Last week you finished #${r.rank}${r.coins ? ` · +${r.coins} coins` : ''}`);
+        track('league_end', { rank: r.rank, tier: r.tier, moved: r.moved });
+      }
+      p.persist();
+    }
+  }
+
+  private leaguePts(n: number): void {
+    const p = this.progress;
+    if (this.lockedAt('events')) return;
+    this.checkLeague();
+    p.league.pts += n;
+  }
+
+  private leagueTable(): { name: string; pts: number; me: boolean }[] {
+    const p = this.progress;
+    return [...leagueRivals(p.league.week, p.league.tier, p.inviteCode).map((x) => ({ ...x, me: false })), { name: `YOU · ${p.avatar.name}`, pts: p.league.pts, me: true }]
+      .sort((a, b) => b.pts - a.pts || (a.me ? -1 : 1));
+  }
+
+  private drawLeague(): void {
+    this.checkLeague();
+    const { ctx } = this;
+    const p = this.progress;
+    const L = LEAGUES[p.league.tier];
+    const f = this.screenBegin(`${L.icon} ${L.name.toUpperCase()} LEAGUE`, `Top ${PROMOTE} move up · bottom ${DEMOTE} move down · ${timeLeft(leagueWeek().end)} · rivals are AI`);
+    let y = f.y0 + 4;
+    // Tier ladder.
+    const cw = (WORLD_W - 32) / LEAGUES.length;
+    LEAGUES.forEach((lg, i) => {
+      const on = i === p.league.tier;
+      this.text(lg.icon, 16 + cw * i + cw / 2, y + 18, on ? 26 : 18, '#fff', 400);
+      if (on) this.dot(16 + cw * i + cw / 2, y + 40, 3.5, lg.color);
+      ctx.globalAlpha = i <= p.league.tier ? 1 : 0.35;
+      this.fitText(lg.name, 16 + cw * i + cw / 2, y + 50, cw - 2, 8.5, '#fff', 'center', 700);
+      ctx.globalAlpha = 1;
+    });
+    y += 62;
+    this.wrapLeft('Earn points: +10 per chef beaten, +5 if flawless, +1 per PERFECT, +20 for the Daily Special. Top 3 win 500 / 350 / 250 coins.', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
+    y += 36;
+    const table = this.leagueTable();
+    table.forEach((row, i) => {
+      const rank = i + 1;
+      const zone = rank <= PROMOTE && p.league.tier < LEAGUES.length - 1 ? 'up' : rank > LEAGUE_SIZE - DEMOTE && p.league.tier > 0 ? 'down' : '';
+      this.card(16, y, WORLD_W - 32, 34, row.me ? 'rgba(110,80,10,0.95)' : zone === 'up' ? 'rgba(30,70,45,0.9)' : zone === 'down' ? 'rgba(80,25,30,0.9)' : 'rgba(48,30,52,0.9)');
+      this.text(`${rank}`, 36, y + 17, 12, rank <= 3 ? '#ffd34d' : 'rgba(255,255,255,0.7)', 700);
+      this.fitText(row.name, 56, y + 17, 210, 12, row.me ? '#ffd34d' : '#fff', 'left', 700);
+      this.text(`${row.pts}`, WORLD_W - 32, y + 17, 12.5, '#fff', 700, 'right');
+      if (rank === PROMOTE && zone) this.text('▲ promotion line', WORLD_W - 90, y + 30, 8, '#8fdc93', 700, 'right');
+      y += 38;
+    });
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ streak quest
+
+  private get quest() {
+    const q = currentQuest();
+    const p = this.progress;
+    if (p.quest.key !== q.key) p.quest = { key: q.key, joined: false, stage: 0, out: false, claimed: false };
+    return p.quest;
+  }
+
+  private questWin(): void {
+    const q = this.quest;
+    if (!q.joined || q.out || q.stage >= QUEST_STAGES) return;
+    q.stage++;
+    if (q.stage >= QUEST_STAGES) this.celebrate('🌋 STREAK QUEST CLEARED!', 'Claim your share of the 10,000 coins in Events');
+    else this.showToast(`🌋 Streak Quest: ${q.stage}/${QUEST_STAGES}`);
+    this.progress.persist();
+  }
+
+  private questLose(): void {
+    const q = this.quest;
+    if (!q.joined || q.out || q.stage >= QUEST_STAGES) return;
+    q.out = true;
+    this.showToast('🌋 Out of the Streak Quest! A new one starts soon.');
+  }
+
+  private drawQuest(): void {
+    const { ctx } = this;
+    const q = this.quest;
+    const surv = questSurvivors(q.key);
+    const f = this.screenBegin('🌋 STREAK QUEST', `Beat ${QUEST_STAGES} chefs · don’t end a run empty-handed · ${timeLeft(currentQuest().end)} · AI rivals`);
+    let y = f.y0 + 4;
+    // The lava path: 7 platforms rising up the volcano.
+    const h = 380;
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, '#2a0d1a');
+    g.addColorStop(1, '#ff5a1f');
+    ctx.fillStyle = g;
+    this.roundRect(16, y, WORLD_W - 32, h, 16);
+    ctx.fill();
+    // Lava bubbles.
+    for (let i = 0; i < 10; i++) {
+      const bx = 30 + ((i * 47 + this.time * 20) % (WORLD_W - 60));
+      this.dot(bx, y + h - 14 - Math.abs(Math.sin(this.time * 2 + i)) * 8, 3 + (i % 3), '#ffd34d');
+    }
+    for (let s = 0; s <= QUEST_STAGES; s++) {
+      const px = 70 + (s % 2) * 200 + (s === QUEST_STAGES ? 100 - (s % 2) * 200 : 0);
+      const py = y + h - 40 - s * ((h - 70) / QUEST_STAGES);
+      ctx.fillStyle = s <= q.stage ? '#8fdc93' : '#5a3a22';
+      this.roundRect(px - 34, py - 6, 68, 14, 7);
+      ctx.fill();
+      this.text(s === QUEST_STAGES ? '🏆' : `${s}`, px, py - 16, s === QUEST_STAGES ? 22 : 11, '#fff', 700);
+      this.text(`${surv[s]} left`, px + (s % 2 ? -56 : 56), py + 1, 9.5, 'rgba(255,255,255,0.8)', 700);
+      if (s === q.stage && q.joined && !q.out) drawChef(ctx, avatarChef(this.progress.avatar), px, py - 30, 0.32, 'happy', px, py + 40, this.time);
+    }
+    y += h + 10;
+    const share = Math.floor(QUEST_POT / surv[QUEST_STAGES]);
+    this.card(16, y, WORLD_W - 32, 84, 'rgba(70,25,20,0.95)');
+    if (!q.joined) {
+      this.text('100 players · 7 stages · 10,000 coins', 32, y + 22, 13, '#ffd34d', 700, 'left');
+      this.fitText('Beat chefs in journey runs. A run that beats no chef knocks you out.', 32, y + 44, WORLD_W - 64, 10.5, 'rgba(255,255,255,0.8)', 'left');
+      this.pill(32, y + 54, WORLD_W - 64, 'JOIN THE QUEST', f, () => { q.joined = true; this.progress.persist(); track('quest_join'); }, 'gold');
+    } else if (q.out) {
+      this.text('Knocked out at stage ' + q.stage, 32, y + 24, 14, '#ff9a8a', 700, 'left');
+      this.text(`A new quest starts in ${timeLeft(currentQuest().end)}`, 32, y + 48, 11, 'rgba(255,255,255,0.75)', 600, 'left');
+    } else if (q.stage >= QUEST_STAGES) {
+      this.text(`You made it! ${surv[QUEST_STAGES]} survivors share the pot`, 32, y + 24, 12.5, '#8fdc93', 700, 'left');
+      if (!q.claimed) this.pill(32, y + 44, WORLD_W - 64, `CLAIM ${share} COINS`, f, () => { q.claimed = true; this.bankCoins(share); this.celebrate('🌋 +' + share + ' COINS', 'Your share of the Streak Quest pot'); this.progress.persist(); }, 'gold');
+      else this.text('✓ Claimed', 32, y + 56, 12, '#8fdc93', 700, 'left');
+    } else {
+      this.text(`Stage ${q.stage}/${QUEST_STAGES} · ${surv[q.stage]} players left`, 32, y + 24, 13, '#ffd34d', 700, 'left');
+      this.fitText(`Finish to share ${QUEST_POT.toLocaleString('en')} coins (about ${share} each)`, 32, y + 46, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)', 'left');
+      this.pill(32, y + 54, WORLD_W - 64, 'PLAY', f, () => this.startRun(), 'gold');
+    }
+    y += 92;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ nemesis
+
+  /** The chef who has beaten you most (at least NEMESIS_AT times), if any. */
+  private nemesisLevel(): number {
+    let best = 0;
+    let most = NEMESIS_AT - 1;
+    for (const [lv, n] of Object.entries(this.progress.losses)) {
+      if (n > most && this.progress.canEnter(Number(lv))) {
+        most = n;
+        best = Number(lv);
+      }
+    }
+    return best;
+  }
+
+  private nemesisPower(): number {
+    const lv = this.nemesisLevel();
+    return lv ? Math.min(5, (this.progress.losses[lv] ?? 0) - NEMESIS_AT + 1) : 0;
+  }
+
+  private isNemesis(): boolean {
+    return this.journey && this.level === this.nemesisLevel();
+  }
+
+  private nemesisReward(): number {
+    return 150 + 100 * this.nemesisPower();
+  }
+
+  private beatNemesis(level: number): void {
+    const p = this.progress;
+    const reward = this.nemesisReward();
+    p.losses[level] = 0;
+    if (!p.badges.includes('nemesis')) p.badges.push('nemesis');
+    this.bankCoins(reward);
+    this.celebrate('😈 NEMESIS DEFEATED!', `${chefFor(level).name} bows to you · +${reward} coins`);
+    track('nemesis_beaten', { level });
+    p.persist();
+  }
+
   // ------------------------------------------------------------ chef cards
 
   /** Chefs whose card is Lv 2+ wear a gold uniform. */
@@ -5707,6 +5934,7 @@ export class Game {
     const badges: [string, string][] = [
       ...p.badges.filter((b) => b.startsWith('season:')).map((b) => { const [, n, icon, name] = b.split(':'); return [icon, `${name} (S${n})`] as [string, string]; }),
       ...(p.badges.includes('calendar') ? [['📅', 'Loyal 28'] as [string, string]] : []),
+      ...(p.badges.includes('nemesis') ? [['😈', 'Nemesis slayer'] as [string, string]] : []),
       ...ACHIEVEMENTS.filter((a) => (p.achSeen[a.id] ?? 0) >= 4).map((a) => [a.icon, `${a.name} IV`] as [string, string]),
       ...(p.restaurant.michelin ? [['⭐', `${p.restaurant.michelin} Michelin`] as [string, string]] : []),
       ...(p.prestige ? [['👑', `Prestige ${p.prestige}`] as [string, string]] : []),

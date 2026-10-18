@@ -4,6 +4,7 @@
 import { save } from './platform';
 import { DEFAULT_AVATAR, type Avatar, type StatId } from './meta';
 import { DEFAULT_REST, type RestState } from './restaurant';
+import type { LeagueState, QuestState } from './compete';
 
 export const STORY_LEVELS = 50; // hand-made chefs; levels keep going forever after this
 
@@ -124,6 +125,9 @@ export class Progress {
   badges: string[] = save.json('badges', []); // season trophies and other profile badges
   prestige = save.json('prestige', 0);
   calendar = save.json('calendar', { n: 0, last: '' }); // 28-day login calendar: days claimed, last claim day
+  league: LeagueState = save.json('league', { week: '', tier: 0, pts: 0, result: null });
+  quest: QuestState = save.json('quest', { key: '', joined: false, stage: 0, out: false, claimed: false });
+  losses: Record<number, number> = save.json('losses', {}); // journey losses per chef level (for the nemesis)
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -197,6 +201,9 @@ export class Progress {
     save.setJson('badges', this.badges);
     save.setJson('prestige', this.prestige);
     save.setJson('calendar', this.calendar);
+    save.setJson('league', this.league);
+    save.setJson('quest', this.quest);
+    save.setJson('losses', this.losses);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */
