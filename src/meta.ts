@@ -99,7 +99,7 @@ export function chapterFor(level: number): number {
 
 // ------------------------------------------------------------- achievements
 
-export type StatId = 'perfects' | 'served' | 'height' | 'level' | 'stars' | 'streak' | 'dodges' | 'flawless' | 'coins' | 'rank' | 'rage' | 'puzzles' | 'hearts' | 'pictures' | 'days';
+export type StatId = 'perfects' | 'served' | 'height' | 'level' | 'stars' | 'streak' | 'dodges' | 'flawless' | 'coins' | 'rank' | 'rage' | 'puzzles' | 'hearts' | 'pictures' | 'days' | 'fancy' | 'bonus';
 
 export interface AchFamily { id: StatId; icon: string; name: string; desc: (n: number) => string; tiers: number[] }
 

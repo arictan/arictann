@@ -100,9 +100,13 @@ interface Layer {
   kind: Ingredient;
   origin: number; // world x where this layer's texture is anchored, so trimming never shifts it
   special?: SpecialLayer; // rare layers that change the drop (see spawnMoving)
+  fancy?: boolean; // a "fancy cut": landed during a 5+ PERFECT streak
 }
 
-type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic';
+/** Layers placed of one ingredient to master it (mastered ingredients turn gold and pay a little extra). */
+export const MASTERY = 100;
+
+type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet';
 
 const FEVER_TIME = 5; // seconds of Fever after every 10 PERFECTs in a row
 const TIME_ATTACK = 60; // seconds
@@ -162,6 +166,9 @@ interface Splat { x: number; y: number; r: number; life: number; seed: number } 
 
 const ATTACK_INFO: Record<Attack, { label: string; line: string; windup: number }> = {
   flurry: { label: 'KNIFE FLURRY!', line: 'RAAAGH!', windup: 1.1 },
+  steal: { label: 'SNEAKY BITE!', line: 'Just a little taste...', windup: 0.9 },
+  flip: { label: 'SPEED FLIP!', line: 'Other way! Faster!', windup: 0.8 },
+  frost: { label: 'FREEZER BLAST!', line: 'Chill out!', windup: 0.9 },
   knife: { label: 'KNIFE THROW!', line: 'Catch this!', windup: 1.0 },
   slam: { label: 'TABLE SLAM!', line: 'Hmph!', windup: 0.9 },
   splat: { label: 'SOY SPLASH!', line: 'Oops, soy sauce!', windup: 0.7 },
@@ -323,6 +330,12 @@ export class Game {
   private clip: File | null = null;
   private saveCode = '';
   private criticStars = 0;
+  // Gameplay update: flip and frost attacks, sous-chef bonus rounds, weather, PERFECT tracking.
+  private flipT = 0;
+  private frost = 0;
+  private bonus: { left: number; ok: boolean } | null = null;
+  private weather: { kind: 'wind' | 'rain'; dir: number } | null = null;
+  private lastPerfect = false;
   private upgradeFx: { i: number; t: number } | null = null; // sparkle on a just-upgraded restaurant area
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
@@ -518,6 +531,7 @@ export class Game {
   private retry(): void {
     if (this.gated) this.openMap();
     else if (this.runMode === 'zen' || this.runMode === 'time') this.startRun(this.progress.playLevel, this.runMode);
+    else if (this.runMode === 'gauntlet') this.startRun(this.startLevel, 'gauntlet');
     else if (this.runMode === 'puzzle') this.startRun(1, 'puzzle', { puzzle: this.resultKind === 'puzzle-won' ? Math.min(PUZZLES - 1, this.puzzle + 1) : this.puzzle });
     else if (this.runMode === 'challenge' && this.challenge) this.startRun(this.challenge.level, 'challenge', { challenge: this.challenge });
     else if (this.runMode === 'critic') this.startCritic();
@@ -595,6 +609,9 @@ export class Game {
     save.setBoosters(this.boosters);
     this.perks = {};
     this.perkChoice = null;
+    this.bonus = null;
+    this.flipT = 0;
+    this.frost = 0;
     this.shieldHits = 0;
     this.flurryLeft = 0;
 
@@ -724,6 +741,13 @@ export class Game {
     const n = this.level - 1;
     this.orderStats = { drops: 0, perfects: 0, slices: 0 };
     this.rage = 0;
+    // Weather from level 12: wind speeds layers one way and slows them the other; rain makes them skid.
+    this.weather = null;
+    if ((this.runMode === 'journey' || this.runMode === 'challenge' || this.runMode === 'gauntlet') && this.level >= 12) {
+      const w = this.rand();
+      if (w < 0.18) this.weather = { kind: 'wind', dir: this.rand() < 0.5 ? -1 : 1 };
+      else if (w < 0.36) this.weather = { kind: 'rain', dir: 0 };
+    }
     if (this.runMode === 'puzzle') {
       const cfg = puzzleConfig(this.puzzle);
       this.order = { recipe: BASIC_RECIPES[this.puzzle % BASIC_RECIPES.length], length: cfg.layers, start: this.height, reward: 0 };
@@ -750,7 +774,8 @@ export class Game {
     const request = heartLevel(this.progress.hearts[REGULARS[who].id] ?? 0) >= 2 && this.rand() < cfg.heartRequestChance;
     // Orders grow to 12 layers early on, then keep growing slowly in endless mode (up to 20).
     const endless = Math.min(8, Math.max(0, Math.floor((this.level - STORY_LEVELS) / 10)));
-    const length = Math.min(5 + Math.floor(n / 2), 12) + endless + this.chef.extra - (this.shortOrders ? 2 : 0) + (request ? 2 : 0);
+    const base = this.runMode === 'gauntlet' ? 6 + Math.floor(this.ordersServed / 3) : Math.min(5 + Math.floor(n / 2), 12) + endless + this.chef.extra;
+    const length = base - (this.shortOrders ? 2 : 0) + (request ? 2 : 0);
     // Today's menu board special turns up more often.
     const menu = this.progress.rest.menu;
     if (menu.day === dayKey()) {
@@ -781,6 +806,8 @@ export class Game {
     if (this.rage) v *= 1 + 0.12 * this.rage;
     if (this.progress.tutorial < 2 && this.height < 4) v *= cfg.tutorialSlowdown; // first run: gentle start
     if (settings.assist) v *= 0.82;
+    if (this.flipT > 0) v *= 1.4;
+    if (this.weather?.kind === 'wind') v *= 1 + 0.28 * this.moveDir * this.weather.dir; // faster with the wind, slower against it
     if (this.fever > 0) v *= 0.5;
     if (this.steady > 0) v *= 0.55;
     if (this.easy && this.height < 10) v *= 0.8;
@@ -877,6 +904,11 @@ export class Game {
   private drop(): void {
     const m = this.moving;
     if (!m || this.perkChoice) return;
+    if (this.weather?.kind === 'rain' && this.rand() < 0.5) {
+      // Rain: wet layers sometimes skid a little.
+      m.x += 6 * this.moveDir;
+      m.origin += 6 * this.moveDir;
+    }
     if (m.kind === 'unagi') {
       // Slippery: the eel slides on a little after the tap.
       m.x += 10 * this.moveDir;
@@ -896,6 +928,14 @@ export class Game {
       m.x = top.x;
       this.combo += m.kind === 'ebi' ? 2 : 1; // ebi counts double
       this.orderStats.perfects++;
+      this.lastPerfect = true;
+      if (this.combo >= 5) {
+        // Fancy cut: a decorated layer worth a little extra.
+        m.fancy = true;
+        this.runCoins += 1;
+        this.progress.stat('fancy');
+      }
+      if ((this.progress.mastery[m.kind] ?? 0) >= MASTERY) this.runCoins += 1;
       if (this.progress.tutorial === 1) {
         this.progress.tutorial = 2;
         track('tutorial', { step: 2 });
@@ -934,6 +974,7 @@ export class Game {
       this.flash = 0.25;
       this.shake = 3;
     } else {
+      this.lastPerfect = false;
       const overlap = top.w - Math.abs(dx);
       if (overlap <= 0) {
         this.fall(m, dx > 0 ? 1 : -1);
@@ -1008,6 +1049,13 @@ export class Game {
     }
     this.stack.push(layer);
     this.orderStats.drops++;
+    const mk = this.progress.mastery;
+    mk[layer.kind] = (mk[layer.kind] ?? 0) + 1;
+    if (mk[layer.kind] === MASTERY) {
+      this.celebrate(`✨ ${layer.kind.toUpperCase()} MASTERED!`, 'Gold layers from now on, and +1 coin per PERFECT with it');
+      this.progress.persist();
+    }
+    if (this.bonus) this.bonusDrop(layer);
     this.mission('height', this.height);
     this.order.reward += layer.w / BASE_W;
     sfx.drop();
@@ -1021,6 +1069,28 @@ export class Game {
     this.moveDir *= -1;
     this.spawnMoving();
     if (!served) this.maybeChefEvent();
+  }
+
+  /** A sous-chef bonus drop: it doesn't count toward the order; 3 PERFECTs in a row win a chest. */
+  private bonusDrop(layer: Layer): void {
+    const b = this.bonus!;
+    this.order.start++;
+    this.order.reward -= layer.w / BASE_W;
+    this.orderStats.drops--;
+    if (this.lastPerfect) this.orderStats.perfects--;
+    b.left--;
+    const cx = layer.x + layer.w / 2;
+    if (!this.lastPerfect) {
+      this.bonus = null;
+      this.popup(cx, layer.y - 60, 'Sous chef wins this one!', '#ff9a8a', 15, 1.4);
+    } else if (b.left <= 0) {
+      this.bonus = null;
+      this.bankCoins(40);
+      this.openChest(this.level);
+      this.popup(cx, layer.y - 60, '👨‍🍳 SOUS CHEF BEATEN! Chest + 40', '#ffd34d', 16, 1.8);
+      sfx.celebrate();
+      this.progress.stat('bonus');
+    } else this.popup(cx, layer.y - 60, `Bonus ${3 - b.left}/3`, '#9fe3ff', 14);
   }
 
   // ------------------------------------------------------- feel and rewards
@@ -1299,6 +1369,7 @@ export class Game {
   private maybeChefEvent(): void {
     if (this.mode !== 'playing' || this.calmChefs || this.event || this.introIn > 0 || this.height < 3 || this.sinceEvent < (this.rage ? 2 : 3)) return;
     if (this.progress.tutorial < 4) return; // no attacks until the first order is served
+    if (this.bonus) return; // the sous chef plays fair
     const c = this.chef;
     const sloppy = this.combo === 0;
     const bad = this.shield ? 0 : (c.mean + (sloppy ? 0.08 : 0)) * (1 + this.rage * 0.6);
@@ -1306,7 +1377,9 @@ export class Game {
     const r = this.rand();
     if (r < bad) {
       // Raging bosses add a flurry of knives to their moves.
-      const kind: Attack = this.rage && this.rand() < 0.4 ? 'flurry' : c.attacks[Math.floor(this.rand() * c.attacks.length)];
+      // Later chefs learn new tricks: a sneaky bite from level 20, a speed flip from 30, a freezer blast from 40.
+      const pool: Attack[] = [...c.attacks, ...(this.level >= 20 ? ['steal' as const] : []), ...(this.level >= 30 ? ['flip' as const] : []), ...(this.level >= 40 ? ['frost' as const] : [])];
+      const kind: Attack = this.rage && this.rand() < 0.4 ? 'flurry' : pool[Math.floor(this.rand() * pool.length)];
       if (this.shieldHits > 0) {
         this.shieldHits--;
         this.popup(WORLD_W / 2, this.top.y - 60, '🛡️ Bodyguard blocked an attack!', '#9fe3ff', 15, 1.6);
@@ -1367,6 +1440,30 @@ export class Game {
       case 'flurry':
         this.flurryLeft = 3;
         this.flurryT = 0;
+        break;
+      case 'steal': {
+        // Bites a quarter off one side of the top layer (never below a sliver).
+        const bite = Math.min(top.w * 0.25, top.w - 30);
+        if (bite <= 4 || this.stack.length < 2) break;
+        const left = this.rand() < 0.5;
+        this.fall({ ...top, x: left ? top.x : top.x + top.w - bite, w: bite }, left ? -1 : 1);
+        if (left) top.x += bite;
+        top.w -= bite;
+        this.popup(top.x + top.w / 2, top.y - 24, 'CHOMP!', '#ff6b6b', 20);
+        sfx.slice();
+        haptic.medium();
+        break;
+      }
+      case 'flip':
+        this.moveDir *= -1;
+        this.flipT = 3;
+        this.popup(WORLD_W / 2, top.y - 50, '⇄ FLIPPED! Faster for 3s', '#ff9a8a', 16, 1.6);
+        haptic.medium();
+        break;
+      case 'frost':
+        this.frost = 3.5;
+        this.popup(WORLD_W / 2, top.y - 50, '❄ Frozen view!', '#bde0fe', 16, 1.6);
+        sfx.drop();
         break;
       case 'knife': {
         const m = this.moving;
@@ -1583,7 +1680,12 @@ export class Game {
     this.newOrder();
     if (this.journey && (this.level - 1) % 10 === 0) this.queueStory(chapterFor(this.level), false);
     // The next boss steps in after the beaten one has had a moment to react.
-    this.introIn = 1.2;
+    this.introIn = this.runMode === 'gauntlet' ? 0.4 : 1.2;
+    // Every third chef in a journey, the sous chef offers a 3-drop bonus round.
+    if (this.journey && this.ordersServed % 3 === 0) {
+      this.bonus = { left: 3, ok: true };
+      this.popup(WORLD_W / 2, this.top.y - 120, '👨‍🍳 SOUS CHEF CHALLENGE!', '#9fe3ff', 18, 2);
+    }
     // Pick a perk for the rest of the run (journey and challenges).
     if ((this.runMode === 'journey' || this.runMode === 'challenge') && cfg.perksEvery > 0 && this.ordersServed % cfg.perksEvery === 0) {
       const ids = Object.keys(PERKS) as PerkId[];
@@ -1680,6 +1782,7 @@ export class Game {
     p.piggy = Math.min(2500, p.piggy + Math.floor(fresh * 0.15));
     if (this.runMode === 'zen') p.zenBest = Math.max(p.zenBest, this.height);
     if (this.runMode === 'time') p.timeBest = Math.max(p.timeBest, this.height);
+    if (this.runMode === 'gauntlet') p.gauntletBest = Math.max(p.gauntletBest, this.ordersServed);
     const counts = this.runMode === 'journey' || this.runMode === 'special' || this.runMode === 'challenge' || this.runMode === 'time';
     if (counts && this.height > this.best) {
       this.best = this.height;
@@ -1811,6 +1914,10 @@ export class Game {
 
     if (this.tip && !this.dish && (this.tip.t -= real) <= 0) this.tip = null;
     if (this.upgradeFx && (this.upgradeFx.t += real) > 1.5) this.upgradeFx = null;
+    if (this.mode === 'playing' && !this.perkChoice && !this.story) {
+      if (this.flipT > 0) this.flipT -= real;
+      if (this.frost > 0) this.frost -= real;
+    }
     for (const fx of this.restFx) fx.t += real;
     this.restFx = this.restFx.filter((fx) => fx.t < 1.2);
     if (settings.reducedMotion) {
@@ -2016,10 +2123,55 @@ export class Game {
       ctx.fillStyle = `rgba(255,243,176,${this.flash * 0.35})`;
       ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     }
+    if (this.mode === 'playing') this.drawWeather();
 
     this.drawHud();
     this.drawOverlays();
     this.drawToast();
+  }
+
+  /** Wind streaks, rain, and the frost attack's icy edges. */
+  private drawWeather(): void {
+    const { ctx } = this;
+    const L = -this.offX;
+    const W = WORLD_W + this.offX * 2;
+    const wt = this.weather;
+    if (wt?.kind === 'wind') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 10; i++) {
+        const y = (i * 83 + this.time * 20) % this.viewH;
+        const x = L + (((i * 137 + this.time * 340 * wt.dir) % W) + W) % W;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 40 * wt.dir, y);
+        ctx.stroke();
+      }
+    } else if (wt?.kind === 'rain') {
+      ctx.strokeStyle = 'rgba(170,200,255,0.4)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 40; i++) {
+        const x = L + ((i * 53) % W) + ((this.time * 60) % 20);
+        const y = (i * 71 + this.time * 520) % this.viewH;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 4, y + 14);
+        ctx.stroke();
+      }
+    }
+    if (this.frost > 0) {
+      const a = Math.min(1, this.frost, 3.5 - this.frost + 0.3);
+      const g = ctx.createRadialGradient(WORLD_W / 2, this.viewH / 2, this.viewH * 0.18, WORLD_W / 2, this.viewH / 2, this.viewH * 0.6);
+      g.addColorStop(0, 'rgba(220,240,255,0)');
+      g.addColorStop(1, `rgba(220,240,255,${0.92 * a})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(L, 0, W, this.viewH);
+      ctx.globalAlpha = a * 0.8;
+      this.qaSkip = true;
+      for (let i = 0; i < 12; i++) this.text('❄', L + ((i * 97) % W), (i * 131) % this.viewH, 14 + (i % 3) * 6, '#ffffff', 400);
+      this.qaSkip = false;
+      ctx.globalAlpha = 1;
+    }
   }
 
   private drawCounter(): void {
@@ -2202,6 +2354,30 @@ export class Game {
         for (let i = start; i < end; i += 3) ctx.fillText('?', l.origin + i * 12 + 6, y + h / 2 + 1);
         break;
     }
+    if (l.fancy) {
+      // Fancy cut: gold diagonal garnish lines.
+      ctx.strokeStyle = 'rgba(255,215,90,0.85)';
+      ctx.lineWidth = 2;
+      for (let i = start; i < end; i += 2) {
+        const gx = l.origin + i * 12;
+        ctx.beginPath();
+        ctx.moveTo(gx, y + h);
+        ctx.lineTo(gx + 10, y);
+        ctx.stroke();
+      }
+    }
+    if ((this.progress.mastery[l.kind] ?? 0) >= MASTERY) {
+      // Mastered ingredient: a shimmering gold rim.
+      const sh = ctx.createLinearGradient(x, 0, x + w, 0);
+      const k = (this.time * 0.4 + l.origin * 0.002) % 1;
+      sh.addColorStop(0, '#d4a537');
+      sh.addColorStop(Math.max(0, k - 0.1), '#d4a537');
+      sh.addColorStop(k, '#fff3b0');
+      sh.addColorStop(Math.min(1, k + 0.1), '#d4a537');
+      sh.addColorStop(1, '#d4a537');
+      ctx.fillStyle = sh;
+      ctx.fillRect(x, y + h - 3, w, 3);
+    }
     if (settings.colorblind) {
       const [sym, ink] = SYMBOLS[l.kind];
       ctx.fillStyle = ink;
@@ -2280,7 +2456,7 @@ export class Game {
   private holding(): Holding {
     const e = this.event;
     if (!e) return null;
-    return e.kind === 'knife' || e.kind === 'flurry' ? 'knife' : e.kind === 'slam' ? 'fist' : e.kind === 'patch' ? 'patty' : null;
+    return e.kind === 'knife' || e.kind === 'flurry' || e.kind === 'steal' ? 'knife' : e.kind === 'slam' || e.kind === 'flip' ? 'fist' : e.kind === 'patch' ? 'patty' : null;
   }
 
   private drawBossBody(x: number, y: number, s: number): void {
@@ -2822,6 +2998,8 @@ export class Game {
         return id === 'shield' && !n ? '' : `${PERKS[id].icon}${n > 1 ? n : ''}`;
       }).filter(Boolean);
       if (icons.length) this.fitText(icons.join(' '), 16 + this.insets.left, top + 64, 110, 14, '#fff', 'left', 600);
+      if (this.weather) this.text(this.weather.kind === 'wind' ? `🌬️ wind ${this.weather.dir > 0 ? '→' : '←'}` : '🌧️ rain', 16 + this.insets.left, top + 86, 12, '#bde0fe', 700, 'left');
+      if (this.runMode === 'gauntlet') this.text(`⚔️ ${this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
     }
     if (this.mode === 'playing' && this.runMode === 'time') {
       this.text(`⏱ ${Math.ceil(this.timeLeft)}s`, WORLD_W - 70, top + 64, 22, this.timeLeft < 10 ? '#ff6b6b' : '#ffffff', 900);
@@ -2831,6 +3009,14 @@ export class Game {
     }
     if (this.mode === 'playing') {
       this.drawOrderCard(top + 100);
+      if (this.bonus && !this.banner) {
+        // Sous-chef bonus round tracker under the order card.
+        const bx = this.cardX();
+        this.ctx.fillStyle = 'rgba(20,60,90,0.9)';
+        this.roundRect(bx, top + 158, 236, 24, 12);
+        this.ctx.fill();
+        this.text(`👨‍🍳 BONUS: ${'●'.repeat(3 - this.bonus.left)}${'○'.repeat(this.bonus.left)} 3 PERFECTs = chest`, bx + 118, top + 170.5, 11, '#ffffff', 700);
+      }
       this.drawBossLabels(this.chefX, this.bossY(), this.bossScale());
       this.drawServe();
     }
@@ -2848,6 +3034,7 @@ export class Game {
       case 'special': return this.runMode === 'critic' ? (this.criticStars >= 2 ? 'GLOWING REVIEW!' : 'REVIEW: MEH') : 'SPECIAL CLEARED!';
       case 'zen': return 'ZEN COMPLETE';
       case 'time': return this.timeLeft <= 0 ? 'TIME’S UP!' : 'DROPPED IT!';
+      case 'lost': if (this.runMode === 'gauntlet') return `GAUNTLET: ${this.ordersServed} CHEF${this.ordersServed === 1 ? '' : 'S'}`; return this.newBest ? t('newBest') : t('dropped');
       case 'puzzle-won': return `PUZZLE ${this.puzzle + 1} SOLVED!`;
       case 'puzzle-lost': return this.orderStats.slices > puzzleConfig(this.puzzle).maxSlices ? 'TOO MANY SLICES!' : 'PUZZLE FAILED';
       case 'challenge': return this.challenge && this.height > this.challenge.score ? 'YOU WIN!' : 'FRIEND WINS';
@@ -2859,6 +3046,7 @@ export class Game {
     const layers = `${this.height} layer${this.height === 1 ? '' : 's'}`;
     switch (this.resultKind) {
       case 'zen': return `${layers} · Zen best ${this.progress.zenBest}`;
+      case 'lost': if (this.runMode === 'gauntlet') return `Gauntlet best ${this.progress.gauntletBest} chefs · ${layers}`; return `Level ${this.level} · ${layers} · Best ${this.best}`;
       case 'time': return `${layers} in 60s · best ${this.progress.timeBest}`;
       case 'puzzle-won': case 'puzzle-lost': {
         const cfg = puzzleConfig(this.puzzle);
@@ -3888,6 +4076,7 @@ export class Game {
       ['🍣 Chef Journey', `Continue at level ${p.playLevel} · ${chefFor(p.playLevel).name}`, 'PLAY', () => this.startRun()],
       ['🧘 Zen', `No game over, no attacks, calm music · best ${p.zenBest}`, 'RELAX', () => this.startRun(p.playLevel, 'zen')],
       ['⏱ Time Attack', `Stack as high as you can in 60 seconds · best ${p.timeBest}`, 'GO', () => this.startRun(p.playLevel, 'time')],
+      ['⚔️ Gauntlet', `Boss after boss, no breaks, no perks · best ${p.gauntletBest} chefs`, 'FIGHT', () => this.startRun(Math.max(5, p.playLevel), 'gauntlet')],
       ['🍱 Daily Special', p.specialDay === dayKey() ? 'Cleared today, practice anytime' : 'One special order, +150 coins today', 'PLAY', () => this.startRun(this.specialLevel(), 'special')],
       ['🤝 Friend Challenge', 'Enter a friend’s code and beat their score', 'ENTER CODE', () => this.openCodeInput()],
     ];
@@ -5638,7 +5827,7 @@ export class Game {
     const h = 150 + rows * 96;
     const y = Math.max(this.insets.top + 50, this.viewH / 2 - h / 2);
     this.card(20, y, WORLD_W - 40, h, '#2a1a33');
-    const title = pk.mode === 'journey' ? `LEVEL ${pk.level} · ${chefFor(pk.level).name}` : pk.mode === 'special' ? 'DAILY SPECIAL' : pk.mode === 'zen' ? 'ZEN' : pk.mode === 'time' ? 'TIME ATTACK' : 'FRIEND CHALLENGE';
+    const title = pk.mode === 'journey' ? `LEVEL ${pk.level} · ${chefFor(pk.level).name}` : pk.mode === 'special' ? 'DAILY SPECIAL' : pk.mode === 'zen' ? 'ZEN' : pk.mode === 'time' ? 'TIME ATTACK' : pk.mode === 'gauntlet' ? '⚔️ GAUNTLET' : pk.mode === 'critic' ? '🧐 FOOD CRITIC' : 'FRIEND CHALLENGE';
     this.fitText(title, cx, y + 26, WORLD_W - 80, 18, '#ffffff', 'center', 700);
     this.fitText(t('pickBoosters'), cx, y + 50, WORLD_W - 60, 11.5, 'rgba(255,255,255,0.75)');
     owned.forEach((b, i) => {

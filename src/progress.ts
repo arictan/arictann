@@ -118,6 +118,8 @@ export class Progress {
   duels: { code: string; level: number; theirs: number; mine: number; at: number }[] = save.json('duels', []);
   installId: string = save.json('installId', '');
   rest: RestState = { ...DEFAULT_REST, ...save.json('rest', {}) };
+  mastery: Record<string, number> = save.json('mastery', {}); // layers placed per ingredient
+  gauntletBest = save.json('gauntletBest', 0);
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -185,6 +187,8 @@ export class Progress {
     save.setJson('duels', this.duels);
     save.setJson('installId', this.installId);
     save.setJson('rest', this.rest);
+    save.setJson('mastery', this.mastery);
+    save.setJson('gauntletBest', this.gauntletBest);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */
