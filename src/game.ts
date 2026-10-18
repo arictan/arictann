@@ -23,6 +23,8 @@ import { DEMOTE, LEAGUES, LEAGUE_SIZE, NEMESIS_AT, NEMESIS_TAUNTS, PROMOTE, QUES
 import { FLOOR_ICON, MODS, MOD_LIST, RESCUES, TOWER_FLOORS, rescueStars, towerFloors, towerReward, type Mod } from './modes';
 import { MINIS, makeMini, type MiniGame, type MiniId } from './minigames';
 import { BRANCH_EMOJI, BRANCH_MAX, LAB_KNOWN, LAB_TRIES, SECRETS, WORLDS, branchCost, branchRate, labHint, labMatch, worldFor, worldStarts, type WorldId } from './cuisine';
+import { announce, mirrorButtons } from './a11y';
+import { endLiveActivity, startLiveActivity, updateWidget } from './widget';
 import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
@@ -212,7 +214,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
 type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab' | 'jukebox';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
-interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
+interface Button { x: number; y: number; w: number; h: number; onTap: () => void; label?: string }
 
 interface Insets { top: number; right: number; bottom: number; left: number }
 
@@ -399,6 +401,7 @@ export class Game {
     track('app_open', { level: this.progress.unlocked, lang: settings.lang });
     this.scheduleTipReminder();
     this.checkLeague();
+    this.pushWidget();
     new ResizeObserver(() => this.resize()).observe(canvas);
     // On scrolling screens (shop, map, album) a tap fires on release, so lists can be dragged;
     // everywhere else it fires on press.
@@ -448,6 +451,7 @@ export class Game {
   }
 
   pause(): void {
+    this.pushWidget();
     // One reminder a day at most, pointing at the next chef to beat.
     const lvl = this.progress.playLevel;
     void scheduleReminder('Sushi Stack', this.giftReady() ? 'Your daily gift is ready! 🎁' : `${chefFor(lvl).name} is waiting for you at level ${lvl}.`);
@@ -514,6 +518,7 @@ export class Game {
     const c = this.chef;
     if (this.journey && worldStarts(this.level)) this.worldIntro(worldFor(this.level));
     const nem = this.isNemesis();
+    if (this.mode === 'playing') announce(`Level ${this.level}. ${c.name}. ${c.rule}. Tap anywhere to drop the layer.`);
     this.banner = this.runMode === 'modchal' && this.modChal ? { title: `${MODS[this.modChal].icon} ${MODS[this.modChal].name.toUpperCase()}`, sub: MODS[this.modChal].desc, life: 2.4 }
       : this.runMode === 'rescue' ? { title: `🆘 ${RESCUES[this.rescueRun!.i].name.toUpperCase()}`, sub: RESCUES[this.rescueRun!.i].story, life: 3 }
       : this.runMode === 'tower' ? { title: `🗼 FLOOR ${this.towerStart + this.ordersServed}`, sub: this.mods.size ? [...this.mods].map((m) => `${MODS[m].icon} ${MODS[m].name}`).join(' · ') : this.weather ? (this.weather.kind === 'wind' ? '🌬️ Wind' : '🌧️ Rain') : 'No twist on this floor', life: 2.2 }
@@ -1063,6 +1068,7 @@ export class Game {
       this.place(m);
       const cx = m.x + m.w / 2;
       this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
+      announce(this.combo > 1 ? `Perfect, ${this.combo} in a row` : 'Perfect');
       if (this.combo % 5 === 0) {
         this.addCoins(this.combo / 5 * 3, cx, m.y - 44, 'Streak bonus!');
         this.slowmo = 0.45; // a beat of slow motion to savour the streak
@@ -1762,6 +1768,7 @@ export class Game {
 
     // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
     if (this.journey && beatLevel % 10 === 0 && beatLevel <= STORY_LEVELS) this.queueStory(chapterFor(beatLevel), true);
+    announce(`Order served! ${beaten.name} beaten.`);
     if (this.journey || this.runMode === 'gauntlet') this.leaguePts(10 + (flawless ? 5 : 0));
     if (this.journey) this.questWin();
     if (this.journey && this.nemesisLevel() === beatLevel) this.beatNemesis(beatLevel);
@@ -1905,6 +1912,7 @@ export class Game {
     sfx.die();
     haptic.error();
     this.endRun();
+    announce(`${this.resultTitle()} ${this.height} layers. Retry and Home buttons are below.`);
   }
 
   /** Banks the run's coins and records it (top runs, weekly challenge, loss streak). */
@@ -2120,6 +2128,25 @@ export class Game {
       if (m.x > max) { m.origin += max - m.x; m.x = max; this.moveDir = -1; }
     }
 
+    // Drop-timing vibration: a tick each time the sliding layer lines up with the stack.
+    if (settings.hapticAssist && m && this.mode === 'playing' && !m.twin) {
+      const aligned = Math.abs(m.x - this.top.x) <= PERFECT_TOL;
+      if (aligned && !this.wasAligned) {
+        haptic.light();
+        sfx.tap();
+      }
+      this.wasAligned = aligned;
+    }
+    if ((this.a11yT -= real) <= 0) {
+      this.a11yT = 0.4;
+      // Repeated names get a number ("PLAY", "PLAY 2") so every button stays reachable.
+      const seen: Record<string, number> = {};
+      const named = this.buttons.filter((b) => b.label && b.label.trim()).map((b) => {
+        const n = (seen[b.label!] = (seen[b.label!] ?? 0) + 1);
+        return { name: n > 1 ? `${b.label} ${n}` : b.label!, b };
+      });
+      mirrorButtons(named.map((x) => x.name), (l) => named.find((x) => x.name === l)?.b.onTap());
+    }
     this.camY += (this.targetCam() - this.camY) * Math.min(1, dt * 4);
 
     for (const p of this.pieces) {
@@ -3133,7 +3160,7 @@ export class Game {
   /** Draws a tappable button and registers its hit area for this frame. */
   private button(x: number, y: number, w: number, h: number, label: string, onTap: () => void, style: 'primary' | 'gold' | 'quiet' = 'primary'): void {
     this.drawButton(x, y, w, h, label, style, h >= 40 ? 15 : 12.5);
-    this.buttons.push({ x, y, w, h, onTap });
+    this.buttons.push({ x, y, w, h, onTap, label });
   }
 
   /** Rounded "candy" button: gradient face, darker base for depth, soft top shine, and a press dip. */
@@ -3484,7 +3511,7 @@ export class Game {
     const gate = p.unlocked > lvl ? starsNeeded(p.unlocked) : 0;
     this.text(gate ? `Gate to ${p.unlocked}: ${p.totalStars}/${gate}★` : chefFor(lvl).name, 0, 16, 11, 'rgba(255,255,255,0.9)', 700);
     ctx.restore();
-    this.buttons.push({ x: cx - 170, y: top + 182, w: 340, h: 56, onTap: () => this.startRun() });
+    this.buttons.push({ x: cx - 170, y: top + 182, w: 340, h: 56, onTap: () => this.startRun(), label: t('play', lvl) });
 
     this.announceUnlocks();
     // Settings gear beside the sound button (settings are always reachable, even before MORE opens).
@@ -3516,6 +3543,7 @@ export class Game {
     if (this.lockedAt('gift')) this.lockedButton(30, top + 250, 165, 42, 'gift', t('gift'));
     else {
       this.button(30, top + 250, 165, 42, '', () => this.claimGift(), ready ? 'gold' : 'quiet');
+      this.buttons[this.buttons.length - 1].label = ready ? t('gift') : t('giftTomorrow');
       this.fitText(ready ? t('gift') : t('giftTomorrow'), 30 + 165 / 2 + 14, top + 272, 165 - 64, 15, ready ? '#4a2a00' : '#ffffff', 'center', 700);
       this.text(ready ? '😺' : '😸', 52, top + 271 + (ready ? Math.sin(this.time * 6) * 3 : 0), 22, '#fff', 400);
     }
@@ -3577,7 +3605,7 @@ export class Game {
         this.text('🔒', x + nw / 2 + 13, navY + 30, 12, '#fff', 400);
         this.text(`LV ${lock}`, x + nw / 2, navY + 46, 9.5, 'rgba(255,255,255,0.55)', 700);
         go = () => this.lockedToast(id);
-        this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go });
+        this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go, label: `${label} (locked)` });
         return;
       }
       this.text(icon, x + nw / 2, navY + 22, 22, '#fff', 400);
@@ -3595,7 +3623,7 @@ export class Game {
         ctx.arc(x + nw / 2 + 16, navY + 10, 5, 0, Math.PI * 2);
         ctx.fill();
       }
-      this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go });
+      this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go, label });
     });
   }
 
@@ -4349,6 +4377,10 @@ export class Game {
     ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     // Kept clear of the sound button on the left and the coin counter on the right.
     this.fitText(title, WORLD_W / 2, top + 31, WORLD_W - 170, 22, '#fff', 'center', 700);
+    if (title !== this.lastScreenTitle) {
+      this.lastScreenTitle = title;
+      announce(`${title} screen${sub ? `. ${sub}` : ''}`);
+    }
     if (sub) this.fitText(sub, WORLD_W / 2, top + 56, WORLD_W - 24, 12, '#ffd34d', 'center', 700);
     const backY = this.viewH - this.insets.bottom - 60;
     const areaTop = top + (sub ? 72 : 60);
@@ -4403,6 +4435,8 @@ export class Game {
   private pill(x: number, y: number, w: number, label: string, frame: { areaTop: number; areaH: number }, onTap: () => void, style: 'primary' | 'gold' | 'quiet' = 'primary'): void {
     this.drawButton(x, y, w, 32, label, style, 12);
     this.listTap(x, y, w, 32, frame, onTap);
+    const last = this.buttons[this.buttons.length - 1];
+    if (last && last.onTap === onTap) last.label = label;
   }
 
   private bar(x: number, y: number, w: number, frac: number, color = '#ff8a5b', h = 7): void {
@@ -4440,6 +4474,8 @@ export class Game {
       this.text(name, 32, y + 24, 16, '#fff', 900, 'left');
       this.text(desc, 32, y + 48, 11, 'rgba(255,255,255,0.75)', 600, 'left');
       this.pill(WORLD_W - 128, y + 19, 98, label, f, go, 'gold');
+      const lb = this.buttons[this.buttons.length - 1];
+      if (lb && lb.onTap === go) lb.label = `${name}: ${label}`;
       y += 80;
     }
     // Puzzles: fixed layers, a slice budget, three stars each.
@@ -4711,6 +4747,17 @@ export class Game {
     return Math.floor(hours * this.tipsPerHour());
   }
 
+  /** Sends the restaurant, tip jar and calendar to the home-screen widget (native builds only). */
+  private pushWidget(): void {
+    if (this.lockedAt('restaurant')) return;
+    const rs = this.progress.restaurant as typeof this.progress.restaurant & { tipsAt?: number };
+    updateWidget({
+      restaurant: RESTAURANTS[Math.min(rs.r, RESTAURANTS.length - 1)].name, stars: this.popularity(), tips: this.restaurantTips(),
+      tipsMax: this.tipsPerHour() * this.jarHours(), jarFullAt: (rs.tipsAt ?? Date.now()) + this.jarHours() * 3_600_000,
+      calendarDay: this.progress.calendar.n % 28 + 1, calendarReady: this.calendarReady(), level: this.progress.unlocked, chef: this.progress.avatar.name,
+    });
+  }
+
   private collectTips(): void {
     const tips = this.restaurantTips();
     if (tips <= 0) {
@@ -4726,6 +4773,10 @@ export class Game {
     haptic.success();
     track('tips', { coins: tips });
     this.scheduleTipReminder();
+    this.pushWidget();
+    // Lock screen / Dynamic Island countdown until the jar is full again (iPhone, when set up).
+    endLiveActivity();
+    startLiveActivity('Tip jar filling', Date.now() + this.jarHours() * 3_600_000, `${RESTAURANTS[Math.min(this.progress.restaurant.r, RESTAURANTS.length - 1)].name} · ${this.tipsPerHour()} tips/hour`);
   }
 
   /** A local notification for when the tip jar is full (only if the player allowed reminders). */
@@ -6777,6 +6828,9 @@ export class Game {
   // ------------------------------------------------------------ emoji reactions
 
   private lastSaid = '';
+  private lastScreenTitle = '';
+  private wasAligned = false;
+  private a11yT = 0;
   private reactPick = false;
   private friendEmoji = '';
 
@@ -6853,6 +6907,7 @@ export class Game {
     sfx.coin();
     p.persist();
     track('calendar', { day: d });
+    this.pushWidget();
   }
 
   private drawCalendar(): void {
@@ -7242,6 +7297,7 @@ export class Game {
     toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
     toggle('🤝', t('assist'), 'Slower layers, bigger PERFECT zone', settings.assist, () => this.setting('assist'));
     toggle('🫲', 'Left-handed', 'Corner buttons and results flipped', settings.leftHanded, () => this.setting('leftHanded'));
+    toggle('📳', 'Drop-timing tick', 'A vibration and tick when the layer lines up', settings.hapticAssist, () => this.setting('hapticAssist'));
     toggle('🎬', t('clips'), clipsSupported() ? 'Save the last seconds of a run as a video' : 'Not supported on this device', settings.clips && clipsSupported(), () => { if (clipsSupported()) this.setting('clips'); else this.showToast('Video recording isn’t supported here'); });
     // Language picker.
     this.card(16, y, WORLD_W - 32, 56);
