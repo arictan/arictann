@@ -1,6 +1,8 @@
 // Boss chefs: one per level (one level = one order), 50 in all. Each watches the sliding layer, points at it,
 // and gets more worked up the closer the player is to finishing the order.
 
+import { WORLDS, worldFor } from './cuisine';
+
 export type Hair = 'short' | 'bun' | 'bob' | 'bald' | 'spiky' | 'ponytail' | 'twinbuns' | 'gray' | 'curly' | 'long' | 'mohawk';
 export type Hat = 'hachimaki' | 'cap' | 'toque' | 'bandana' | 'none' | 'shades' | 'gold' | 'beanie' | 'visor' | 'flower' | 'crown';
 export type Face = 'none' | 'mustache' | 'beard' | 'glasses' | 'elder' | 'goatee' | 'freckles';
@@ -745,8 +747,12 @@ export function chefFor(level: number): Chef {
   if (!attacks.length) attacks.push(pick(ATTACKS));
   const rule = [`${Math.round((speed - 1) * 100)}% faster`, wobble && 'surges', tight && 'small PERFECT zone', extra && `+${extra} layer${extra === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
   // Stepping through the names by 13 (coprime with 40) means no repeats within 40 levels.
-  const first = FIRST_NAMES[(level * 13) % FIRST_NAMES.length];
-  const name = legend ? `Legend ${first}` : `${pick(TITLES)} ${first}`;
+  // Chefs in the pizza, burger and pancake worlds have names and uniforms to match.
+  const world = worldFor(level);
+  const W = WORLDS[world];
+  const first = world === 'sushi' ? FIRST_NAMES[(level * 13) % FIRST_NAMES.length] : W.names[(level * 7) % W.names.length];
+  const name = legend ? `Legend ${first}` : `${world === 'sushi' ? pick(TITLES) : pick(['Chef', 'Chef', 'Master', 'Captain'])} ${first}`;
+  const themed = world !== 'sushi' ? W.outfits[level % W.outfits.length] : null;
   const chef: Chef = {
     name,
     rule: legend ? `LEGEND BOSS: ${rule}` : rule,
@@ -759,8 +765,8 @@ export function chefFor(level: number): Chef {
     attacks,
     skin: pick(SKINS),
     hairColor: pick(HAIR_COLORS),
-    outfit: legend ? '#1a0f0f' : outfit,
-    accent: legend ? '#ffd34d' : accent,
+    outfit: legend ? '#1a0f0f' : themed ? themed[0] : outfit,
+    accent: legend ? '#ffd34d' : themed ? themed[1] : accent,
     hair: pick(HAIRS),
     hat: legend ? (r() < 0.5 ? 'crown' : 'gold') : pick(HATS),
     face: pick(FACES),

@@ -75,7 +75,10 @@ export const FLAGS: Item[] = [
   { id: 'album', name: 'Album Master', price: 0, earn: 'Complete a sticker album' },
 ];
 
-export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg' | 'ebi' | 'unagi' | 'tofu' | 'ikura';
+export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg' | 'ebi' | 'unagi' | 'tofu' | 'ikura'
+  | 'dough' | 'sauce' | 'cheese' | 'pepperoni' | 'basil' // pizza world
+  | 'bun' | 'patty' | 'lettuce' | 'tomato' | 'cheddar' // burger world
+  | 'pancake' | 'butter' | 'syrup' | 'berry' | 'cream'; // pancake world
 
 // Cosmetic: recolours every layer.
 export const SETS: (Item & { colors: Partial<Record<Ingredient, string>> })[] = [

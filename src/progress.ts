@@ -132,6 +132,9 @@ export class Progress {
   tower = save.json('tower', { week: '', cp: 0, best: 0, claimed: [] as number[] }); // Omakase Tower: checkpoint floor this week
   minis: Record<string, { best: number; wins: number; day: string }> = save.json('minis', {});
   modchal = save.json('modchal', { day: '', done: [] as string[], stars: 0 });
+  secrets: string[] = save.json('secrets', []); // Recipe Lab discoveries
+  lab = save.json('lab', { day: '', tries: 0, log: [] as { mix: string[]; hint: number; found?: string }[] });
+  branches: Record<string, { lv: number; tipsAt: number }> = save.json('branches', {});
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -212,6 +215,9 @@ export class Progress {
     save.setJson('tower', this.tower);
     save.setJson('minis', this.minis);
     save.setJson('modchal', this.modchal);
+    save.setJson('secrets', this.secrets);
+    save.setJson('lab', this.lab);
+    save.setJson('branches', this.branches);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

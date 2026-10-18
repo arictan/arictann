@@ -4,7 +4,7 @@ import { sfx, unlockAudio, setMuted } from './audio';
 import { askForReminders, haptic, save, scheduleAt, scheduleReminder, setHaptics } from './platform';
 import { setMusic, setMusicIntensity } from './audio';
 import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, TIP_HOURS, areaCost, popularity, tipRate } from './collect';
-import { CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
+import { CITIES, CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
 import { decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, type Challenge } from './share';
 import { BOARDS, localBoards, online, submitScore } from './services';
@@ -22,6 +22,7 @@ import type { AreaId } from './collect';
 import { DEMOTE, LEAGUES, LEAGUE_SIZE, NEMESIS_AT, NEMESIS_TAUNTS, PROMOTE, QUEST_POT, QUEST_STAGES, currentQuest, leagueRivals, leagueWeek, questSurvivors, settleLeague } from './compete';
 import { FLOOR_ICON, MODS, MOD_LIST, RESCUES, TOWER_FLOORS, rescueStars, towerFloors, towerReward, type Mod } from './modes';
 import { MINIS, makeMini, type MiniGame, type MiniId } from './minigames';
+import { BRANCH_EMOJI, BRANCH_MAX, LAB_KNOWN, LAB_TRIES, SECRETS, WORLDS, branchCost, branchRate, labHint, labMatch, worldFor, worldStarts, type WorldId } from './cuisine';
 import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
@@ -45,6 +46,9 @@ const SYMBOLS: Record<Ingredient, [string, string]> = {
   rice: ['○', '#7a6a4a'], nori: ['■', '#cfe3c4'], salmon: ['▲', '#5a1f0a'], tuna: ['◆', '#ffe0e4'],
   avocado: ['♣', '#2c3d0a'], cucumber: ['+', '#0e2a12'], egg: ['●', '#6a4a00'], ebi: ['~', '#5a1f0a'],
   unagi: ['≡', '#ffd9b0'], tofu: ['□', '#6a5a3a'], ikura: ['✱', '#4a0e00'],
+  dough: ['○', '#6a4a10'], sauce: ['~', '#ffe0e0'], cheese: ['◦', '#6a4a00'], pepperoni: ['●', '#ffd0c0'], basil: ['♣', '#e0ffe0'],
+  bun: ['○', '#4a2a10'], patty: ['■', '#ffd9b0'], lettuce: ['♣', '#1a3a0a'], tomato: ['●', '#ffe0e0'], cheddar: ['▲', '#5a3a00'],
+  pancake: ['○', '#5a3a10'], butter: ['□', '#6a5a00'], syrup: ['~', '#ffd9b0'], berry: ['●', '#e0e0ff'], cream: ['◦', '#7a6a5a'],
 };
 
 const COLORS: Record<Ingredient, string> = {
@@ -59,6 +63,9 @@ const COLORS: Record<Ingredient, string> = {
   unagi: '#7a3f1d',
   tofu: '#f3e7cc',
   ikura: '#ff5a1f',
+  dough: '#e9c46a', sauce: '#c1121f', cheese: '#ffd166', pepperoni: '#9d0208', basil: '#2a9d5c',
+  bun: '#d4a056', patty: '#5a3a22', lettuce: '#80b918', tomato: '#e63946', cheddar: '#f4a300',
+  pancake: '#e2b26c', butter: '#fff3b0', syrup: '#8b4513', berry: '#5e60ce', cream: '#fdf6ec',
 };
 
 /**
@@ -74,7 +81,7 @@ const NEW_INGREDIENTS: { kind: Ingredient; level: number; name: string; tip: str
   { kind: 'ikura', level: 35, name: 'Ikura (salmon roe)', tip: 'A PERFECT pops it into bonus coins!' },
 ];
 
-interface Recipe { name: string; pattern: Ingredient[]; level?: number }
+interface Recipe { name: string; pattern: Ingredient[]; level?: number; world?: WorldId; secret?: boolean }
 
 const RECIPES: Recipe[] = [
   { name: 'Salmon Maki', pattern: ['rice', 'nori', 'salmon'] },
@@ -87,12 +94,28 @@ const RECIPES: Recipe[] = [
   { name: 'Inari Tofu Stack', pattern: ['rice', 'tofu', 'egg'], level: 25 },
   { name: 'Ikura Gunkan', pattern: ['rice', 'nori', 'ikura'], level: 35 },
   { name: 'Deluxe Omakase', pattern: ['rice', 'ebi', 'unagi', 'tofu', 'ikura', 'salmon'], level: 45 },
+  // Pizza world (from level 101).
+  { name: 'Margherita', pattern: ['dough', 'sauce', 'cheese', 'basil'], level: 101, world: 'pizza' },
+  { name: 'Pepperoni Tower', pattern: ['dough', 'sauce', 'pepperoni', 'cheese'], level: 101, world: 'pizza' },
+  { name: 'Quattro Stack', pattern: ['dough', 'cheese', 'sauce', 'cheese', 'basil', 'pepperoni'], level: 115, world: 'pizza' },
+  // Burger world (from level 151).
+  { name: 'Classic Burger', pattern: ['bun', 'patty', 'cheddar', 'lettuce', 'tomato'], level: 151, world: 'burger' },
+  { name: 'Double Cheese', pattern: ['bun', 'patty', 'cheddar', 'patty', 'cheddar'], level: 151, world: 'burger' },
+  { name: 'Garden Deluxe', pattern: ['bun', 'lettuce', 'tomato', 'patty', 'lettuce'], level: 165, world: 'burger' },
+  // Pancake world (from level 201).
+  { name: 'Butter Stack', pattern: ['pancake', 'butter', 'pancake', 'syrup'], level: 201, world: 'pancake' },
+  { name: 'Berry Cloud', pattern: ['pancake', 'cream', 'berry', 'pancake'], level: 201, world: 'pancake' },
+  { name: 'Grand Brunch', pattern: ['pancake', 'butter', 'syrup', 'berry', 'cream', 'pancake'], level: 215, world: 'pancake' },
+  // Secret recipes from the Recipe Lab (in the order pool once discovered).
+  ...SECRETS.map((sc) => ({ name: sc.name, pattern: ['rice', ...sc.combo.filter((c) => c !== 'rice')] as Ingredient[], secret: true })),
 ];
 
 /** Emoji for each recipe on the restaurant menu board. */
 const DISH_EMOJI: Record<string, string> = {
   'Salmon Maki': '🍣', 'Tamago Tower': '🍳', 'Tuna Classic': '🐟', 'Green Roll': '🥒', 'Rainbow Roll': '🌈',
   'Ebi Tempura Roll': '🍤', 'Unagi Dragon Roll': '🐉', 'Inari Tofu Stack': '🍙', 'Ikura Gunkan': '🔴', 'Deluxe Omakase': '🍱',
+  Margherita: '🍕', 'Pepperoni Tower': '🍕', 'Quattro Stack': '🧀', 'Classic Burger': '🍔', 'Double Cheese': '🍔', 'Garden Deluxe': '🥬',
+  'Butter Stack': '🥞', 'Berry Cloud': '🫐', 'Grand Brunch': '🥞', ...Object.fromEntries(SECRETS.map((sc) => [sc.name, sc.emoji])),
 };
 const BASIC_RECIPES = RECIPES.filter((r) => !r.level); // always available (puzzles, missions)
 
@@ -186,7 +209,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -487,6 +510,7 @@ export class Game {
 
   private announceChef(): void {
     const c = this.chef;
+    if (this.journey && worldStarts(this.level)) this.worldIntro(worldFor(this.level));
     const nem = this.isNemesis();
     this.banner = this.runMode === 'modchal' && this.modChal ? { title: `${MODS[this.modChal].icon} ${MODS[this.modChal].name.toUpperCase()}`, sub: MODS[this.modChal].desc, life: 2.4 }
       : this.runMode === 'rescue' ? { title: `🆘 ${RESCUES[this.rescueRun!.i].name.toUpperCase()}`, sub: RESCUES[this.rescueRun!.i].story, life: 3 }
@@ -496,6 +520,14 @@ export class Game {
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
     this.switchSides();
+  }
+
+  /** Recipes this level can order: its world's menu, plus discovered secret recipes in sushi worlds. */
+  private recipePool(level: number): Recipe[] {
+    const world = worldFor(level);
+    const found = this.progress.secrets;
+    const pool = RECIPES.filter((r) => (r.world ?? 'sushi') === world && (r.secret ? found.includes(r.name) : (r.level ?? 0) <= level || world !== 'sushi'));
+    return pool.length ? pool : BASIC_RECIPES;
   }
 
   /** Ingredient colour, recoloured by the equipped sushi set. */
@@ -521,7 +553,9 @@ export class Game {
 
   private reset(): void {
     const x = (WORLD_W - this.baseW) / 2;
-    this.stack = [{ x, y: -LAYER_H, w: this.baseW, kind: 'rice', origin: x }];
+    // The base layer matches the world: rice for sushi, dough, bun or a pancake elsewhere.
+    const base = ({ sushi: 'rice', pizza: 'dough', burger: 'bun', pancake: 'pancake' } as const)[worldFor(this.startLevel)];
+    this.stack = [{ x, y: -LAYER_H, w: this.baseW, kind: base, origin: x }];
     this.pieces = [];
     this.particles = [];
     this.popups = [];
@@ -800,20 +834,20 @@ export class Game {
       const fm = towerFloors()[Math.min(TOWER_FLOORS, floor) - 1] ?? '';
       this.mods = new Set(fm && fm !== 'wind' && fm !== 'rain' ? [fm as Mod] : []);
       this.weather = fm === 'wind' ? { kind: 'wind', dir: this.rand() < 0.5 ? -1 : 1 } : fm === 'rain' ? { kind: 'rain', dir: 0 } : null;
-      const pool = RECIPES.filter((r) => (r.level ?? 0) <= this.level);
+      const pool = this.recipePool(this.level);
       this.order = { recipe: pool[Math.floor(this.rand() * pool.length)], length: 4 + Math.floor(floor / 6), start: this.height, reward: 0 };
       return;
     }
     if (this.special) {
       // Everyone gets the same Daily Special: one long order of a set recipe.
       // The critic orders the fanciest dish you can make; the Daily Special is the same for everyone.
-      const critic = this.runMode === 'critic' ? [...RECIPES].reverse().find((r) => (r.level ?? 0) <= this.level) : undefined;
-      this.order = { recipe: critic ?? RECIPES[daySeed() % RECIPES.length], length: (critic ? 9 : 10) - (this.shortOrders ? 2 : 0), start: this.height, reward: 0 };
+      const critic = this.runMode === 'critic' ? this.recipePool(this.level).filter((r) => !r.secret).pop() : undefined;
+      this.order = { recipe: critic ?? BASIC_RECIPES[daySeed() % BASIC_RECIPES.length], length: (critic ? 9 : 10) - (this.shortOrders ? 2 : 0), start: this.height, reward: 0 };
       return;
     }
     // Early levels use the simple recipes; the full menu opens up further along the journey.
     // Recipes with newer ingredients join the menu at their level; the newest one is a bit more likely.
-    const pool = RECIPES.filter((r) => (r.level ?? 0) <= this.level);
+    const pool = this.recipePool(this.level);
     const fresh = pool.filter((r) => r.level && r.level > this.level - 5);
     let recipe = fresh.length && this.rand() < 0.4 ? fresh[0] : pool[Math.floor(this.rand() * Math.min(pool.length, 2 + n))];
     // A regular customer places the order; half the time they ask for their favourite.
@@ -2174,6 +2208,7 @@ export class Game {
       else if (this.mode === 'towerview') this.drawTower();
       else if (this.mode === 'minis') this.drawMinis();
       else if (this.mode === 'modchals') this.drawModChals();
+      else if (this.mode === 'lab') this.drawLab();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -2464,6 +2499,94 @@ export class Game {
         ctx.strokeStyle = 'rgba(180,150,100,0.35)';
         ctx.lineWidth = 1;
         for (let i = start; i < end; i++) ctx.strokeRect(l.origin + i * 12 + 1, y + 4, 10, h - 8);
+        break;
+      case 'dough':
+      case 'pancake':
+      case 'bun': {
+        // Golden crust with darker toasted spots; buns get sesame seeds.
+        ctx.fillStyle = l.kind === 'pancake' ? 'rgba(150,90,30,0.35)' : 'rgba(160,100,30,0.3)';
+        ctx.fillRect(x, y + h - 5, w, 5);
+        for (let i = start; i < end; i++) {
+          if (l.kind === 'bun') {
+            ctx.fillStyle = '#fff3d6';
+            ctx.beginPath();
+            ctx.ellipse(l.origin + i * 12 + 6, y + 5 + ((i * 3) % 6), 2.2, 1.2, 0.4, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.fillStyle = 'rgba(140,80,20,0.3)';
+            ctx.beginPath();
+            ctx.arc(l.origin + i * 12 + 4, y + 8 + ((i * 7) % 8), 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      }
+      case 'sauce':
+      case 'syrup':
+        // A glossy wave along the top, with drips.
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        ctx.fillRect(x, y + 3, w, 3);
+        ctx.fillStyle = l.kind === 'sauce' ? '#8d0b16' : '#5a2a0a';
+        for (let i = start; i < end; i += 2) {
+          ctx.beginPath();
+          ctx.ellipse(l.origin + i * 12 + 6, y + h - 2, 3, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case 'cheese':
+      case 'cheddar':
+        // Melty drips and holes.
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(x, y + 2, w, 3);
+        for (let i = start; i < end; i++) {
+          ctx.fillStyle = l.kind === 'cheese' ? 'rgba(200,140,20,0.35)' : 'rgba(170,90,0,0.35)';
+          ctx.beginPath();
+          ctx.arc(l.origin + i * 12 + 6, y + 10 + ((i * 5) % 6), 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case 'pepperoni':
+      case 'tomato':
+      case 'berry':
+        // Round slices in a row.
+        for (let i = start; i < end; i++) {
+          const gx = l.origin + i * 12 + 6;
+          ctx.fillStyle = l.kind === 'pepperoni' ? '#c1121f' : l.kind === 'tomato' ? '#ff6b6b' : '#7b7fe6';
+          ctx.beginPath();
+          ctx.arc(gx, y + h / 2, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.fillRect(gx - 2, y + h / 2 - 3, 2, 2);
+        }
+        break;
+      case 'basil':
+      case 'lettuce':
+        // Leafy ripples.
+        ctx.strokeStyle = l.kind === 'basil' ? '#bfe8c0' : '#d8f3a0';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = start; i < end; i++) {
+          const gx = l.origin + i * 12;
+          ctx.moveTo(gx, y + h / 2);
+          ctx.quadraticCurveTo(gx + 6, y + 2, gx + 12, y + h / 2);
+        }
+        ctx.stroke();
+        break;
+      case 'patty':
+        // Grill marks.
+        ctx.fillStyle = 'rgba(20,10,5,0.45)';
+        for (let i = start; i < end; i += 2) ctx.fillRect(l.origin + i * 12 + 3, y + 3, 4, h - 6);
+        break;
+      case 'butter':
+      case 'cream':
+        // Soft swirls.
+        ctx.strokeStyle = l.kind === 'butter' ? 'rgba(220,180,40,0.6)' : 'rgba(200,180,160,0.6)';
+        ctx.lineWidth = 1.5;
+        for (let i = start; i < end; i += 2) {
+          ctx.beginPath();
+          ctx.arc(l.origin + i * 12 + 6, y + h / 2, 4, 0, Math.PI * 1.6);
+          ctx.stroke();
+        }
         break;
       case 'ikura':
         for (let i = start; i < end; i++) {
@@ -3818,7 +3941,7 @@ export class Game {
       let y = y0;
       this.text(`RECIPE BOOK · serve each ${RECIPE_GOAL} times (+50 coins)`, 16, y + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
       y += 24;
-      for (const r of RECIPES) {
+      for (const r of RECIPES.filter((x) => (!x.secret || p.secrets.includes(x.name)) && (x.level ?? 0) <= Math.max(p.unlocked, 50))) {
         const n = Math.min(p.recipeCounts[r.name] ?? 0, RECIPE_GOAL);
         const done = n >= RECIPE_GOAL;
         ctx.fillStyle = 'rgba(48,30,52,0.94)';
@@ -4479,6 +4602,7 @@ export class Game {
       ['🎟️', 'Sushi Pass', passClaimable ? `${passClaimable} reward${passClaimable > 1 ? 's' : ''} ready!` : `Tier ${Math.min(PASS_TIERS, Math.floor(p.pass.xp / PASS_XP))}/${PASS_TIERS}`, () => this.openScreen('pass', 'more')],
       ['🪪', 'Profile', p.prestige ? `Prestige ${p.prestige} · badges` : 'Stats, badges, prestige', () => this.openScreen('profile', 'more')],
       ['📅', 'Calendar', this.calendarReady() ? 'Today’s reward ready!' : `Day ${p.calendar.n}/28`, () => this.openScreen('calendar', 'more')],
+      ['🧪', 'Recipe Lab', `${this.progress.secrets.length}/${SECRETS.length} secrets`, () => this.openScreen('lab', 'more')],
       ['🏛️', 'Museum', `${RECIPES.filter((r) => (p.recipeCounts[r.name] ?? 0) > 0).length}/${RECIPES.length} dishes · mastery`, () => this.openScreen('museum', 'more')],
       ['🧑‍🍳', 'My Chef', `Chef ${p.avatar.name}`, () => this.openScreen('avatar', 'more')],
       ['🏆', 'Achievements', this.achClaimable() ? `${this.achClaimable()} reward${this.achClaimable() > 1 ? 's' : ''} ready!` : `${ACHIEVEMENTS.reduce((n, a) => n + (p.achSeen[a.id] ?? 0), 0)}/${ACHIEVEMENTS.length * 4} unlocked`, () => this.openScreen('trophies', 'more')],
@@ -4627,7 +4751,7 @@ export class Game {
 
   private guestReady: number[] = [];
   private restFx: { text: string; x: number; y: number; t: number }[] = [];
-  private restTab: 'build' | 'decor' | 'staff' | 'menu' | 'themes' = 'build';
+  private restTab: 'build' | 'decor' | 'staff' | 'menu' | 'themes' | 'trucks' = 'build';
   private visit: RestCode | null = null;
   private sceneBox = { x: 16, y: 0, w: WORLD_W - 32, h: 300 };
 
@@ -4923,14 +5047,15 @@ export class Game {
     y += 64;
 
     // Tabs.
-    const tabs: [typeof this.restTab, string][] = [['build', 'BUILD'], ['decor', 'DECOR'], ['staff', 'STAFF'], ['menu', 'MENU'], ['themes', 'THEMES']];
-    const tw = (WORLD_W - 32 - 4 * 5) / 5;
+    const tabs: [typeof this.restTab, string][] = [['build', 'BUILD'], ['decor', 'DECOR'], ['staff', 'STAFF'], ['menu', 'MENU'], ['themes', 'THEMES'], ['trucks', '🚚']];
+    const tw = (WORLD_W - 32 - 5 * 5) / 6;
     tabs.forEach(([id, name], i) => this.pill(16 + i * (tw + 5), y, tw, name, f, () => { this.restTab = id; }, this.restTab === id ? 'primary' : 'quiet'));
     y += 44;
     if (this.restTab === 'build') y = this.drawRestBuild(f, y);
     else if (this.restTab === 'decor') y = this.drawRestDecor(f, y);
     else if (this.restTab === 'staff') y = this.drawRestStaff(f, y);
     else if (this.restTab === 'menu') y = this.drawRestMenu(f, y);
+    else if (this.restTab === 'trucks') y = this.drawRestBranches(f, y);
     else y = this.drawRestThemes(f, y);
 
     // Friends.
@@ -5045,7 +5170,7 @@ export class Game {
     const today = r.menu.day === dayKey() ? r.menu.recipe : '';
     this.wrapLeft('Choose today’s special. It shows up more in your runs and pays 2x coins there, and any menu gives +20% tips today. It resets every day.', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
     y += 44;
-    for (const rec of RECIPES) {
+    for (const rec of RECIPES.filter((r) => !r.secret || this.progress.secrets.includes(r.name))) {
       const open = (rec.level ?? 0) <= this.progress.unlocked;
       const on = today === rec.name;
       this.card(16, y, WORLD_W - 32, 50, on ? 'rgba(70,50,20,0.95)' : open ? 'rgba(48,30,52,0.95)' : 'rgba(30,20,35,0.8)');
@@ -6200,6 +6325,213 @@ export class Game {
       y += 92;
     }
     this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ cuisine worlds
+
+  /** A story card the first time you reach the pizza, burger or pancake world. */
+  private worldIntro(w: WorldId): void {
+    const W = WORLDS[w];
+    const key = `world:${w}`;
+    if (w === 'sushi' || this.progress.seen.includes(key)) return;
+    this.progress.seen.push(key);
+    this.progress.persist();
+    const scene = w === 'pizza' ? ['🍕', '🇮🇹', '🧀'] : w === 'burger' ? ['🍔', '🌭', '🥤'] : ['🥞', '🫐', '☕'];
+    this.storyQueue.push({ ch: { title: `New world · ${W.name}`, scene, start: W.intro, end: [] }, lines: W.intro, end: false });
+    track('world', { id: w });
+  }
+
+  // ------------------------------------------------------------ recipe lab
+
+  private labMix: string[] = [];
+  private labFx: { text: string; t: number; good: boolean } | null = null;
+
+  private labState() {
+    const p = this.progress;
+    if (p.lab.day !== dayKey()) p.lab = { day: dayKey(), tries: 0, log: p.lab.log.slice(0, 12) };
+    return p.lab;
+  }
+
+  /** Mixes the three chosen ingredients: a secret recipe, or a hint of how close you are. */
+  private labTry(): void {
+    const p = this.progress;
+    const lab = this.labState();
+    if (this.labMix.length < 3) return this.showToast('Pick 3 ingredients');
+    if (lab.tries >= LAB_TRIES) return this.showToast('The Lab is closed for today. Come back tomorrow!');
+    lab.tries++;
+    const mix = [...this.labMix];
+    const hit = labMatch(mix);
+    if (hit && !p.secrets.includes(hit.name)) {
+      p.secrets.push(hit.name);
+      lab.log.unshift({ mix, hint: 3, found: hit.name });
+      this.bankCoins(250);
+      this.celebrate(`${hit.emoji} ${hit.name.toUpperCase()}!`, 'Secret recipe discovered! It joins your orders and menu · +250 coins');
+      this.labFx = { text: `${hit.emoji} DISCOVERED!`, t: 1.6, good: true };
+      track('lab_found', { name: hit.name });
+    } else {
+      const hint = hit ? 3 : labHint(mix, p.secrets);
+      lab.log.unshift({ mix, hint });
+      this.labFx = { text: hit ? 'Already discovered!' : hint === 2 ? 'So close! 2 are right' : hint === 1 ? 'Hmm… 1 is right' : 'Not even close!', t: 1.4, good: hint >= 2 };
+      sfx.slice();
+    }
+    lab.log = lab.log.slice(0, 12);
+    this.labMix = [];
+    p.persist();
+  }
+
+  private drawLab(): void {
+    const { ctx } = this;
+    const p = this.progress;
+    const lab = this.labState();
+    const f = this.screenBegin('🧪 RECIPE LAB', `${p.secrets.length}/${SECRETS.length} secrets · ${LAB_TRIES - lab.tries} mixes left today · ingredients need ${LAB_KNOWN} layers`);
+    let y = f.y0 + 4;
+    // The pot with the three slots.
+    this.card(16, y, WORLD_W - 32, 150, 'rgba(40,60,70,0.95)');
+    this.text('🍲', WORLD_W / 2, y + 62 + Math.sin(this.time * 3) * 2, 56, '#fff', 400);
+    for (let i = 0; i < 3; i++) {
+      const sx = WORLD_W / 2 - 110 + i * 110;
+      const k = this.labMix[i] as Ingredient | undefined;
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      this.roundRect(sx - 30, y + 102, 60, 32, 10);
+      ctx.fill();
+      if (k) {
+        ctx.fillStyle = this.color(k);
+        this.roundRect(sx - 24, y + 108, 48, 20, 6);
+        ctx.fill();
+        this.listTap(sx - 30, y + 102, 60, 32, f, () => { this.labMix.splice(i, 1); });
+      } else this.text('?', sx, y + 118, 14, 'rgba(255,255,255,0.4)', 700);
+    }
+    if (this.labFx) {
+      ctx.globalAlpha = Math.min(1, this.labFx.t * 2);
+      this.text(this.labFx.text, WORLD_W / 2, y + 18, 15, this.labFx.good ? '#8fdc93' : '#ffb4a2', 700);
+      ctx.globalAlpha = 1;
+    }
+    y += 160;
+    // Ingredient picker (sushi ingredients only: the Lab is a sushi kitchen).
+    const kinds: Ingredient[] = ['rice', 'nori', 'salmon', 'tuna', 'avocado', 'cucumber', 'egg', 'ebi', 'unagi', 'tofu', 'ikura'];
+    const cw = (WORLD_W - 32 - 4 * 6) / 5;
+    kinds.forEach((k, i) => {
+      const x = 16 + (i % 5) * (cw + 6);
+      const yy = y + Math.floor(i / 5) * 58;
+      const known = (p.mastery[k] ?? 0) >= LAB_KNOWN;
+      const picked = this.labMix.includes(k);
+      this.card(x, yy, cw, 52, picked ? 'rgba(110,80,10,0.95)' : 'rgba(48,30,52,0.95)');
+      ctx.globalAlpha = known ? 1 : 0.3;
+      ctx.fillStyle = this.color(k);
+      this.roundRect(x + 10, yy + 8, cw - 20, 16, 5);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      this.fitText(known ? k : `🔒 ${p.mastery[k] ?? 0}/${LAB_KNOWN}`, x + cw / 2, yy + 38, cw - 6, 10, known ? '#fff' : 'rgba(255,255,255,0.5)', 'center', 700);
+      if (known) this.listTap(x, yy, cw, 52, f, () => {
+        if (picked) this.labMix = this.labMix.filter((m) => m !== k);
+        else if (this.labMix.length < 3) this.labMix.push(k);
+      });
+    });
+    y += Math.ceil(kinds.length / 5) * 58 + 4;
+    this.pill(16, y, WORLD_W - 32, this.labMix.length === 3 ? '🧪 MIX!' : `PICK ${3 - this.labMix.length} MORE`, f, () => this.labTry(), this.labMix.length === 3 ? 'gold' : 'quiet');
+    y += 46;
+    // Discovered secrets and the last mixes with their hints.
+    this.text('SECRET RECIPES', 16, y + 8, 12, '#ffd34d', 700, 'left');
+    y += 22;
+    SECRETS.forEach((sc, i) => {
+      const x = 16 + (i % 4) * ((WORLD_W - 32 - 18) / 4 + 6);
+      const bw = (WORLD_W - 32 - 18) / 4;
+      const yy = y + Math.floor(i / 4) * 64;
+      const got = p.secrets.includes(sc.name);
+      this.card(x, yy, bw, 58, got ? 'rgba(70,50,20,0.95)' : 'rgba(30,20,35,0.85)');
+      this.text(got ? sc.emoji : '❔', x + bw / 2, yy + 22, 20, '#fff', 400);
+      this.fitText(got ? sc.name : '???', x + bw / 2, yy + 46, bw - 6, 9.5, got ? '#ffe2c6' : 'rgba(255,255,255,0.4)', 'center', 700);
+    });
+    y += Math.ceil(SECRETS.length / 4) * 64 + 4;
+    if (lab.log.length) {
+      this.text('RECENT MIXES', 16, y + 8, 12, 'rgba(255,255,255,0.7)', 700, 'left');
+      y += 22;
+      for (const e of lab.log.slice(0, 6)) {
+        this.card(16, y, WORLD_W - 32, 30);
+        e.mix.forEach((k, i) => {
+          ctx.fillStyle = this.color(k as Ingredient);
+          this.roundRect(30 + i * 34, y + 9, 28, 12, 4);
+          ctx.fill();
+        });
+        this.text(e.found ? `✓ ${e.found}` : `${'●'.repeat(e.hint)}${'○'.repeat(3 - e.hint)} ${e.hint} right`, WORLD_W - 32, y + 15, 11, e.found ? '#8fdc93' : '#ffd34d', 700, 'right');
+        y += 34;
+      }
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ food truck branches
+
+  /** Branches open for every World Tour city whose plate you've earned. */
+  private branchCities(): typeof CITIES {
+    return CITIES.filter((c) => this.owned.plate.includes(`city-${c.id}`));
+  }
+
+  private branch(id: string) {
+    const b = this.progress.branches;
+    if (!b[id]) b[id] = { lv: 1, tipsAt: Date.now() };
+    return b[id];
+  }
+
+  private branchTips(id: string): number {
+    const b = this.branch(id);
+    return Math.floor(Math.min(8, (Date.now() - b.tipsAt) / 3_600_000) * branchRate(b.lv));
+  }
+
+  private collectBranches(): void {
+    let total = 0;
+    for (const c of this.branchCities()) {
+      total += this.branchTips(c.id);
+      this.branch(c.id).tipsAt = Date.now();
+    }
+    if (!total) return this.showToast('The trucks are still out selling. Come back soon!');
+    this.bankCoins(total);
+    this.progress.persist();
+    this.celebrate(`🚚 +${total} COINS`, 'Your food trucks had a good day!', 1.6);
+    sfx.coin();
+  }
+
+  private drawRestBranches(f: { areaTop: number; areaH: number }, y: number): number {
+    const { ctx } = this;
+    const cities = this.branchCities();
+    this.wrapLeft('Earn a World Tour city’s plate to open a food truck there. Trucks sell all day, up to 8 hours of tips.', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
+    y += 38;
+    if (!cities.length) {
+      this.card(16, y, WORLD_W - 32, 70, 'rgba(40,30,70,0.95)');
+      this.text('🚚 No trucks yet', WORLD_W / 2, y + 26, 14, '#fff', 700);
+      this.text(`Finish this week’s World Tour (${currentTour().city.name}) to open one`, WORLD_W / 2, y + 48, 11, '#9fe3ff', 600);
+      return y + 78;
+    }
+    const total = cities.reduce((a, c) => a + this.branchTips(c.id), 0);
+    this.pill(16, y, WORLD_W - 32, total ? `COLLECT ALL · ${total} COINS` : 'TRUCKS ARE SELLING…', f, () => this.collectBranches(), total ? 'gold' : 'quiet');
+    y += 44;
+    for (const c of cities) {
+      const b = this.branch(c.id);
+      this.card(16, y, WORLD_W - 32, 74, 'rgba(40,30,70,0.95)');
+      const g = ctx.createLinearGradient(0, y, 0, y + 74);
+      g.addColorStop(0, c.sky[0]);
+      g.addColorStop(1, c.sky[1]);
+      ctx.fillStyle = g;
+      this.roundRect(24, y + 8, 76, 58, 10);
+      ctx.fill();
+      this.text(BRANCH_EMOJI[c.id] ?? '🏙️', 46, y + 30, 18, '#fff', 400);
+      this.text('🚚', 70 + Math.sin(this.time * 2 + c.id.length) * 3, y + 50, 22, '#fff', 400);
+      this.text(`${c.name} truck`, 112, y + 18, 13.5, '#fff', 700, 'left');
+      for (let k = 0; k < BRANCH_MAX; k++) this.dot(116 + k * 13, y + 35, 4, k < b.lv ? '#ffd34d' : 'rgba(255,255,255,0.2)');
+      this.text(`${branchRate(b.lv)}/h · 💰 ${this.branchTips(c.id)}`, 112, y + 55, 11, '#ffe2c6', 700, 'left');
+      if (b.lv < BRANCH_MAX) this.pill(WORLD_W - 118, y + 21, 88, `⬆ ${branchCost(b.lv)}`, f, () => {
+        const cost = branchCost(b.lv);
+        if (this.bank < cost) return this.showToast(`You need ${cost - this.bank} more coins`);
+        this.bank -= cost;
+        save.setCoins(this.bank);
+        b.lv++;
+        this.progress.persist();
+        this.showToast(`🚚 ${c.name} truck level ${b.lv}!`);
+      }, this.bank >= branchCost(b.lv) ? 'gold' : 'quiet');
+      else this.text('★ MAX', WORLD_W - 40, y + 37, 12, '#ffd34d', 700, 'right');
+      y += 82;
+    }
+    return y;
   }
 
   // ------------------------------------------------------------ chef cards
