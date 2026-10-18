@@ -2,11 +2,11 @@ import { FONT } from './font';
 import { Capacitor } from '@capacitor/core';
 import { sfx, unlockAudio, setMuted } from './audio';
 import { askForReminders, haptic, save, scheduleAt, scheduleReminder, setHaptics } from './platform';
-import { setMusic, setMusicIntensity } from './audio';
+import { TRACKS, babble, setMusic, setMusicIntensity, setTrack, setVoices, type TrackId } from './audio';
 import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, TIP_HOURS, areaCost, popularity, tipRate } from './collect';
 import { CITIES, CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
-import { decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, type Challenge } from './share';
+import { REACTIONS, codeEmoji, decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, sharePhoto, type Challenge } from './share';
 import { BOARDS, localBoards, online, submitScore } from './services';
 import { STORY_LEVELS, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, weekKey, type MissionKind, starsNeeded } from './progress';
 import { THEMES, drawBackdrop, drawHolidayOverlay, makeSpecks, type Theme } from './themes';
@@ -135,7 +135,7 @@ interface Layer {
 /** Layers placed of one ingredient to master it (mastered ingredients turn gold and pay a little extra). */
 export const MASTERY = 100;
 
-type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet' | 'rescue' | 'tower' | 'modchal';
+type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet' | 'rescue' | 'tower' | 'modchal' | 'pnp';
 
 const FEVER_TIME = 5; // seconds of Fever after every 10 PERFECTs in a row
 const TIME_ATTACK = 60; // seconds
@@ -209,7 +209,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab' | 'jukebox';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -390,6 +390,8 @@ export class Game {
     this.reset();
     this.progress.visit();
     setHaptics(settings.haptics);
+    setTrack(settings.track as TrackId);
+    setVoices(settings.voices);
     this.clips = new ClipRecorder(canvas);
     void loadConfig();
     // ?nointro skips it (used by automated tests).
@@ -593,6 +595,7 @@ export class Game {
     if (this.gated) this.openMap();
     else if (this.runMode === 'zen' || this.runMode === 'time') this.startRun(this.progress.playLevel, this.runMode);
     else if (this.runMode === 'gauntlet') this.startRun(this.startLevel, 'gauntlet');
+    else if (this.runMode === 'pnp') this.startPnp(1);
     else if (this.runMode === 'rescue') this.startRescue(this.resultKind === 'rescue-won' ? Math.min(RESCUES.length - 1, this.rescueRun!.i + 1) : this.rescueRun!.i);
     else if (this.runMode === 'tower') this.startTower();
     else if (this.runMode === 'modchal' && this.modChal) this.startModChal(this.modChal);
@@ -717,6 +720,7 @@ export class Game {
     if (active.length) this.popup(WORLD_W / 2, this.top.y - 76, `Boosters: ${active.join(' · ')}`, '#9fe3ff', 13, 2.2);
     if (ws >= 3) this.popup(WORLD_W / 2, this.top.y - 96, `🔥 Win streak ${ws}: ${ws >= 8 ? 'hot start, steady hands, free Second Chance' : ws >= 5 ? 'hot start + steady hands' : 'hot start'}`, '#ffb703', 13, 2.4);
     if (mode === 'journey' && (level - 1) % 10 === 0) this.queueStory(chapterFor(level), false);
+    if (mode === 'challenge' && this.friendEmoji) this.coach(`Your friend says ${this.friendEmoji}`, `Beat ${this.challenge?.score ?? 0} layers to answer back!`, 4);
     track('run_start', { mode, level, boosters: this.picked.size });
     this.clip = null;
     if (settings.clips) this.clips.start();
@@ -779,6 +783,7 @@ export class Game {
 
   /** A free chest for every boss beaten: coins, sometimes a booster, and a piece toward an exclusive. */
   private openChest(level: number): void {
+    this.maybeTrackDrop();
     const legend = level > STORY_LEVELS && level % 10 === 0;
     const coins = (10 + Math.floor(Math.random() * 25) + level) * (legend ? 2 : 1);
     this.bankCoins(coins);
@@ -1947,7 +1952,11 @@ export class Game {
     this.checkRace();
     p.persist();
     track('run_end', { mode: this.runMode, level: this.level, height: this.height, coins: this.runCoins, served: this.ordersServed, result: this.resultKind });
-    if (this.runMode === 'challenge' && this.challenge && !this.revived) this.recordDuel();
+    if (this.runMode === 'challenge' && this.challenge && !this.revived) {
+      this.recordDuel();
+      if (this.friendEmoji) this.showToast(this.height > this.challenge.score ? `You beat them! Answer their ${this.friendEmoji} with a share` : `They win this time ${this.friendEmoji}`);
+    }
+    if (this.runMode === 'pnp' && this.pnp) this.pnp.scores[this.pnp.turn - 1] = this.height;
     if (this.journey && this.resultKind === 'lost' && !this.revived) {
       // A loss counts toward this chef becoming your nemesis; a run with no chef beaten ends the Streak Quest.
       p.losses[this.level] = (p.losses[this.level] ?? 0) + 1;
@@ -2028,6 +2037,14 @@ export class Game {
       return;
     }
     this.updateRescue(real);
+    // Chef voices: babble whenever a new speech bubble appears.
+    const said = this.bubble?.text ?? '';
+    if (said && said !== this.lastSaid && this.mode !== 'title') {
+      let h = 0;
+      for (const ch of this.chef.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      babble(said, 150 + (h % 12) * 22);
+    }
+    this.lastSaid = said;
 
     // Overlays and celebrations run in real time.
     if (this.adOverlay) this.adOverlay.t = Math.max(0, this.adOverlay.t - real);
@@ -2151,7 +2168,7 @@ export class Game {
   // ------------------------------------------------------------------ render
 
   private muteButton() {
-    return { x: this.insets.left + 26, y: this.insets.top + 30, r: 14 };
+    return { x: settings.leftHanded ? WORLD_W - this.insets.right - 26 : this.insets.left + 26, y: this.insets.top + 30, r: 14 };
   }
 
   render(): void {
@@ -2209,6 +2226,7 @@ export class Game {
       else if (this.mode === 'minis') this.drawMinis();
       else if (this.mode === 'modchals') this.drawModChals();
       else if (this.mode === 'lab') this.drawLab();
+      else if (this.mode === 'jukebox') this.drawJukebox();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -3105,10 +3123,11 @@ export class Game {
 
     ctx.fillStyle = '#ffd34d';
     ctx.beginPath();
-    ctx.arc(WORLD_W - this.insets.right - 24, top + 30, 8, 0, Math.PI * 2);
+    const lh = settings.leftHanded;
+    ctx.arc(lh ? this.insets.left + 24 : WORLD_W - this.insets.right - 24, top + 30, 8, 0, Math.PI * 2);
     ctx.fill();
     const coins = this.bank + (this.mode === 'playing' ? this.runCoins : 0);
-    this.text(String(coins), WORLD_W - this.insets.right - 38, top + 31, 16, '#ffd34d', 700, 'right');
+    this.text(String(coins), lh ? this.insets.left + 38 : WORLD_W - this.insets.right - 38, top + 31, 16, '#ffd34d', 700, lh ? 'left' : 'right');
   }
 
   /** Draws a tappable button and registers its hit area for this frame. */
@@ -3292,6 +3311,7 @@ export class Game {
       if (icons.length) this.fitText(icons.join(' '), 16 + this.insets.left, top + 64, 110, 14, '#fff', 'left', 600);
       if (this.weather) this.text(this.weather.kind === 'wind' ? `🌬️ wind ${this.weather.dir > 0 ? '→' : '←'}` : '🌧️ rain', 16 + this.insets.left, top + 86, 12, '#bde0fe', 700, 'left');
       if (this.runMode === 'gauntlet') this.text(`⚔️ ${this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
+      if (this.runMode === 'pnp' && this.pnp) this.text(`👥 P${this.pnp.turn}`, WORLD_W - 16 - this.insets.right, top + 64, 16, this.pnp.turn === 1 ? '#ff8a5b' : '#4cc9f0', 700, 'right');
       if (this.runMode === 'tower') this.text(`🗼 ${this.towerStart + this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
       if (this.rescueRun) {
         const rr = this.rescueRun;
@@ -3411,14 +3431,18 @@ export class Game {
       const row1: [string, () => void, 'primary' | 'gold' | 'quiet'][] = [];
       if (canContinue) row1.push([this.progress.vip ? tr('cont') : `▶ ${tr('cont')}`, () => this.watchAd('Continue this run', () => this.revive()), 'gold']);
       if (!this.doubled && this.runCoins > 0) row1.push([`▶ +${this.runCoins}`, () => this.watchAd('Double your coins', () => { this.doubled = true; this.bankCoins(this.runCoins); this.showToast(`Coins doubled: +${this.runCoins}`); }), 'gold']);
-      row1.push([tr('share'), () => this.shareRun(), 'quiet']);
+      row1.push([tr('share'), () => { this.reactPick = true; }, 'quiet']);
+      // Photo mode: a small camera button in the card's corner.
+      this.button(WORLD_W - 76, cardTop + 12, 44, 36, '📷', () => this.openPhoto(), 'quiet');
       if (this.clip) row1.push(['🎬 CLIP', () => { track('clip_share'); void shareClip(this.clip!, this.height); }, 'quiet']);
       const w1 = (WORLD_W - 72 - (row1.length - 1) * 8) / row1.length;
       row1.forEach(([label, go, style], i) => this.button(36 + i * (w1 + 8), cardTop + 232, w1, 44, label, go, style));
       const second = this.journey || this.resultKind === 'gate' ? [tr('map'), () => this.openMap()] as const : [tr('modes'), () => this.openScreen('modes')] as const;
-      this.button(36, cardTop + 290, 96, 46, tr('home'), () => { this.mode = 'title'; this.reset(); }, 'quiet');
-      this.button(140, cardTop + 290, 108, 46, second[0], second[1], 'quiet');
-      this.button(256, cardTop + 290, 108, 46, this.resultKind === 'puzzle-won' ? tr('next') : this.resultKind === 'gate' ? 'GET STARS' : tr('retry'), () => this.retry());
+      // Left-handed: RETRY moves under the left thumb.
+      const lh = settings.leftHanded;
+      this.button(lh ? 268 : 36, cardTop + 290, 96, 46, tr('home'), () => { this.mode = 'title'; this.reset(); }, 'quiet');
+      this.button(lh ? 152 : 140, cardTop + 290, 108, 46, second[0], second[1], 'quiet');
+      this.button(lh ? 36 : 256, cardTop + 290, 108, 46, this.resultKind === 'puzzle-won' ? tr('next') : this.resultKind === 'gate' ? 'GET STARS' : tr('retry'), () => this.retry());
     }
     ctx.globalAlpha = 1;
   }
@@ -3465,7 +3489,7 @@ export class Game {
     this.announceUnlocks();
     // Settings gear beside the sound button (settings are always reachable, even before MORE opens).
     const mb = this.muteButton();
-    const gx = mb.x + 38;
+    const gx = settings.leftHanded ? mb.x - 38 : mb.x + 38;
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -4406,6 +4430,7 @@ export class Game {
       ['🗼 Omakase Tower', `${TOWER_FLOORS} weekly floors · checkpoint ${this.towerState().cp}`, 'CLIMB', () => this.openScreen('towerview', 'modes')],
       ['🎭 Modifiers', 'Mirror, blind, tiny, double speed, twins', 'OPEN', () => this.openScreen('modchals', 'modes')],
       ['🎮 Mini-games', 'Knife Throw, Rice Rhythm, Fish Catch', 'OPEN', () => this.openScreen('minis', 'modes')],
+      ['👥 Pass & Play', 'Two players, one phone, the same run', 'PLAY', () => this.startPnp(1)],
       ['⚔️ Gauntlet', `Boss after boss, no breaks, no perks · best ${p.gauntletBest} chefs`, 'FIGHT', () => this.startRun(Math.max(5, p.playLevel), 'gauntlet')],
       ['🍱 Daily Special', p.specialDay === dayKey() ? 'Cleared today, practice anytime' : 'One special order, +150 coins today', 'PLAY', () => this.startRun(this.specialLevel(), 'special')],
       ['🤝 Friend Challenge', 'Enter a friend’s code and beat their score', 'ENTER CODE', () => this.openCodeInput()],
@@ -4602,6 +4627,7 @@ export class Game {
       ['🎟️', 'Sushi Pass', passClaimable ? `${passClaimable} reward${passClaimable > 1 ? 's' : ''} ready!` : `Tier ${Math.min(PASS_TIERS, Math.floor(p.pass.xp / PASS_XP))}/${PASS_TIERS}`, () => this.openScreen('pass', 'more')],
       ['🪪', 'Profile', p.prestige ? `Prestige ${p.prestige} · badges` : 'Stats, badges, prestige', () => this.openScreen('profile', 'more')],
       ['📅', 'Calendar', this.calendarReady() ? 'Today’s reward ready!' : `Day ${p.calendar.n}/28`, () => this.openScreen('calendar', 'more')],
+      ['🎵', 'Jukebox', TRACKS[settings.track as TrackId]?.name ?? 'Music', () => this.openScreen('jukebox', 'more')],
       ['🧪', 'Recipe Lab', `${this.progress.secrets.length}/${SECRETS.length} secrets`, () => this.openScreen('lab', 'more')],
       ['🏛️', 'Museum', `${RECIPES.filter((r) => (p.recipeCounts[r.name] ?? 0) > 0).length}/${RECIPES.length} dishes · mastery`, () => this.openScreen('museum', 'more')],
       ['🧑‍🍳', 'My Chef', `Chef ${p.avatar.name}`, () => this.openScreen('avatar', 'more')],
@@ -6534,6 +6560,246 @@ export class Game {
     return y;
   }
 
+  // ------------------------------------------------------------ jukebox
+
+  private drawJukebox(): void {
+    const p = this.progress;
+    const f = this.screenBegin('🎵 JUKEBOX', 'Tracks drop from chests, or buy them here · tap to play');
+    let y = f.y0 + 4;
+    for (const id of Object.keys(TRACKS) as TrackId[]) {
+      const tr2 = TRACKS[id];
+      const own = p.tracks.includes(id);
+      const on = settings.track === id;
+      this.card(16, y, WORLD_W - 32, 66, on ? 'rgba(70,50,20,0.95)' : 'rgba(48,30,52,0.95)');
+      this.text(tr2.icon, 44, y + 33, 26, '#fff', 400);
+      this.text(tr2.name, 74, y + 24, 14, '#fff', 700, 'left');
+      this.text(`${tr2.tempo} bpm · ${tr2.drum ? 'drums · ' : ''}${tr2.wave}`, 74, y + 44, 10.5, 'rgba(255,255,255,0.65)', 600, 'left');
+      if (on) {
+        const bars = 5;
+        for (let k = 0; k < bars; k++) {
+          const h = 6 + Math.abs(Math.sin(this.time * (4 + k) + k)) * 16;
+          this.ctx.fillStyle = '#ffd34d';
+          this.ctx.fillRect(WORLD_W - 90 + k * 9, y + 44 - h, 6, h);
+        }
+      } else if (own) this.pill(WORLD_W - 104, y + 17, 74, 'PLAY', f, () => this.playTrack(id), 'quiet');
+      else this.pill(WORLD_W - 104, y + 17, 74, '300 🪙', f, () => {
+        if (this.bank < 300) return this.showToast(`You need ${300 - this.bank} more coins`);
+        this.bank -= 300;
+        save.setCoins(this.bank);
+        p.tracks.push(id);
+        p.persist();
+        this.playTrack(id);
+      }, this.bank >= 300 ? 'gold' : 'quiet');
+      y += 74;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  private playTrack(id: TrackId): void {
+    settings.track = id;
+    saveSettings();
+    setTrack(id);
+    if (!this.musicOn) this.toggleMusic();
+    this.showToast(`${TRACKS[id].icon} Now playing: ${TRACKS[id].name}`);
+  }
+
+  /** Chests sometimes contain a jukebox track you don't own yet. */
+  private maybeTrackDrop(): void {
+    const missing = (Object.keys(TRACKS) as TrackId[]).filter((id) => !this.progress.tracks.includes(id));
+    if (!missing.length || Math.random() > 0.08) return;
+    const id = missing[Math.floor(Math.random() * missing.length)];
+    this.progress.tracks.push(id);
+    this.progress.persist();
+    this.showToast(`🎵 New jukebox track: ${TRACKS[id].name}!`);
+  }
+
+  // ------------------------------------------------------------ photo mode
+
+  private photo: { filter: number; frame: number; chef: boolean; img: HTMLCanvasElement | null } | null = null;
+
+  private static FILTERS: [string, string][] = [['Natural', 'none'], ['Warm', 'sepia(0.35) saturate(1.3)'], ['Pop', 'saturate(1.7) contrast(1.1)'], ['Noir', 'grayscale(1) contrast(1.2)'], ['Dream', 'hue-rotate(300deg) saturate(1.2)']];
+  private static FRAMES = ['Polaroid', 'Film', 'Gold', 'None'];
+
+  private openPhoto(): void {
+    this.photo = { filter: 1, frame: 0, chef: true, img: null };
+    track('photo_open');
+  }
+
+  /** Builds the photo: the whole tower scaled to fit, your chef, a frame, a filter and a caption. */
+  private renderPhoto(): HTMLCanvasElement {
+    const ph = this.photo!;
+    const c = document.createElement('canvas');
+    c.width = 1080;
+    c.height = 1350;
+    const x = c.getContext('2d')!;
+    const inner = document.createElement('canvas');
+    inner.width = 1080;
+    inner.height = 1350;
+    const ic = inner.getContext('2d')!;
+    const g = ic.createLinearGradient(0, 0, 0, 1350);
+    g.addColorStop(0, this.theme.sky[0]);
+    g.addColorStop(1, this.theme.sky[1]);
+    ic.fillStyle = g;
+    ic.fillRect(0, 0, 1080, 1350);
+    // The whole stack, scaled to fit, drawn with the game's own layer renderer.
+    const layers = this.stack;
+    const towerH = layers.length * LAYER_H;
+    const k = Math.min(2.4, 1000 / Math.max(towerH, 1));
+    const saved = this.ctx;
+    this.ctx = ic;
+    ic.save();
+    ic.translate(540 - (WORLD_W / 2) * k, 1230);
+    ic.scale(k, k);
+    for (const l of layers) this.drawLayer({ ...l, y: l.y });
+    ic.restore();
+    if (ph.chef) drawChef(ic, avatarChef(this.progress.avatar), 170, 1080, 2.4, 'happy', 540, 700, this.time);
+    this.ctx = saved;
+    // Plate line.
+    ic.fillStyle = 'rgba(255,255,255,0.85)';
+    ic.fillRect(240, 1236, 600, 10);
+    // Apply the filter onto the final canvas.
+    x.filter = Game.FILTERS[ph.filter][1];
+    x.drawImage(inner, 0, 0);
+    x.filter = 'none';
+    // Frame and caption.
+    const frame = Game.FRAMES[ph.frame];
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    if (frame === 'Polaroid') {
+      x.strokeStyle = '#fbf7ef';
+      x.lineWidth = 60;
+      x.strokeRect(30, 30, 1020, 1290);
+      x.fillStyle = '#fbf7ef';
+      x.fillRect(0, 1180, 1080, 170);
+      x.fillStyle = '#4a2618';
+      x.font = `700 58px ${FONT}`;
+      x.fillText(`${this.height} layers · Chef ${this.progress.avatar.name}`, 540, 1250);
+      x.font = `500 34px ${FONT}`;
+      x.fillText(`Sushi Stack · ${new Date().toLocaleDateString()}`, 540, 1305);
+    } else if (frame === 'Film') {
+      x.fillStyle = '#111';
+      x.fillRect(0, 0, 90, 1350);
+      x.fillRect(990, 0, 90, 1350);
+      x.fillStyle = '#ddd';
+      for (let i = 0; i < 14; i++) {
+        x.fillRect(28, 20 + i * 96, 34, 50);
+        x.fillRect(1018, 20 + i * 96, 34, 50);
+      }
+      x.fillStyle = '#ffd34d';
+      x.font = `700 52px ${FONT}`;
+      x.fillText(`SUSHI STACK · ${this.height}`, 540, 80);
+    } else if (frame === 'Gold') {
+      x.strokeStyle = '#d4a537';
+      x.lineWidth = 36;
+      x.strokeRect(18, 18, 1044, 1314);
+      x.strokeStyle = '#fff3b0';
+      x.lineWidth = 6;
+      x.strokeRect(46, 46, 988, 1258);
+      x.fillStyle = '#fff3b0';
+      x.font = `700 64px ${FONT}`;
+      x.fillText(`🏆 ${this.height} LAYERS`, 540, 110);
+    }
+    return c;
+  }
+
+  private drawPhoto(blocker: () => void): void {
+    const ph = this.photo!;
+    const { ctx } = this;
+    blocker();
+    ctx.fillStyle = '#0d0810';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    if (!ph.img) ph.img = this.renderPhoto();
+    const top = this.insets.top + 20;
+    const ph2 = this.viewH - this.insets.bottom - 150 - top;
+    const pw = Math.min(WORLD_W - 40, ph2 * 0.8);
+    ctx.drawImage(ph.img, WORLD_W / 2 - pw / 2, top, pw, pw * 1.25);
+    const by = top + pw * 1.25 + 14;
+    const bw = (WORLD_W - 40 - 16) / 3;
+    this.button(20, by, bw, 38, `🎨 ${Game.FILTERS[ph.filter][0]}`, () => { ph.filter = (ph.filter + 1) % Game.FILTERS.length; ph.img = null; }, 'quiet');
+    this.button(28 + bw, by, bw, 38, `🖼️ ${Game.FRAMES[ph.frame]}`, () => { ph.frame = (ph.frame + 1) % Game.FRAMES.length; ph.img = null; }, 'quiet');
+    this.button(36 + bw * 2, by, bw, 38, ph.chef ? '🧑‍🍳 Chef ON' : '🧑‍🍳 Chef OFF', () => { ph.chef = !ph.chef; ph.img = null; }, 'quiet');
+    this.button(20, by + 48, (WORLD_W - 48) / 2, 44, t('back'), () => { this.photo = null; }, 'quiet');
+    this.button(28 + (WORLD_W - 48) / 2, by + 48, (WORLD_W - 48) / 2, 44, '📤 SAVE / SHARE', () => { void sharePhoto(ph.img ?? this.renderPhoto()); track('photo_share', { filter: ph.filter, frame: ph.frame }); }, 'gold');
+  }
+
+  // ------------------------------------------------------------ pass and play
+
+  private pnp: { turn: number; scores: number[]; seed: number; level: number } | null = null;
+
+  private startPnp(turn = 1): void {
+    if (turn === 1) this.pnp = { turn: 1, scores: [], seed: Math.floor(Math.random() * 2 ** 31), level: Math.max(3, Math.min(this.progress.playLevel, 30)) };
+    const pp = this.pnp!;
+    pp.turn = turn;
+    this.startRun(pp.level, 'pnp', { challenge: { seed: pp.seed, level: pp.level, score: turn === 2 ? pp.scores[0] : 0 }, picked: new Set() });
+    this.coach(`👥 PLAYER ${turn}`, turn === 1 ? 'Same chefs, same layers for both players. Stack as high as you can!' : `Beat Player 1’s ${pp.scores[0]} layers!`, 4);
+  }
+
+  private drawPnp(blocker: () => void): void {
+    const pp = this.pnp!;
+    if (this.mode !== 'dead' || this.time - this.deadAt < 0.7 || pp.scores.length < pp.turn) return;
+    const { ctx } = this;
+    const cx = WORLD_W / 2;
+    const midY = this.viewH / 2;
+    blocker();
+    const bg = ctx.createLinearGradient(0, 0, 0, this.viewH);
+    bg.addColorStop(0, '#2a1a40');
+    bg.addColorStop(1, '#120a18');
+    ctx.fillStyle = bg;
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    if (pp.turn === 1) {
+      this.text('👥 PLAYER 1', cx, midY - 120, 26, '#ffd34d', 700);
+      this.text(`${pp.scores[0]} layers`, cx, midY - 70, 40, '#fff', 700);
+      this.text('📱➡️🙋', cx, midY - 10, 40, '#fff', 400);
+      this.text('Pass the phone to Player 2', cx, midY + 40, 16, '#fff', 600);
+      this.button(cx - 110, midY + 74, 220, 52, 'PLAYER 2: GO!', () => this.startPnp(2), 'gold');
+      return;
+    }
+    const [a, b] = pp.scores;
+    const win = a === b ? 0 : a > b ? 1 : 2;
+    this.text(win ? `🏆 PLAYER ${win} WINS!` : '🤝 IT’S A DRAW!', cx, midY - 190, 26, '#ffd34d', 700);
+    const maxH = Math.max(a, b, 1);
+    [a, b].forEach((sc, i) => {
+      const x = cx - 70 + i * 140;
+      const h = 160 * (sc / maxH);
+      ctx.fillStyle = i ? '#4cc9f0' : '#ff8a5b';
+      this.roundRect(x - 34, midY + 60 - h, 68, h, 10);
+      ctx.fill();
+      this.text(`${sc}`, x, midY + 46 - h, 20, '#fff', 700);
+      this.text(`PLAYER ${i + 1}`, x, midY + 84, 13, '#fff', 700);
+      if (win === i + 1) this.text('👑', x, midY + 20 - h, 26, '#fff', 400);
+    });
+    this.button(40, midY + 120, 150, 48, t('home'), () => { this.pnp = null; this.mode = 'title'; this.reset(); }, 'quiet');
+    this.button(WORLD_W - 190, midY + 120, 150, 48, 'REMATCH', () => this.startPnp(1), 'gold');
+  }
+
+  // ------------------------------------------------------------ emoji reactions
+
+  private lastSaid = '';
+  private reactPick = false;
+  private friendEmoji = '';
+
+  private drawReactPick(blocker: () => void): void {
+    const { ctx } = this;
+    const cx = WORLD_W / 2;
+    const midY = this.viewH / 2;
+    blocker();
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    this.card(30, midY - 110, WORLD_W - 60, 220, '#2a1a33');
+    this.text('Add a reaction to your code?', cx, midY - 80, 16, '#fff', 700);
+    this.text('Your friend sees it when they play your run', cx, midY - 56, 11, 'rgba(255,255,255,0.7)', 600);
+    REACTIONS.forEach((e, i) => {
+      const x = 62 + i * 55;
+      this.dot(x, midY - 6, 24, 'rgba(255,255,255,0.1)');
+      this.text(e, x, midY - 5, 28, '#fff', 400);
+      this.buttons.push({ x: x - 26, y: midY - 32, w: 52, h: 52, onTap: () => { this.reactPick = false; this.shareRun(i); } });
+    });
+    this.button(cx - 80, midY + 46, 160, 42, 'NO EMOJI', () => { this.reactPick = false; this.shareRun(); }, 'quiet');
+  }
+
   // ------------------------------------------------------------ chef cards
 
   /** Chefs whose card is Lv 2+ wear a gold uniform. */
@@ -6901,6 +7167,7 @@ export class Game {
         const gc = decodeGhost(value);
         if (!gc) return error('That ghost code is damaged. Ask your friend to share it again.');
         close();
+        this.friendEmoji = codeEmoji(value);
         this.friendGhost = gc.shape;
         this.startRun(gc.challenge.level, 'challenge', { challenge: gc.challenge });
         track('ghost_race');
@@ -6926,6 +7193,7 @@ export class Game {
         return;
       }
       const c = decodeChallenge(value);
+      this.friendEmoji = c ? codeEmoji(value) : '';
       if (!c) return error('That code doesn’t look right. It looks like K3F9Q-7-42 or INV-ABC123.');
       close();
       this.startRun(c.level, 'challenge', { challenge: c });
@@ -6935,7 +7203,7 @@ export class Game {
 
   // ------------------------------------------------------------- settings
 
-  private setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips'): void {
+  private setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips' | 'voices' | 'leftHanded' | 'hapticAssist'): void {
     settings[key] = !settings[key];
     saveSettings();
     if (key === 'haptics') setHaptics(settings.haptics);
@@ -6967,11 +7235,13 @@ export class Game {
     header(t('secSound'));
     toggle('🎵', t('music'), 'Calm generated music', this.musicOn, () => this.toggleMusic());
     toggle('🔊', t('sound'), 'Chops, coins and cheers', !this.muted, () => { this.muted = !this.muted; setMuted(this.muted); save.setMuted(this.muted); });
+    toggle('🗣️', 'Chef voices', 'Little babble voices when chefs talk', settings.voices, () => { this.setting('voices'); setVoices(settings.voices); });
     toggle('📳', t('haptics'), 'Taps you feel on PERFECTs and hits', settings.haptics, () => this.setting('haptics'));
     header(t('secAccess'));
     toggle('🌙', t('reducedMotion'), 'No screen shake, flashes or confetti', settings.reducedMotion, () => this.setting('reducedMotion'));
     toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
     toggle('🤝', t('assist'), 'Slower layers, bigger PERFECT zone', settings.assist, () => this.setting('assist'));
+    toggle('🫲', 'Left-handed', 'Corner buttons and results flipped', settings.leftHanded, () => this.setting('leftHanded'));
     toggle('🎬', t('clips'), clipsSupported() ? 'Save the last seconds of a run as a video' : 'Not supported on this device', settings.clips && clipsSupported(), () => { if (clipsSupported()) this.setting('clips'); else this.showToast('Video recording isn’t supported here'); });
     // Language picker.
     this.card(16, y, WORLD_W - 32, 56);
@@ -7031,8 +7301,9 @@ export class Game {
   }
 
   /** Builds the share card image and opens the share sheet (or shows the card if there isn't one). */
-  private shareRun(): void {
-    const code = encodeChallenge({ seed: this.seed, level: this.startLevel, score: this.height });
+  private shareRun(emoji?: number): void {
+    const tag = emoji === undefined ? '' : `~${emoji}`;
+    const code = encodeChallenge({ seed: this.seed, level: this.startLevel, score: this.height }) + tag;
     const card = document.createElement('canvas');
     card.width = 1080;
     card.height = 1350;
@@ -7070,7 +7341,7 @@ export class Game {
     c.fillStyle = '#fff';
     c.font = `700 44px ${FONT}`;
     c.fillText(`Chef ${this.progress.avatar.name} · Can you beat me? Code: ${code}`, 540, 1270, 1000);
-    const ghost = encodeGhost({ seed: this.seed, level: this.startLevel, score: this.height }, this.stack.slice(1).map((l) => [Math.round(l.x), Math.round(l.w)]));
+    const ghost = encodeGhost({ seed: this.seed, level: this.startLevel, score: this.height }, this.stack.slice(1).map((l) => [Math.round(l.x), Math.round(l.w)])) + tag;
     void shareCard(card, ghost, this.height).then((ok) => {
       if (!ok) this.shareOverlay = { image: card, code, ghost };
     });
@@ -7121,6 +7392,9 @@ export class Game {
     if (this.picker) this.drawPicker(blocker);
     if (this.story && !this.picker) this.drawStoryCard(blocker);
     if (this.confirmBox) this.drawConfirm(blocker);
+    if (this.pnp && this.runMode === 'pnp') this.drawPnp(blocker);
+    if (this.reactPick) this.drawReactPick(blocker);
+    if (this.photo) this.drawPhoto(blocker);
     if (this.adOverlay) {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.92)';

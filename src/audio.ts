@@ -84,6 +84,43 @@ export const sfx = {
 
 const MELODY = [392, 440, 523, 587, 659, 784, 880]; // G pentatonic-ish, koto-like
 const BASS = [98, 110, 131, 147];
+
+// Jukebox tracks: each changes the scale, instrument, tempo and percussion of the generated tune.
+export type TrackId = 'classic' | 'lofi' | 'festival' | 'citypop' | 'winter';
+
+interface Track { name: string; icon: string; melody: number[]; bass: number[]; tempo: number; wave: OscillatorType; shaker: number; drum: boolean; decay: number }
+
+export const TRACKS: Record<TrackId, Track> = {
+  classic: { name: 'Koto Classic', icon: '🎋', melody: MELODY, bass: BASS, tempo: 92, wave: 'triangle', shaker: 1, drum: false, decay: 0.35 },
+  lofi: { name: 'Lo-fi Kitchen', icon: '🎧', melody: [262, 311, 349, 392, 466, 523, 622], bass: [65, 78, 87, 98], tempo: 72, wave: 'sine', shaker: 0.4, drum: false, decay: 0.6 },
+  festival: { name: 'Taiko Festival', icon: '🥁', melody: [440, 494, 587, 659, 740, 880, 988], bass: [110, 123, 147, 165], tempo: 112, wave: 'square', shaker: 1.4, drum: true, decay: 0.2 },
+  citypop: { name: 'City Pop Night', icon: '🌃', melody: [523, 659, 784, 988, 1047, 1319, 1568], bass: [131, 165, 175, 196], tempo: 100, wave: 'sine', shaker: 0.8, drum: true, decay: 0.45 },
+  winter: { name: 'Winter Bells', icon: '🔔', melody: [784, 880, 1047, 1175, 1319, 1568, 1760], bass: [98, 131, 147, 196], tempo: 80, wave: 'sine', shaker: 0.3, drum: false, decay: 0.9 },
+};
+
+let track: Track = TRACKS.classic;
+
+export function setTrack(id: TrackId): void {
+  track = TRACKS[id] ?? TRACKS.classic;
+}
+
+// ------------------------------------------------------------------- voices
+// Animal Crossing-style babble: a quick blip per syllable, pitched per character.
+
+let voicesOn = true;
+
+export function setVoices(on: boolean): void {
+  voicesOn = on;
+}
+
+export function babble(text: string, pitch: number): void {
+  if (!ctx || muted || !voicesOn) return;
+  const syllables = Math.min(14, Math.max(2, Math.round(text.replace(/[^\p{L}]/gu, '').length / 2.5)));
+  for (let i = 0; i < syllables; i++) {
+    const f = pitch * (0.85 + Math.random() * 0.4) * (i === syllables - 1 && text.endsWith('?') ? 1.3 : 1);
+    tone(f, 0.06, i % 2 ? 'square' : 'triangle', 0.035, f * (0.9 + Math.random() * 0.2), i * 0.065);
+  }
+}
 let musicTimer: number | null = null;
 let nextBeat = 0;
 let beat = 0;
@@ -98,15 +135,15 @@ export function setMusic(on: boolean): void {
 
 /** Combo raises the tempo from 92 up to 132 bpm; Fever layers an arpeggio. */
 export function setMusicIntensity(combo: number, inFever: boolean): void {
-  tempo = 92 + Math.min(40, combo * 4);
+  tempo = track.tempo + Math.min(40, combo * 4);
   fever = inFever;
 }
 
-function pluck(freq: number, t: number, vol: number, dur = 0.35): void {
+function pluck(freq: number, t: number, vol: number, dur = track.decay): void {
   if (!ctx || !musicGain) return;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
-  osc.type = 'triangle';
+  osc.type = track.wave;
   osc.frequency.setValueAtTime(freq, t);
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -130,6 +167,20 @@ function shaker(t: number, vol: number): void {
   src.stop(t + 0.06);
 }
 
+/** A soft taiko/kick drum hit. */
+function kick(t: number): void {
+  if (!ctx || !musicGain) return;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.frequency.setValueAtTime(120, t);
+  osc.frequency.exponentialRampToValueAtTime(45, t + 0.15);
+  g.gain.setValueAtTime(0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  osc.connect(g).connect(musicGain);
+  osc.start(t);
+  osc.stop(t + 0.22);
+}
+
 function startMusic(): void {
   if (!ctx || musicTimer !== null) return;
   musicGain = ctx.createGain();
@@ -143,12 +194,14 @@ function startMusic(): void {
       const step = 60 / tempo / 2; // eighth notes
       const bar = Math.floor(beat / 8);
       const pos = beat % 8;
-      if (pos % 4 === 0) pluck(BASS[(bar + pos / 4) % BASS.length], nextBeat, 0.09, 0.5);
+      const { melody, bass } = track;
+      if (pos % 4 === 0) pluck(bass[(bar + pos / 4) % bass.length], nextBeat, 0.09, 0.5);
+      if (track.drum && pos % 4 === 0) kick(nextBeat);
       // A simple repeating phrase that changes every two bars.
       const phrase = [0, 2, 4, 2, 5, 4, 2, 1];
-      if (pos % 2 === 0 || Math.random() < 0.3) pluck(MELODY[(phrase[pos] + (bar % 2) * 2) % MELODY.length], nextBeat, 0.05);
-      shaker(nextBeat, pos % 2 ? 0.015 : 0.03);
-      if (fever) pluck(MELODY[(beat * 3) % MELODY.length] * 2, nextBeat + step / 2, 0.025, 0.15);
+      if (pos % 2 === 0 || Math.random() < 0.3) pluck(melody[(phrase[pos] + (bar % 2) * 2) % melody.length], nextBeat, track.wave === 'square' ? 0.025 : 0.05);
+      shaker(nextBeat, (pos % 2 ? 0.015 : 0.03) * track.shaker);
+      if (fever) pluck(melody[(beat * 3) % melody.length] * 2, nextBeat + step / 2, 0.025, 0.15);
       nextBeat += step;
       beat++;
     }

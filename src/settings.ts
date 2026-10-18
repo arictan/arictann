@@ -10,6 +10,10 @@ export interface Settings {
   colorblind: boolean; // a symbol on every ingredient, not just colour
   assist: boolean; // slower layers and a bigger PERFECT zone
   clips: boolean; // keep the last seconds of a run as a shareable video
+  voices: boolean; // chef babble voices
+  leftHanded: boolean; // mirror the corner buttons and result buttons
+  hapticAssist: boolean; // a tick on the phone when the layer is lined up
+  track: string; // jukebox track
   lang: Lang;
 }
 
@@ -24,6 +28,10 @@ export const settings: Settings = {
   colorblind: false,
   assist: false,
   clips: false,
+  voices: true,
+  leftHanded: false,
+  hapticAssist: false,
+  track: 'classic',
   lang: defaultLang(),
   ...save.json('settings', {}),
 };

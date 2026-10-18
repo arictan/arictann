@@ -12,8 +12,16 @@ export function encodeChallenge(c: Challenge): string {
   return `${c.seed.toString(36).toUpperCase()}-${c.level}-${c.score}`;
 }
 
+/** Emoji a friend can attach to a code ("~3" at the end). */
+export const REACTIONS = ['😜', '😎', '🔥', '😂', '💪', '🍣'];
+
+export function codeEmoji(code: string): string {
+  const m = code.trim().match(/~(\d)$/);
+  return m ? REACTIONS[Number(m[1])] ?? '' : '';
+}
+
 export function decodeChallenge(code: string): Challenge | null {
-  const m = code.trim().toUpperCase().match(/^([0-9A-Z]{1,8})-(\d{1,5})-(\d{1,5})$/);
+  const m = code.trim().replace(/~\d$/, '').toUpperCase().match(/^([0-9A-Z]{1,8})-(\d{1,5})-(\d{1,5})$/);
   if (!m) return null;
   const seed = parseInt(m[1], 36);
   const level = Number(m[2]);
@@ -38,7 +46,7 @@ export function encodeGhost(c: Challenge, shape: [number, number][]): string {
 }
 
 export function decodeGhost(code: string): { challenge: Challenge; shape: [number, number][] } | null {
-  const m = code.trim().match(/^G-([0-9A-Za-z]{1,8}-\d{1,5}-\d{1,5})\.([A-Za-z0-9_-]+)$/);
+  const m = code.trim().replace(/~\d$/, '').match(/^G-([0-9A-Za-z]{1,8}-\d{1,5}-\d{1,5})\.([A-Za-z0-9_-]+)$/);
   if (!m) return null;
   const challenge = decodeChallenge(m[1]);
   if (!challenge) return null;
@@ -105,4 +113,28 @@ export async function shareClip(file: File, score: number): Promise<void> {
   a.download = file.name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/** Shares (or downloads) a photo-mode picture. */
+export async function sharePhoto(card: HTMLCanvasElement): Promise<void> {
+  const dataUrl = card.toDataURL('image/jpeg', 0.92);
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const file = await Filesystem.writeFile({ path: `sushi-stack-photo-${Date.now()}.jpg`, data: dataUrl.split(',')[1], directory: Directory.Cache });
+      await Share.share({ title: 'Sushi Stack', files: [file.uri], dialogTitle: 'Share your photo' });
+    } catch { /* cancelled */ }
+    return;
+  }
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const f = new File([blob], 'sushi-stack-photo.jpg', { type: 'image/jpeg' });
+    if (navigator.canShare?.({ files: [f] })) {
+      await navigator.share({ files: [f], title: 'Sushi Stack' });
+      return;
+    }
+  } catch { return; }
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'sushi-stack-photo.jpg';
+  a.click();
 }

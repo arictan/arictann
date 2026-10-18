@@ -135,6 +135,7 @@ export class Progress {
   secrets: string[] = save.json('secrets', []); // Recipe Lab discoveries
   lab = save.json('lab', { day: '', tries: 0, log: [] as { mix: string[]; hint: number; found?: string }[] });
   branches: Record<string, { lv: number; tipsAt: number }> = save.json('branches', {});
+  tracks: string[] = save.json('tracks', ['classic']); // jukebox tracks owned
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -218,6 +219,7 @@ export class Progress {
     save.setJson('secrets', this.secrets);
     save.setJson('lab', this.lab);
     save.setJson('branches', this.branches);
+    save.setJson('tracks', this.tracks);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */
