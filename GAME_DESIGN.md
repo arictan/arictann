@@ -69,9 +69,29 @@ The chance of help is the chef's kindness × 6% normally, × 15% with a combo, o
 | 7 | Chef Ryu | Layers move 30% faster |
 | 8 | Chef Aiko | Smaller PERFECT zone and 2 extra layers |
 | 9 | Master Sato | 30% faster, with surges |
-| 10 | Grand Chef Kaito | 40% faster, surges, smaller PERFECT zone and 1 extra layer |
+| 10 | Grand Chef Kaito | 40% faster, surges, smaller PERFECT zone, 1 extra layer |
+| 11 | Chef Daichi | 20% faster |
+| 12 | Chef Sakura | Smaller PERFECT zone, 15% faster |
+| 13 | Chef Kenta | 30% faster, with surges |
+| 14 | Chef Rin | 2 extra layers, 20% faster |
+| 15 | Chef Haruto | Smaller PERFECT zone, 25% faster |
+| 16 | Chef Nao | 25% faster, with surges |
+| 17 | Chef Bao | 35% faster |
+| 18 | Chef Mina | Smaller PERFECT zone and 2 extra layers |
+| 19 | Chef Jun | 40% faster |
+| 20 | Chef Lin | Smaller PERFECT zone, 30% faster, with surges |
+| 21 | Chef Takeshi | 40% faster, 1 extra layer |
+| 22 | Chef Emi | 35% faster, with surges |
+| 23 | Chef Hiro | 45% faster |
+| 24 | Chef Yui | Smaller PERFECT zone, 3 extra layers |
+| 25 | Chef Kazu | 50% faster |
+| 26 | Chef Momo | Smaller PERFECT zone, 40% faster, with surges |
+| 27 | Chef Shin | 50% faster, with surges |
+| 28 | Chef Akane | Smaller PERFECT zone, 50% faster, 2 extra layers |
+| 29 | Master Tanaka | Smaller PERFECT zone, 55% faster, surges, 1 extra layer |
+| 30 | Emperor Chef Ren | Final boss: 60% faster, surges, smaller PERFECT zone, 2 extra layers |
 
-After level 10 the bosses repeat, 10% faster on each lap. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
+After level 30 the bosses repeat, 10% faster on each lap. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
 
 ## Scenes (free)
 Each run plays through 10 backgrounds in a random order, and the scene crossfades to the next one every time an order is served:
@@ -89,16 +109,31 @@ The changing scenery gives players a visible sign of progress and a reason to pu
 The Coin Doubler booster doubles everything earned during a run except the daily gift.
 
 ## Shop
+The shop has five tabs: Boost, Plates, Flags, Sushi and FX (46 items). The list scrolls by dragging, or with the mouse wheel on desktop.
+Cosmetics take two taps to buy (select, then confirm), so coins aren't spent by accident. Tap an owned item to put it on.
+
 **Boosters** are used up on your next run, so coins stay useful forever:
 | Booster | Price | Effect |
 |---|---|---|
-| Second Chance | 40 | Your first miss only loses that layer, not the run. It's used only if you actually miss. |
+| Second Chance | 40 | Your first miss only loses that layer, not the run (used only if you miss) |
 | Coin Doubler | 50 | 2× coins for one run |
 | Slow Start | 25 | The first 15 layers move 30% slower |
 | Wide Base | 30 | Start with a 260-wide roll instead of 200 |
+| Perfect Magnet | 60 | The PERFECT zone is 4 units wider for the run |
+| Chef Shield | 70 | Chefs can't attack for the run |
+| Lucky Charm | 45 | Chefs help twice as often |
+| Short Orders | 55 | Every order is 2 layers shorter (minimum 3) |
+| Hot Streak | 35 | Start the run on a 3× combo |
 
-**Plates** are cosmetic and owned forever. Tap a plate once to select it and again to buy:
-Classic Plate (free), Wooden Geta (60), Black Slate (100), Bamboo Mat (150), Wave Porcelain (220), Gold Platter (400).
+**Plates (12)**, which your roll sits on: Classic (free), Wooden Geta 60, Black Slate 100, Bamboo Mat 150, Sakura 180, Wave Porcelain 220, Marble 280, Red Lacquer 340, Gold 400, Ice Crystal 500, Neon Tray 600, Diamond 900.
+
+**Flags (8)**, the pick planted for every served order: Pennant (free), Heart 40, Star 70, Koi 110, Paper Fan 150, Lantern 200, Rainbow 300, Crown 500.
+
+**Sushi sets (8)**, which recolour every layer: Classic (free), Pastel 120, Forest 180, Ocean 250, Candy 350, Ink & Paper 450, Neon 700, Golden 1200.
+
+**FX (8)**, what bursts out of a PERFECT: Sparkles (free), Hearts 80, Petals 120, Bubbles 160, Stars 220, Coin Shower 300, Fire 500, Lightning 800.
+
+After each run, the results screen shows progress toward the cheapest item you don't own yet.
 
 ## Hooks
 - **Instant start, instant retry.** The game-over screen has RETRY and SHOP buttons.

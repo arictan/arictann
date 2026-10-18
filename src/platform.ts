@@ -44,12 +44,15 @@ export const save = {
     try { return JSON.parse(store.get('sushi-stack.boosters') ?? '{}') as Record<string, number>; } catch { return {}; }
   },
   setBoosters: (v: Record<string, number>) => store.set('sushi-stack.boosters', JSON.stringify(v)),
-  plates: (): string[] => {
-    try { return JSON.parse(store.get('sushi-stack.plates') ?? '["classic"]') as string[]; } catch { return ['classic']; }
+  // Cosmetics: which items of each category are owned and which one is in use.
+  // Plates keep their original keys so earlier purchases carry over.
+  owned: (cat: string, free: string): string[] => {
+    const key = cat === 'plate' ? 'sushi-stack.plates' : `sushi-stack.owned-${cat}`;
+    try { return JSON.parse(store.get(key) ?? JSON.stringify([free])) as string[]; } catch { return [free]; }
   },
-  setPlates: (ids: string[]) => store.set('sushi-stack.plates', JSON.stringify(ids)),
-  plate: () => store.get('sushi-stack.plate') ?? 'classic',
-  setPlate: (id: string) => store.set('sushi-stack.plate', id),
+  setOwned: (cat: string, ids: string[]) => store.set(cat === 'plate' ? 'sushi-stack.plates' : `sushi-stack.owned-${cat}`, JSON.stringify(ids)),
+  equipped: (cat: string, free: string) => store.get(cat === 'plate' ? 'sushi-stack.plate' : `sushi-stack.equip-${cat}`) ?? free,
+  setEquipped: (cat: string, id: string) => store.set(cat === 'plate' ? 'sushi-stack.plate' : `sushi-stack.equip-${cat}`, id),
   giftDay: () => store.get('sushi-stack.giftDay') ?? '',
   giftStreak: () => Number(store.get('sushi-stack.giftStreak') ?? 0),
   setGift: (day: string, streak: number) => {

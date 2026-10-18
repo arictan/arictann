@@ -1,7 +1,7 @@
 import { sfx, unlockAudio, setMuted } from './audio';
 import { haptic, save } from './platform';
 import { THEMES, drawBackdrop, makeSpecks, type Theme } from './themes';
-import { BOOSTERS, PLATES, drawPlate, type BoosterId, type PlateId } from './shop';
+import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
 import { CHEFS, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
@@ -15,7 +15,6 @@ const TIGHT_TOL = 3; // perfect window for chefs with the "precise" rule
 const REGROW = 8; // width regained per perfect once a streak reaches 3
 const GRAVITY = 1400;
 
-type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg';
 
 const COLORS: Record<Ingredient, string> = {
   rice: '#f6f1e4',
@@ -47,7 +46,7 @@ interface Layer {
 
 interface Piece extends Layer { vx: number; vy: number; rot: number; spin: number }
 
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; shape?: Shape; rot?: number }
 
 interface Popup { x: number; y: number; text: string; life: number; max: number; color: string; size: number }
 
@@ -116,15 +115,24 @@ export class Game {
 
   // Shop and rewards.
   private boosters: Record<string, number> = save.boosters();
-  private plates: string[] = save.plates();
-  private plate = save.plate() as PlateId;
+  private owned = Object.fromEntries((Object.keys(CATALOG) as Cosmetic[]).map((c) => [c, save.owned(c, CATALOG[c][0].id)])) as Record<Cosmetic, string[]>;
+  private equip = Object.fromEntries((Object.keys(CATALOG) as Cosmetic[]).map((c) => [c, save.equipped(c, CATALOG[c][0].id)])) as Record<Cosmetic, string>;
   private baseW = BASE_W;
+  // Boosters active this run.
   private doubleCoins = false;
   private slowStart = false;
+  private magnet = false;
+  private shield = false;
+  private lucky = false;
+  private shortOrders = false;
   private chanceUsed = false;
   private buttons: Button[] = [];
   private shopFrom: Mode = 'title';
-  private shopSel: PlateId | null = null; // plate waiting for a confirming second tap
+  private shopTab: Cat = 'booster';
+  private shopScroll = 0;
+  private shopMaxScroll = 0;
+  private drag: { x: number; y: number; startScroll: number; moved: boolean } | null = null;
+  private shopSel: string | null = null; // cosmetic waiting for a confirming second tap
   private toast: { text: string; life: number } | null = null;
 
   // Boss chef for the current level. One level = one order.
@@ -150,7 +158,24 @@ export class Game {
     this.resize();
     this.reset();
     new ResizeObserver(() => this.resize()).observe(canvas);
-    canvas.addEventListener('pointerdown', (e) => this.onTap(e.clientX, e.clientY));
+    // In the shop a tap fires on release, so the list can be dragged to scroll; everywhere else it fires on press.
+    canvas.addEventListener('pointerdown', (e) => {
+      if (this.mode === 'shop') this.drag = { x: e.clientX, y: e.clientY, startScroll: this.shopScroll, moved: false };
+      else this.onTap(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.drag) return;
+      const dy = (e.clientY - this.drag.y) / this.scale;
+      if (Math.abs(dy) > 8) this.drag.moved = true;
+      if (this.drag.moved) this.shopScroll = Math.max(0, Math.min(this.shopMaxScroll, this.drag.startScroll - dy));
+    });
+    canvas.addEventListener('pointerup', () => {
+      if (this.drag && !this.drag.moved) this.onTap(this.drag.x, this.drag.y);
+      this.drag = null;
+    });
+    canvas.addEventListener('wheel', (e) => {
+      if (this.mode === 'shop') this.shopScroll = Math.max(0, Math.min(this.shopMaxScroll, this.shopScroll + e.deltaY / this.scale));
+    }, { passive: true });
     // Space or Enter also drops, for keyboard players on desktop.
     window.addEventListener('keydown', (e) => {
       if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && this.mode !== 'shop') {
@@ -235,6 +260,11 @@ export class Game {
     this.switchSides();
   }
 
+  /** Ingredient colour, recoloured by the equipped sushi set. */
+  private color(kind: Ingredient): string {
+    return SETS.find((x) => x.id === this.equip.set)?.colors[kind] ?? COLORS[kind];
+  }
+
   private get theme(): Theme {
     return THEMES[this.themeOrder[this.themeIdx]];
   }
@@ -279,6 +309,11 @@ export class Game {
     this.doubleCoins = use('double');
     this.slowStart = use('slow');
     this.baseW = use('wide') ? WIDE_W : BASE_W;
+    this.magnet = use('magnet');
+    this.shield = use('shield');
+    this.lucky = use('lucky');
+    this.shortOrders = use('short');
+    const streak = use('streak');
     this.chanceUsed = false;
     save.setBoosters(this.boosters);
 
@@ -292,9 +327,11 @@ export class Game {
 
     this.reset();
     this.mode = 'playing';
+    if (streak) this.combo = 3;
     this.announceChef();
 
-    const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > BASE_W && 'wide base', this.boosters.chance && 'second chance'].filter(Boolean);
+    const active = [this.doubleCoins && '2x coins', this.slowStart && 'slow start', this.baseW > BASE_W && 'wide base', this.boosters.chance && 'second chance',
+      this.magnet && 'magnet', this.shield && 'shield', this.lucky && 'lucky', this.shortOrders && 'short orders', streak && 'hot streak'].filter(Boolean);
     if (active.length) this.popup(WORLD_W / 2, this.top.y - 76, `Boosters: ${active.join(' · ')}`, '#9fe3ff', 13, 2.2);
   }
 
@@ -315,7 +352,8 @@ export class Game {
     const n = this.ordersServed;
     // Early orders use the simple recipes; the full menu opens up as you serve more.
     const recipe = RECIPES[Math.floor(Math.random() * Math.min(RECIPES.length, 2 + n))];
-    this.order = { recipe, length: Math.min(5 + n, 12) + this.chef.extra, start: this.height, reward: 0 };
+    const length = Math.min(5 + n, 12) + this.chef.extra - (this.shortOrders ? 2 : 0);
+    this.order = { recipe, length: Math.max(3, length), start: this.height, reward: 0 };
   }
 
   private nextIngredient(): Ingredient {
@@ -394,7 +432,7 @@ export class Game {
     const top = this.top;
     const dx = m.x - top.x;
 
-    if (Math.abs(dx) <= (this.chef.tight ? TIGHT_TOL : PERFECT_TOL)) {
+    if (Math.abs(dx) <= (this.chef.tight ? TIGHT_TOL : PERFECT_TOL) + (this.magnet ? 4 : 0)) {
       m.origin -= dx;
       m.x = top.x;
       this.combo++;
@@ -474,8 +512,8 @@ export class Game {
     if (this.mode !== 'playing' || this.event || this.introIn > 0 || this.height < 3 || this.sinceEvent < 3) return;
     const c = this.chef;
     const sloppy = this.combo === 0;
-    const bad = c.mean + (sloppy ? 0.08 : 0);
-    const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06);
+    const bad = this.shield ? 0 : c.mean + (sloppy ? 0.08 : 0);
+    const good = c.kind * (this.combo >= 3 ? 0.35 : this.combo >= 1 ? 0.15 : 0.06) * (this.lucky ? 2 : 1);
     const r = Math.random();
     if (r < bad) {
       const kind = c.attacks[Math.floor(Math.random() * c.attacks.length)];
@@ -705,12 +743,14 @@ export class Game {
   }
 
   private sparkle(x: number, y: number, w: number, n: number): void {
+    const fx = EFFECTS.find((e) => e.id === this.equip.fx) ?? EFFECTS[0];
     for (let i = 0; i < n; i++) {
       const side = Math.random() < 0.5 ? x : x + w;
       this.particles.push({
         x: side, y: y + (Math.random() - 0.5) * LAYER_H,
         vx: (side === x ? -1 : 1) * (40 + Math.random() * 120), vy: -40 - Math.random() * 120,
-        life: 0.5 + Math.random() * 0.3, max: 0.8, color: '#fff3b0', size: 2 + Math.random() * 2,
+        life: 0.5 + Math.random() * 0.3, max: 0.8, color: fx.colors[i % fx.colors.length], size: fx.shape === 'square' ? 2 + Math.random() * 2 : 4 + Math.random() * 3,
+        shape: fx.shape, rot: Math.random() * 6,
       });
     }
   }
@@ -824,7 +864,7 @@ export class Game {
     const minY = this.camY - LAYER_H;
     const maxY = this.camY + this.viewH;
     for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
-    for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) this.drawFlag(f.x, f.y, f.hue);
+    for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) drawFlag(ctx, this.equip.flag, f.x, f.y, f.hue);
     if (this.moving && this.mode !== 'dead') {
       this.drawLayer(this.moving);
       if (this.steady > 0) {
@@ -856,8 +896,12 @@ export class Game {
     }
     for (const pt of this.particles) {
       ctx.globalAlpha = pt.life / pt.max;
-      ctx.fillStyle = pt.color;
-      ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+      if (pt.shape && pt.shape !== 'square') {
+        drawShape(ctx, pt.shape, pt.x, pt.y, pt.size, pt.color, (pt.rot ?? 0) + this.time * 4);
+      } else {
+        ctx.fillStyle = pt.color;
+        ctx.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
+      }
     }
     ctx.globalAlpha = 1;
     for (const pp of this.popups) {
@@ -895,7 +939,7 @@ export class Game {
     }
     ctx.fillStyle = t.counterEdge;
     ctx.fillRect(-this.offX - 20, counterY, WORLD_W + this.offX * 2 + 40, 6);
-    drawPlate(ctx, this.plate, WORLD_W / 2, 0);
+    drawPlate(ctx, this.equip.plate, WORLD_W / 2, 0);
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
@@ -916,7 +960,7 @@ export class Game {
     const h = LAYER_H;
     ctx.save();
     this.roundRect(x, y, w, h, 6);
-    ctx.fillStyle = COLORS[l.kind];
+    ctx.fillStyle = this.color(l.kind);
     ctx.fill();
     ctx.clip();
 
@@ -977,22 +1021,7 @@ export class Game {
     ctx.restore();
   }
 
-  private drawFlag(x: number, y: number, hue: number): void {
-    const { ctx } = this;
-    ctx.strokeStyle = '#e8d3a8';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x, y + 6);
-    ctx.lineTo(x, y - 30);
-    ctx.stroke();
-    ctx.fillStyle = `hsl(${hue} 80% 60%)`;
-    ctx.beginPath();
-    ctx.moveTo(x, y - 30);
-    ctx.lineTo(x + 18, y - 25);
-    ctx.lineTo(x, y - 20);
-    ctx.closePath();
-    ctx.fill();
-  }
+
 
   private text(str: string, x: number, y: number, size: number, color = '#fff', weight = 800, align: CanvasTextAlign = 'center'): void {
     const { ctx } = this;
@@ -1123,7 +1152,7 @@ export class Game {
       }
       // Filling: one wedge per ingredient.
       fill.forEach((k, i) => {
-        ctx.fillStyle = COLORS[k];
+        ctx.fillStyle = this.color(k);
         ctx.beginPath();
         ctx.moveTo(px, -4);
         ctx.arc(px, -4, 6.5, (i / fill.length) * Math.PI * 2, ((i + 1) / fill.length) * Math.PI * 2);
@@ -1316,7 +1345,7 @@ export class Game {
     const { pattern } = o.recipe;
     for (let i = 0; i < 6; i++) {
       const kind = pattern[(done + i) % pattern.length];
-      ctx.fillStyle = COLORS[kind];
+      ctx.fillStyle = this.color(kind);
       this.roundRect(x + 12 + i * 22, y + 37, 18, 9, 3);
       ctx.fill();
       ctx.strokeStyle = i === 0 ? '#5a2e1f' : 'rgba(90,46,31,0.3)';
@@ -1409,9 +1438,10 @@ export class Game {
     haptic.success();
   }
 
-  /** The cheapest plate the player doesn't own yet: shown after each run as something to save toward. */
+  /** The cheapest cosmetic the player doesn't own yet: shown after each run as something to save toward. */
   private nextGoal() {
-    return PLATES.filter((p) => !this.plates.includes(p.id)).sort((a, b) => a.price - b.price)[0];
+    const all = (Object.keys(CATALOG) as Cosmetic[]).flatMap((c) => CATALOG[c].filter((i) => !this.owned[c].includes(i.id)));
+    return all.sort((a, b) => a.price - b.price)[0];
   }
 
   // ------------------------------------------------------------------ screens
@@ -1436,8 +1466,8 @@ export class Game {
       const ready = this.giftReady();
       this.button(40, top + 296, 152, 44, ready ? 'DAILY GIFT' : 'GIFT TOMORROW', () => this.claimGift(), ready ? 'gold' : 'quiet');
       this.button(208, top + 296, 152, 44, 'SHOP', () => this.openShop());
-      const owned = BOOSTERS.filter((b) => this.boosters[b.id]).map((b) => `${b.name} x${this.boosters[b.id]}`);
-      if (owned.length) this.text(`Ready: ${owned.join(', ')}`, cx, top + 360, 12, 'rgba(255,255,255,0.75)', 600);
+      const stocked = BOOSTERS.reduce((n, b) => n + (this.boosters[b.id] ?? 0), 0);
+      if (stocked) this.text(`${stocked} booster${stocked === 1 ? '' : 's'} ready for your next run`, cx, top + 360, 12, 'rgba(255,255,255,0.75)', 600);
       return;
     }
 
@@ -1490,99 +1520,165 @@ export class Game {
     }
   }
 
+  private openTab(cat: Cat): void {
+    this.shopTab = cat;
+    this.shopScroll = 0;
+    this.shopSel = null;
+  }
+
   private drawShop(): void {
     const { ctx } = this;
     const top = this.insets.top;
     const cx = WORLD_W / 2;
-    ctx.fillStyle = 'rgba(20,10,25,0.55)';
+    ctx.fillStyle = 'rgba(20,10,25,0.6)';
     ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     this.text('SHOP', cx, top + 31, 24, '#fff', 900);
 
+    // Category tabs.
+    const tabW = (WORLD_W - 32 - 4 * 6) / 5;
+    TABS.forEach((t, i) => {
+      const x = 16 + i * (tabW + 6);
+      const on = t.cat === this.shopTab;
+      ctx.fillStyle = on ? '#ff8a5b' : 'rgba(255,255,255,0.12)';
+      this.roundRect(x, top + 56, tabW, 30, 15);
+      ctx.fill();
+      this.text(t.label, x + tabW / 2, top + 72, 12, on ? '#fff' : 'rgba(255,255,255,0.8)', 800);
+      this.buttons.push({ x, y: top + 56, w: tabW, h: 30, onTap: () => this.openTab(t.cat) });
+    });
+    const tab = TABS.find((t) => t.cat === this.shopTab)!;
+    this.text(tab.hint, 16, top + 102, 12, 'rgba(255,255,255,0.7)', 700, 'left');
+
+    // Scrollable grid of cards.
     const backY = this.viewH - this.insets.bottom - 60;
+    const areaTop = top + 114;
+    const areaH = backY - 10 - areaTop;
     const gap = 10;
     const cw = (WORLD_W - 32 - gap) / 2;
-    const gridTop = top + 64;
-    const ch = Math.max(70, Math.min(100, (backY - 12 - gridTop - 48 - 4 * gap) / 5));
+    const ch = 96;
+    const items: Item[] = this.shopTab === 'booster' ? BOOSTERS : CATALOG[this.shopTab as Cosmetic];
+    const rows = Math.ceil(items.length / 2);
+    this.shopMaxScroll = Math.max(0, rows * (ch + gap) - gap - areaH);
+    this.shopScroll = Math.min(this.shopScroll, this.shopMaxScroll);
 
-    // Boosters: one tap buys one.
-    this.text('BOOSTERS · used on your next run', 16, gridTop + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
-    BOOSTERS.forEach((b, i) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-this.offX, areaTop, WORLD_W + this.offX * 2, areaH);
+    ctx.clip();
+    items.forEach((item, i) => {
       const x = 16 + (i % 2) * (cw + gap);
-      const y = gridTop + 24 + Math.floor(i / 2) * (ch + gap);
-      ctx.fillStyle = 'rgba(255,248,235,0.95)';
-      this.roundRect(x, y, cw, ch, 12);
-      ctx.fill();
-      ctx.fillStyle = b.color;
-      ctx.beginPath();
-      ctx.arc(x + 26, y + ch / 2, 17, 0, Math.PI * 2);
-      ctx.fill();
-      if (b.id === 'slow') {
-        // Clock face drawn by hand; the glyph renders too small on some fonts.
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(x + 26, y + ch / 2, 9, 0, Math.PI * 2);
-        ctx.moveTo(x + 26, y + ch / 2 - 6);
-        ctx.lineTo(x + 26, y + ch / 2);
-        ctx.lineTo(x + 30, y + ch / 2 + 3);
-        ctx.stroke();
-      } else {
-        this.text({ chance: '♥', double: '2x', wide: '↔' }[b.id], x + 26, y + ch / 2 + 1, b.id === 'double' ? 14 : 18, '#fff', 900);
-      }
-      this.text(b.name, x + 50, y + ch / 2 - 18, 13, '#4a2618', 800, 'left');
-      this.text(b.desc, x + 50, y + ch / 2, 11, 'rgba(74,38,24,0.75)', 600, 'left');
-      const afford = this.bank >= b.price;
-      ctx.fillStyle = '#e0a800';
-      ctx.beginPath();
-      ctx.arc(x + 56, y + ch / 2 + 19, 5, 0, Math.PI * 2);
-      ctx.fill();
-      this.text(String(b.price), x + 65, y + ch / 2 + 20, 13, afford ? '#4a2618' : '#b5442a', 800, 'left');
-      const n = this.boosters[b.id] ?? 0;
-      if (n) {
-        ctx.fillStyle = '#4a2618';
-        this.roundRect(x + cw - 34, y + 6, 28, 18, 9);
-        ctx.fill();
-        this.text(`x${n}`, x + cw - 20, y + 16, 11, '#fff', 800);
-      }
-      this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.buyBooster(b.id) });
+      const y = areaTop + Math.floor(i / 2) * (ch + gap) - this.shopScroll;
+      if (y + ch < areaTop || y > areaTop + areaH) return;
+      if (this.shopTab === 'booster') this.drawBoosterCard(item as (typeof BOOSTERS)[number], x, y, cw, ch);
+      else this.drawCosmeticCard(this.shopTab as Cosmetic, item, x, y, cw, ch);
+      // Only the visible part of a card is tappable.
+      const hy = Math.max(y, areaTop);
+      const hh = Math.min(y + ch, areaTop + areaH) - hy;
+      const onTap = this.shopTab === 'booster' ? () => this.buyBooster(item.id as BoosterId) : () => this.tapCosmetic(this.shopTab as Cosmetic, item);
+      this.buttons.push({ x, y: hy, w: cw, h: hh, onTap });
     });
+    ctx.restore();
 
-    // Plates: tap to equip if owned; otherwise tap once to select and again to buy.
-    const platesTop = gridTop + 24 + 2 * (ch + gap) + 4;
-    this.text('PLATES · your roll sits on it', 16, platesTop + 10, 12, 'rgba(255,255,255,0.75)', 800, 'left');
-    PLATES.forEach((p, i) => {
-      const x = 16 + (i % 2) * (cw + gap);
-      const y = platesTop + 24 + Math.floor(i / 2) * (ch + gap);
-      const owned = this.plates.includes(p.id);
-      const equipped = this.plate === p.id;
-      const selected = this.shopSel === p.id;
-      ctx.fillStyle = 'rgba(48,30,52,0.92)';
-      this.roundRect(x, y, cw, ch, 12);
-      ctx.fill();
-      if (equipped || selected) {
-        ctx.strokeStyle = selected ? '#ffd34d' : '#6cc070';
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-      }
-      drawPlate(ctx, p.id, x + cw / 2, y + ch * 0.36, 0.5);
-      this.text(p.name, x + 12, y + ch - 32, 13, '#fff', 800, 'left');
-      if (selected) {
-        this.text(`Tap again to buy for ${p.price}`, x + 12, y + ch - 14, 11, '#ffd34d', 700, 'left');
-      } else if (equipped) {
-        this.text('✓ IN USE', x + 12, y + ch - 14, 11, '#8fdc93', 800, 'left');
-      } else if (owned) {
-        this.text('Tap to use', x + 12, y + ch - 14, 11, 'rgba(255,255,255,0.7)', 700, 'left');
-      } else {
-        ctx.fillStyle = '#ffd34d';
-        ctx.beginPath();
-        ctx.arc(x + 17, y + ch - 14, 5, 0, Math.PI * 2);
-        ctx.fill();
-        this.text(String(p.price), x + 26, y + ch - 13, 13, this.bank >= p.price ? '#ffd34d' : '#ff9a8a', 800, 'left');
-      }
-      this.buttons.push({ x, y, w: cw, h: ch, onTap: () => this.tapPlate(p.id) });
-    });
+    // Scroll hint: fade at the bottom edge when more cards are below.
+    if (this.shopScroll < this.shopMaxScroll - 2) {
+      const g = ctx.createLinearGradient(0, areaTop + areaH - 30, 0, areaTop + areaH);
+      g.addColorStop(0, 'rgba(20,10,25,0)');
+      g.addColorStop(1, 'rgba(20,10,25,0.85)');
+      ctx.fillStyle = g;
+      ctx.fillRect(-this.offX, areaTop + areaH - 30, WORLD_W + this.offX * 2, 30);
+      this.text('▾ more', cx, areaTop + areaH - 8, 11, 'rgba(255,255,255,0.8)', 800);
+    }
 
     this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom; this.shopSel = null; }, 'quiet');
+  }
+
+  private drawBoosterCard(b: (typeof BOOSTERS)[number], x: number, y: number, w: number, h: number): void {
+    const { ctx } = this;
+    ctx.fillStyle = 'rgba(255,248,235,0.95)';
+    this.roundRect(x, y, w, h, 12);
+    ctx.fill();
+    ctx.fillStyle = b.color;
+    ctx.beginPath();
+    ctx.arc(x + 28, y + 30, 19, 0, Math.PI * 2);
+    ctx.fill();
+    this.text(b.glyph, x + 28, y + 31, b.glyph.length > 1 ? 15 : 19, '#fff', 900);
+    ctx.fillStyle = '#e0a800';
+    ctx.beginPath();
+    ctx.arc(x + 60, y + 30, 6, 0, Math.PI * 2);
+    ctx.fill();
+    this.text(String(b.price), x + 70, y + 31, 15, this.bank >= b.price ? '#4a2618' : '#b5442a', 900, 'left');
+    const n = this.boosters[b.id] ?? 0;
+    if (n) {
+      ctx.fillStyle = '#4a2618';
+      this.roundRect(x + w - 36, y + 8, 28, 18, 9);
+      ctx.fill();
+      this.text(`x${n}`, x + w - 22, y + 18, 11, '#fff', 800);
+    }
+    this.text(b.name, x + 12, y + 64, 13, '#4a2618', 800, 'left');
+    this.text(b.desc, x + 12, y + 82, 11, 'rgba(74,38,24,0.75)', 600, 'left');
+  }
+
+  private drawCosmeticCard(cat: Cosmetic, item: Item, x: number, y: number, w: number, h: number): void {
+    const { ctx } = this;
+    const owned = this.owned[cat].includes(item.id);
+    const equipped = this.equip[cat] === item.id;
+    const selected = this.shopSel === `${cat}:${item.id}`;
+    ctx.fillStyle = 'rgba(48,30,52,0.94)';
+    this.roundRect(x, y, w, h, 12);
+    ctx.fill();
+    if (equipped || selected) {
+      ctx.strokeStyle = selected ? '#ffd34d' : '#6cc070';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    // Preview of the item itself.
+    const px = x + w / 2;
+    const py = y + 30;
+    switch (cat) {
+      case 'plate':
+        drawPlate(ctx, item.id, px, py - 6, 0.55);
+        break;
+      case 'flag':
+        ctx.save();
+        ctx.translate(px - 6, py + 16);
+        ctx.scale(1.3, 1.3);
+        drawFlag(ctx, item.id, 0, 0, 30);
+        ctx.restore();
+        break;
+      case 'set': {
+        const set = SETS.find((s2) => s2.id === item.id)!;
+        const kinds: Ingredient[] = ['egg', 'salmon', 'nori', 'avocado', 'rice'];
+        kinds.forEach((k, i) => {
+          ctx.fillStyle = set.colors[k] ?? COLORS[k];
+          this.roundRect(px - 40, py - 22 + i * 9, 80, 8, 2.5);
+          ctx.fill();
+        });
+        break;
+      }
+      case 'fx': {
+        const fx = EFFECTS.find((e) => e.id === item.id)!;
+        for (let i = 0; i < 6; i++) {
+          const a = this.time * 1.5 + (i / 6) * Math.PI * 2;
+          drawShape(ctx, fx.shape, px + Math.cos(a) * 26, py + Math.sin(a) * 13, fx.shape === 'square' ? 5 : 6.5, fx.colors[i % fx.colors.length], a);
+        }
+        break;
+      }
+    }
+
+    this.text(item.name, x + 12, y + 64, 13, '#fff', 800, 'left');
+    if (selected) {
+      this.text(`Tap again to buy for ${item.price}`, x + 12, y + 82, 11, '#ffd34d', 700, 'left');
+    } else if (equipped) {
+      this.text('✓ IN USE', x + 12, y + 82, 11, '#8fdc93', 800, 'left');
+    } else if (owned) {
+      this.text('Tap to use', x + 12, y + 82, 11, 'rgba(255,255,255,0.7)', 700, 'left');
+    } else {
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.arc(x + 17, y + 82, 5, 0, Math.PI * 2);
+      ctx.fill();
+      this.text(String(item.price), x + 26, y + 83, 13, this.bank >= item.price ? '#ffd34d' : '#ff9a8a', 800, 'left');
+    }
   }
 
   private spend(price: number): boolean {
@@ -1607,31 +1703,32 @@ export class Game {
     haptic.success();
   }
 
-  private tapPlate(id: PlateId): void {
-    const p = PLATES.find((x) => x.id === id)!;
-    if (this.plates.includes(id)) {
-      this.plate = id;
-      save.setPlate(id);
+  /** Owned: put it on. Not owned: the first tap selects it, the second buys it. */
+  private tapCosmetic(cat: Cosmetic, item: Item): void {
+    const key = `${cat}:${item.id}`;
+    if (this.owned[cat].includes(item.id)) {
+      this.equip[cat] = item.id;
+      save.setEquipped(cat, item.id);
       this.shopSel = null;
       sfx.drop();
       return;
     }
-    if (this.shopSel !== id) {
-      this.shopSel = id;
-      if (this.bank < p.price) {
+    if (this.shopSel !== key) {
+      this.shopSel = key;
+      if (this.bank < item.price) {
         this.shopSel = null;
-        this.showToast(`You need ${p.price - this.bank} more coins`);
+        this.showToast(`You need ${item.price - this.bank} more coins`);
         haptic.error();
       }
       return;
     }
-    if (!this.spend(p.price)) return;
-    this.plates.push(id);
-    save.setPlates(this.plates);
-    this.plate = id;
-    save.setPlate(id);
+    if (!this.spend(item.price)) return;
+    this.owned[cat].push(item.id);
+    save.setOwned(cat, this.owned[cat]);
+    this.equip[cat] = item.id;
+    save.setEquipped(cat, item.id);
     this.shopSel = null;
-    this.showToast(`${p.name} unlocked!`);
+    this.showToast(`${item.name} unlocked!`);
     sfx.serve();
     haptic.success();
   }

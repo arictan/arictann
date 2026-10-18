@@ -1,9 +1,9 @@
-// Boss chefs: one per level (one level = one order). Each watches the sliding layer, points at it,
+// Boss chefs: one per level (one level = one order), 30 in all. Each watches the sliding layer, points at it,
 // and gets more worked up the closer the player is to finishing the order.
 
-export type Hair = 'short' | 'bun' | 'bob' | 'bald' | 'spiky' | 'ponytail' | 'twinbuns' | 'gray';
-export type Hat = 'hachimaki' | 'cap' | 'toque' | 'bandana' | 'none' | 'shades' | 'gold';
-export type Face = 'none' | 'mustache' | 'beard' | 'glasses' | 'elder';
+export type Hair = 'short' | 'bun' | 'bob' | 'bald' | 'spiky' | 'ponytail' | 'twinbuns' | 'gray' | 'curly' | 'long' | 'mohawk';
+export type Hat = 'hachimaki' | 'cap' | 'toque' | 'bandana' | 'none' | 'shades' | 'gold' | 'beanie' | 'visor' | 'flower' | 'crown';
+export type Face = 'none' | 'mustache' | 'beard' | 'glasses' | 'elder' | 'goatee' | 'freckles';
 export type Attack = 'knife' | 'slam' | 'splat';
 export type Help = 'slow' | 'patch' | 'tip';
 export type Holding = 'knife' | 'fist' | 'patty' | null;
@@ -41,6 +41,27 @@ export const CHEFS: Chef[] = [
   { name: 'Chef Aiko', rule: 'Perfectionist: tight + long', speed: 1.1, wobble: false, tight: true, extra: 2, kind: 0.5, mean: 0.2, attacks: ['slam', 'splat'], skin: '#f3cba8', hairColor: '#4a2a1a', outfit: '#ffe08a', accent: '#e76f51', hair: 'twinbuns', hat: 'none', face: 'none', intro: 'Only perfect will do!', beaten: 'Kawaii! Perfect roll!', gloat: 'Not cute enough!' },
   { name: 'Master Sato', rule: 'Old master: fast surges', speed: 1.3, wobble: true, tight: false, extra: 0, kind: 0.4, mean: 0.25, attacks: ['knife', 'slam'], skin: '#e6b48c', hairColor: '#d8d8d8', outfit: '#5b3b2e', accent: '#c9a227', hair: 'gray', hat: 'cap', face: 'elder', intro: 'Fifty years I have waited...', beaten: 'The student surpasses me.', gloat: 'Patience, young one.' },
   { name: 'Grand Chef Kaito', rule: 'Final boss: everything', speed: 1.4, wobble: true, tight: true, extra: 1, kind: 0.2, mean: 0.3, attacks: ['knife', 'slam', 'splat'], skin: '#eec39d', hairColor: '#111', outfit: '#1a1208', accent: '#d4a537', hair: 'short', hat: 'gold', face: 'mustache', intro: 'Face the Golden Knife!', beaten: 'A new Grand Chef is born!', gloat: 'Bow to the Golden Knife!' },
+  // Levels 11-30.
+  { name: 'Chef Daichi', rule: 'Steady pressure: faster', speed: 1.2, wobble: false, tight: false, extra: 0, kind: 0.4, mean: 0.2, attacks: ['slam', 'splat'], skin: '#e3ad84', hairColor: '#1b1b1b', outfit: '#3b5b7a', accent: '#f4a261', hair: 'curly', hat: 'beanie', face: 'none', intro: 'Let\u2019s keep it rolling!', beaten: 'Smooth moves!', gloat: 'Rolled over!' },
+  { name: 'Chef Sakura', rule: 'Blossom: smaller PERFECT zone', speed: 1.15, wobble: false, tight: true, extra: 0, kind: 0.6, mean: 0.15, attacks: ['splat'], skin: '#f6d5bd', hairColor: '#2a1712', outfit: '#ffd6e5', accent: '#ff5d8f', hair: 'long', hat: 'flower', face: 'none', intro: 'Gentle and precise~', beaten: 'Lovely work!', gloat: 'Petals scattered...' },
+  { name: 'Chef Kenta', rule: 'Rebel: fast surges', speed: 1.3, wobble: true, tight: false, extra: 0, kind: 0.15, mean: 0.3, attacks: ['knife', 'slam'], skin: '#e8b98f', hairColor: '#c0392b', outfit: '#1f1f1f', accent: '#e63946', hair: 'mohawk', hat: 'none', face: 'goatee', intro: 'Rules? What rules?', beaten: 'Okay, you rock.', gloat: 'Punk\u2019d!' },
+  { name: 'Chef Rin', rule: 'Big order: 2 extra layers', speed: 1.2, wobble: false, tight: false, extra: 2, kind: 0.45, mean: 0.18, attacks: ['knife'], skin: '#f3cba8', hairColor: '#2b1b17', outfit: '#e9f5ee', accent: '#2a9d5c', hair: 'bob', hat: 'visor', face: 'none', intro: 'Big party tonight!', beaten: 'Party saved!', gloat: 'The party\u2019s ruined!' },
+  { name: 'Chef Haruto', rule: 'Exacting: tight and fast', speed: 1.25, wobble: false, tight: true, extra: 0, kind: 0.35, mean: 0.2, attacks: ['slam'], skin: '#efc29a', hairColor: '#3a2418', outfit: '#ffffff', accent: '#264653', hair: 'short', hat: 'toque', face: 'freckles', intro: 'Measure twice, cut once.', beaten: 'Measured perfectly.', gloat: 'Off by a mile!' },
+  { name: 'Chef Nao', rule: 'Wavy: speed surges', speed: 1.25, wobble: true, tight: false, extra: 0, kind: 0.4, mean: 0.22, attacks: ['splat', 'knife'], skin: '#f5d0b0', hairColor: '#4a2a1a', outfit: '#cdb4db', accent: '#7b2cbf', hair: 'ponytail', hat: 'beanie', face: 'none', intro: 'Ride the wave!', beaten: 'You surfed it!', gloat: 'Wiped out!' },
+  { name: 'Chef Bao', rule: 'Dumpling master: very fast', speed: 1.35, wobble: false, tight: false, extra: 0, kind: 0.5, mean: 0.2, attacks: ['slam'], skin: '#e6b48c', hairColor: '#1a1a1a', outfit: '#fdf0d5', accent: '#c1121f', hair: 'bald', hat: 'cap', face: 'mustache', intro: 'Faster than steam!', beaten: 'Hot stuff!', gloat: 'Steamed you!' },
+  { name: 'Chef Mina', rule: 'Picky: tight and long', speed: 1.2, wobble: false, tight: true, extra: 2, kind: 0.55, mean: 0.18, attacks: ['splat'], skin: '#f8d8c0', hairColor: '#3a2418', outfit: '#bde0fe', accent: '#ff70a6', hair: 'twinbuns', hat: 'flower', face: 'freckles', intro: 'Make it cute AND perfect!', beaten: 'So cute! Perfect!', gloat: 'Not cute at all!' },
+  { name: 'Chef Jun', rule: 'Lightning hands: very fast', speed: 1.4, wobble: false, tight: false, extra: 0, kind: 0.2, mean: 0.28, attacks: ['knife'], skin: '#ecc19b', hairColor: '#111', outfit: '#023047', accent: '#ffb703', hair: 'spiky', hat: 'hachimaki', face: 'goatee', intro: 'Blink and you miss it!', beaten: 'Faster than lightning!', gloat: 'Too slow, rookie!' },
+  { name: 'Chef Lin', rule: 'Silk: tight surges', speed: 1.3, wobble: true, tight: true, extra: 0, kind: 0.35, mean: 0.22, attacks: ['splat', 'slam'], skin: '#f5d6bd', hairColor: '#111', outfit: '#9d0208', accent: '#ffba08', hair: 'long', hat: 'bandana', face: 'none', intro: 'Flow like silk.', beaten: 'Graceful.', gloat: 'Tangled up!' },
+  { name: 'Chef Takeshi', rule: 'Warrior: fast and long', speed: 1.4, wobble: false, tight: false, extra: 1, kind: 0.15, mean: 0.3, attacks: ['knife', 'slam'], skin: '#d9a77c', hairColor: '#222', outfit: '#3d405b', accent: '#e07a5f', hair: 'short', hat: 'hachimaki', face: 'beard', intro: 'Prepare for battle!', beaten: 'A worthy rival!', gloat: 'Defeated!' },
+  { name: 'Chef Emi', rule: 'Bubbly: speed surges', speed: 1.35, wobble: true, tight: false, extra: 0, kind: 0.6, mean: 0.18, attacks: ['splat'], skin: '#f1c9a5', hairColor: '#6b3e26', outfit: '#ffe5ec', accent: '#fb6f92', hair: 'curly', hat: 'toque', face: 'freckles', intro: 'Ready, set, roll!', beaten: 'Yay! Amazing!', gloat: 'Aww, so close!' },
+  { name: 'Chef Hiro', rule: 'Night shift: blazing fast', speed: 1.45, wobble: false, tight: false, extra: 0, kind: 0.2, mean: 0.3, attacks: ['knife', 'splat'], skin: '#e8b98f', hairColor: '#3c096c', outfit: '#10002b', accent: '#c77dff', hair: 'mohawk', hat: 'shades', face: 'none', intro: 'Welcome to the night shift.', beaten: 'You own the night.', gloat: 'Lights out!' },
+  { name: 'Chef Yui', rule: 'Banquet: tight, 3 extra', speed: 1.3, wobble: false, tight: true, extra: 3, kind: 0.45, mean: 0.2, attacks: ['slam', 'splat'], skin: '#f6d5bd', hairColor: '#2b1b17', outfit: '#d8f3dc', accent: '#40916c', hair: 'bun', hat: 'visor', face: 'freckles', intro: 'A banquet for the emperor!', beaten: 'The banquet is served!', gloat: 'The banquet is ruined!' },
+  { name: 'Chef Kazu', rule: 'Speedrun: very fast', speed: 1.5, wobble: false, tight: false, extra: 0, kind: 0.3, mean: 0.25, attacks: ['knife'], skin: '#efc29a', hairColor: '#1b1b1b', outfit: '#edf2f4', accent: '#ef233c', hair: 'short', hat: 'beanie', face: 'glasses', intro: 'I\u2019ve calculated your fate.', beaten: 'Miscalculated...', gloat: 'As calculated.' },
+  { name: 'Chef Momo', rule: 'Peachy: tight surges', speed: 1.4, wobble: true, tight: true, extra: 0, kind: 0.5, mean: 0.22, attacks: ['splat', 'slam'], skin: '#f8d8c0', hairColor: '#e07a5f', outfit: '#ffd7ba', accent: '#f08080', hair: 'twinbuns', hat: 'bandana', face: 'none', intro: 'Sweet but tricky!', beaten: 'Peachy perfect!', gloat: 'Squished!' },
+  { name: 'Chef Shin', rule: 'Shadow: fast surges', speed: 1.5, wobble: true, tight: false, extra: 0, kind: 0.15, mean: 0.32, attacks: ['knife', 'slam'], skin: '#d9a77c', hairColor: '#0b0b0b', outfit: '#212529', accent: '#adb5bd', hair: 'spiky', hat: 'cap', face: 'mustache', intro: 'You won\u2019t see me coming.', beaten: 'You saw through me.', gloat: 'Vanished!' },
+  { name: 'Chef Akane', rule: 'Crimson: tight, fast, long', speed: 1.5, wobble: false, tight: true, extra: 2, kind: 0.3, mean: 0.28, attacks: ['knife', 'splat'], skin: '#f3cba8', hairColor: '#8b1e1e', outfit: '#fff1e6', accent: '#d00000', hair: 'long', hat: 'hachimaki', face: 'none', intro: 'Feel the crimson flame!', beaten: 'You burn brighter.', gloat: 'Burnt to a crisp!' },
+  { name: 'Master Tanaka', rule: 'Ancient: tight surges', speed: 1.55, wobble: true, tight: true, extra: 1, kind: 0.35, mean: 0.3, attacks: ['knife', 'slam', 'splat'], skin: '#e6b48c', hairColor: '#e0e0e0', outfit: '#463f3a', accent: '#bc6c25', hair: 'gray', hat: 'toque', face: 'elder', intro: 'A hundred years of sushi...', beaten: 'At last, a true master.', gloat: 'Come back in fifty years.' },
+  { name: 'Emperor Chef Ren', rule: 'Ultimate boss: everything', speed: 1.6, wobble: true, tight: true, extra: 2, kind: 0.15, mean: 0.35, attacks: ['knife', 'slam', 'splat'], skin: '#eec39d', hairColor: '#111', outfit: '#3c1518', accent: '#ffd34d', hair: 'short', hat: 'crown', face: 'mustache', intro: 'Kneel before the Emperor!', beaten: 'The crown is yours!', gloat: 'The Emperor is unbeaten!' },
 ];
 
 export type Mood = 'calm' | 'focused' | 'intense' | 'panic' | 'happy' | 'impressed' | 'wince' | 'angry' | 'shock';
@@ -112,6 +133,15 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
     ctx.ellipse(0, 2, 31, 30, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  if (c.hair === 'long') {
+    ctx.beginPath();
+    ctx.moveTo(-28, -4);
+    ctx.quadraticCurveTo(-34, 30, -26, 46);
+    ctx.lineTo(26, 46);
+    ctx.quadraticCurveTo(34, 30, 28, -4);
+    ctx.closePath();
+    ctx.fill();
+  }
   if (c.hair === 'ponytail') {
     ctx.beginPath();
     ctx.ellipse(-side * 30, 10, 8, 20, -side * 0.4 + Math.sin(time * 3) * 0.1, 0, Math.PI * 2);
@@ -161,6 +191,7 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
     case 'ponytail':
     case 'twinbuns':
     case 'bob':
+    case 'long':
       ctx.beginPath();
       ctx.arc(0, -2, 26.5, Math.PI * 1.05, Math.PI * 1.95);
       ctx.quadraticCurveTo(10, -14, -2, -12);
@@ -178,6 +209,26 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
       ctx.lineTo(26, -4);
       ctx.quadraticCurveTo(0, -14, -26, -4);
       ctx.fill();
+      break;
+    case 'curly':
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * (1.0 + i * 0.125);
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * 24, Math.sin(a) * 24 - 2, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case 'mohawk':
+      ctx.beginPath();
+      ctx.moveTo(-6, -22);
+      for (let i = 0; i < 5; i++) {
+        ctx.lineTo(-6 + i * 3, -36 - (i % 2) * 6);
+        ctx.lineTo(-3 + i * 3, -24);
+      }
+      ctx.lineTo(8, -22);
+      ctx.quadraticCurveTo(0, -28, -6, -22);
+      ctx.fill();
+      ctx.fillRect(-6, -27, 14, 8);
       break;
     case 'bald':
       ctx.fillStyle = 'rgba(255,255,255,0.35)';
@@ -279,6 +330,61 @@ export function drawChef(ctx: CanvasRenderingContext2D, c: Chef, x: number, y: n
       ctx.fill();
       ctx.fillStyle = c.accent;
       ctx.fillRect(-4, -19, 8, 2);
+      break;
+    case 'beanie':
+      ctx.fillStyle = c.accent;
+      ctx.beginPath();
+      ctx.arc(0, -10, 27, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = shade(c.accent, -0.2);
+      roundRect(ctx, -28, -16, 56, 9, 4);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(0, -38, 6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'visor':
+      ctx.fillStyle = c.accent;
+      ctx.fillRect(-26, -16, 52, 7);
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 24, 6, 0, 0, Math.PI);
+      ctx.fill();
+      break;
+    case 'flower':
+      for (let p = 0; p < 5; p++) {
+        const a = (p / 5) * Math.PI * 2 + 0.3;
+        ctx.fillStyle = c.accent;
+        ctx.beginPath();
+        ctx.arc(-18 + Math.cos(a) * 6, -20 + Math.sin(a) * 6, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.arc(-18, -20, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'crown':
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.moveTo(-20, -18);
+      ctx.lineTo(-22, -42);
+      ctx.lineTo(-10, -30);
+      ctx.lineTo(0, -48);
+      ctx.lineTo(10, -30);
+      ctx.lineTo(22, -42);
+      ctx.lineTo(20, -18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      for (const [gx, col] of [[-12, '#e63946'], [0, '#4aa3df'], [12, '#2a9d5c']] as [number, string][]) {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(gx, -24, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
     case 'none':
       break;
@@ -455,6 +561,21 @@ function drawFace(ctx: CanvasRenderingContext2D, c: Chef, mood: Mood, lx: number
     ctx.quadraticCurveTo(7, my - 3, 14, my - 2 + (c.face === 'elder' ? 8 : 0));
     ctx.quadraticCurveTo(9, my - 8, 0, my - 6);
     ctx.fill();
+  }
+  if (c.face === 'goatee') {
+    ctx.beginPath();
+    ctx.moveTo(-6, my + 6);
+    ctx.quadraticCurveTo(0, my + 20, 6, my + 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  if (c.face === 'freckles') {
+    ctx.fillStyle = 'rgba(150,80,40,0.55)';
+    for (const [fx, fy] of [[-18, 6], [-14, 9], [-20, 10], [18, 6], [14, 9], [20, 10]]) {
+      ctx.beginPath();
+      ctx.arc(fx, fy, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   if (c.face === 'beard') {
     ctx.beginPath();
