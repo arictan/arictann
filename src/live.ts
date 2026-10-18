@@ -3,6 +3,8 @@
 // so the same day or weekend always plays out the same way. Swap the AI for real players once a
 // backend (or Game Center / Play Games leaderboards) exists.
 
+import { seasonTheme, type SeasonTheme } from './meta';
+
 const DAY = 86_400_000;
 
 function midnight(d = new Date()): Date {
@@ -183,10 +185,11 @@ export const PASS_DAYS = 45;
 export const PASS_TIERS = 30;
 export const PASS_XP = 100; // per tier
 
-export function currentSeason(): { n: number; end: Date } {
+export function currentSeason(): { n: number; end: Date; theme: SeasonTheme } {
   const days = Math.floor((midnight().getTime() - PASS_EPOCH.getTime()) / DAY);
   const n = Math.floor(days / PASS_DAYS) + 1;
-  return { n, end: new Date(PASS_EPOCH.getTime() + n * PASS_DAYS * DAY) };
+  const end = new Date(PASS_EPOCH.getTime() + n * PASS_DAYS * DAY);
+  return { n, end, theme: seasonTheme(new Date(end.getTime() - (PASS_DAYS / 2) * DAY)) };
 }
 
 export type RewardKind = 'coins' | 'booster' | 'packs' | 'shards' | 'item';
@@ -194,7 +197,7 @@ export interface Reward { kind: RewardKind; amount: number; label: string }
 
 export function passReward(tier: number, premium: boolean, season: number): Reward {
   const t = tier + 1;
-  if (premium && t === PASS_TIERS) return { kind: 'item', amount: 1, label: `Season ${season} plate` };
+  if (premium && t === PASS_TIERS) return { kind: 'item', amount: 1, label: `Season ${season}: ${currentSeason().theme.prize}` };
   if (t % 5 === 0) return premium ? { kind: 'packs', amount: 3, label: '3 sticker packs' } : { kind: 'shards', amount: 5, label: '5 companion shards' };
   switch (t % 4) {
     case 0: return { kind: 'booster', amount: premium ? 3 : 1, label: premium ? '3 boosters' : '1 booster' };

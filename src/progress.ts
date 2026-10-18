@@ -2,6 +2,7 @@
 // collections, chests, the daily streak, records and the weekly challenge. Saved on the device only.
 
 import { save } from './platform';
+import { DEFAULT_AVATAR, type Avatar, type StatId } from './meta';
 
 export const STORY_LEVELS = 50; // hand-made chefs; levels keep going forever after this
 
@@ -105,6 +106,15 @@ export class Progress {
   lastBoosters: string[] = save.json('lastBoosters', []); // booster picker remembers the last choice
   bestShape: [number, number][] = save.json('bestShape', []); // [x, width] of every layer in the best run (the ghost)
 
+  // ---- personality update
+  avatar: Avatar = { ...DEFAULT_AVATAR, ...save.json('avatar', {}) };
+  hearts: Record<string, number> = save.json('hearts', {}); // regular customer id -> hearts
+  stats: Partial<Record<StatId, number>> = save.json('stats', {}); // lifetime counters for achievements
+  achSeen: Partial<Record<StatId, number>> = save.json('achSeen', {}); // tiers reached (announced)
+  achClaimed: Partial<Record<StatId, number>> = save.json('achClaimed', {}); // tiers paid out
+  gallery = save.json('gallery', { pic: 0, tiles: [] as number[], perfects: 0, done: [] as number[] });
+  lastDay = save.json('lastDay', '');
+
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
     if (this.weekly.week !== weekKey()) this.weekly = { week: weekKey(), best: 0, claimed: [] };
@@ -161,6 +171,27 @@ export class Progress {
     save.setJson('seen', this.seen);
     save.setJson('lastBoosters', this.lastBoosters);
     save.setJson('bestShape', this.bestShape);
+    save.setJson('avatar', this.avatar);
+    save.setJson('hearts', this.hearts);
+    save.setJson('stats', this.stats);
+    save.setJson('achSeen', this.achSeen);
+    save.setJson('achClaimed', this.achClaimed);
+    save.setJson('gallery', this.gallery);
+    save.setJson('lastDay', this.lastDay);
+  }
+
+  /** Adds to a lifetime counter, or keeps the best value for per-run records. */
+  stat(id: StatId, amount = 1, best = false): void {
+    const v = this.stats[id] ?? 0;
+    this.stats[id] = best ? Math.max(v, amount) : v + amount;
+  }
+
+  /** Counts one more day played (for the Loyal Chef achievement). */
+  visit(): void {
+    if (this.lastDay === dayKey()) return;
+    this.lastDay = dayKey();
+    this.stat('days');
+    this.persist();
   }
 
   /** Permanent coin bonus from Chef Rank: +5% per rank, up to double. */
