@@ -120,6 +120,10 @@ export class Progress {
   rest: RestState = { ...DEFAULT_REST, ...save.json('rest', {}) };
   mastery: Record<string, number> = save.json('mastery', {}); // layers placed per ingredient
   gauntletBest = save.json('gauntletBest', 0);
+  cards: Record<number, number> = save.json('cards', {}); // chef level -> times beaten (card copies)
+  badges: string[] = save.json('badges', []); // season trophies and other profile badges
+  prestige = save.json('prestige', 0);
+  calendar = save.json('calendar', { n: 0, last: '' }); // 28-day login calendar: days claimed, last claim day
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -189,6 +193,10 @@ export class Progress {
     save.setJson('rest', this.rest);
     save.setJson('mastery', this.mastery);
     save.setJson('gauntletBest', this.gauntletBest);
+    save.setJson('cards', this.cards);
+    save.setJson('badges', this.badges);
+    save.setJson('prestige', this.prestige);
+    save.setJson('calendar', this.calendar);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */
@@ -214,9 +222,14 @@ export class Progress {
     this.persist();
   }
 
-  /** Permanent coin bonus from Chef Rank: +5% per rank, up to double. */
+  /** Permanent coin bonus: +5% per Chef Rank (up to double) and +10% per prestige. */
   get coinBonus(): number {
-    return Math.min(2, 1 + this.rank * 0.05);
+    return Math.min(2, 1 + this.rank * 0.05) + this.prestige * 0.1;
+  }
+
+  /** Card level from copies: 1 copy = Lv 1, then 3, 6 and 10 copies for Lv 2-4. */
+  static cardLevel(copies: number): number {
+    return copies >= 10 ? 4 : copies >= 6 ? 3 : copies >= 3 ? 2 : copies >= 1 ? 1 : 0;
   }
 
   get totalStars(): number {

@@ -6,7 +6,8 @@ import { setMusic, setMusicIntensity } from './audio';
 import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, TIP_HOURS, areaCost, popularity, tipRate } from './collect';
 import { CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
-import { decodeChallenge, encodeChallenge, shareCard, shareClip, type Challenge } from './share';
+import { decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, type Challenge } from './share';
+import { BOARDS, localBoards, online, submitScore } from './services';
 import { STORY_LEVELS, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, type MissionKind, starsNeeded } from './progress';
 import { THEMES, drawBackdrop, drawHolidayOverlay, makeSpecks, type Theme } from './themes';
 import { settings, saveSettings } from './settings';
@@ -180,7 +181,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -303,7 +304,7 @@ export class Game {
   private confetti: { x: number; y: number; vx: number; vy: number; rot: number; color: string; life: number }[] = [];
   private adOverlay: { t: number; label: string; onReward: () => void } | null = null;
   private buyOverlay: ProductId | null = null;
-  private shareOverlay: { image: HTMLCanvasElement; code: string } | null = null;
+  private shareOverlay: { image: HTMLCanvasElement; code: string; ghost: string } | null = null;
   private setDetail: number | null = null; // sticker set shown full-size in the album
   private pageScroll = 0; // scroll position for the other scrolling screens
   private codeInput: HTMLInputElement | null = null;
@@ -336,6 +337,8 @@ export class Game {
   private bonus: { left: number; ok: boolean } | null = null;
   private weather: { kind: 'wind' | 'rain'; dir: number } | null = null;
   private lastPerfect = false;
+  private friendGhost: [number, number][] | null = null; // shape of a friend's run from a ghost code
+  private confirmBox: { title: string; text: string; ok: string; go: () => void } | null = null;
   private upgradeFx: { i: number; t: number } | null = null; // sparkle on a just-upgraded restaurant area
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
@@ -571,6 +574,7 @@ export class Game {
       return;
     }
     this.picked = opts.picked ?? new Set();
+    if (!opts.challenge) this.friendGhost = null;
     this.runMode = mode;
     this.challenge = opts.challenge ?? null;
     this.puzzle = opts.puzzle ?? 0;
@@ -1122,6 +1126,14 @@ export class Game {
     p.xp = Math.min(PASS_TIERS * PASS_XP, p.xp + n);
     const after = Math.floor(p.xp / PASS_XP);
     if (after > before && after <= PASS_TIERS) this.showToast(`Sushi Pass tier ${after} reached! Claim it in More → Pass`);
+    if (after >= PASS_TIERS && before < PASS_TIERS) {
+      const th = currentSeason().theme;
+      const badge = `season:${season}:${th.icon}:${th.name}`;
+      if (!this.progress.badges.includes(badge)) {
+        this.progress.badges.push(badge);
+        this.celebrate(`${th.icon} SEASON TROPHY!`, `You finished the ${th.name} Pass. See it on your profile.`);
+      }
+    }
   }
 
   /** Event tokens count toward the World Tour city and any running holiday event. */
@@ -1634,7 +1646,14 @@ export class Game {
 
     // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
     if (this.journey && beatLevel % 10 === 0 && beatLevel <= STORY_LEVELS) this.queueStory(chapterFor(beatLevel), true);
-    if (this.journey) track('level_beat', { level: beatLevel, stars, flawless });
+    if (this.journey) {
+      track('level_beat', { level: beatLevel, stars, flawless });
+      // Card copies: beating a chef again levels up their card (Lv 2 = gold uniform).
+      const before = Progress.cardLevel(this.progress.cards[beatLevel] ?? 0);
+      this.progress.cards[beatLevel] = (this.progress.cards[beatLevel] ?? 0) + 1;
+      const after = Progress.cardLevel(this.progress.cards[beatLevel]);
+      if (after > before && after >= 2) this.showToast(`🃏 ${beaten.name} card Lv ${after}${after === 2 ? ': gold uniform unlocked!' : ''}`);
+    }
     if (this.journey && this.progress.beat(beatLevel, stars)) {
       this.showToast(beatLevel === STORY_LEVELS ? 'STORY COMPLETE! Endless chefs await...' : `New chef card: ${beaten.name}!`);
       if (beatLevel === STORY_LEVELS) this.unlockExclusive('set', 'legend', 'Legend sushi set');
@@ -1782,7 +1801,13 @@ export class Game {
     p.piggy = Math.min(2500, p.piggy + Math.floor(fresh * 0.15));
     if (this.runMode === 'zen') p.zenBest = Math.max(p.zenBest, this.height);
     if (this.runMode === 'time') p.timeBest = Math.max(p.timeBest, this.height);
-    if (this.runMode === 'gauntlet') p.gauntletBest = Math.max(p.gauntletBest, this.ordersServed);
+    if (this.runMode === 'gauntlet') {
+      p.gauntletBest = Math.max(p.gauntletBest, this.ordersServed);
+      submitScore('gauntlet', this.ordersServed);
+    }
+    if (this.runMode === 'time') submitScore('time', this.height);
+    if (this.journey) submitScore('level', p.unlocked);
+    if (this.runMode === 'journey' || this.runMode === 'special' || this.runMode === 'challenge') submitScore('height', this.height);
     const counts = this.runMode === 'journey' || this.runMode === 'special' || this.runMode === 'challenge' || this.runMode === 'time';
     if (counts && this.height > this.best) {
       this.best = this.height;
@@ -2027,6 +2052,9 @@ export class Game {
       else if (this.mode === 'gallery') this.drawGallery();
       else if (this.mode === 'settings') this.drawSettings();
       else if (this.mode === 'visit') this.drawVisit();
+      else if (this.mode === 'museum') this.drawMuseum();
+      else if (this.mode === 'profile') this.drawProfile();
+      else if (this.mode === 'calendar') this.drawCalendar();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -2464,7 +2492,7 @@ export class Game {
     const m = this.moving;
     const lookX = m && this.mode === 'playing' ? m.x + m.w / 2 : x;
     const lookY = m && this.mode === 'playing' ? m.y + LAYER_H / 2 - this.camY : y + 300;
-    drawChef(this.ctx, this.chef, x, y, s, this.chefMood(), lookX, lookY, this.time, this.mode === 'playing' ? this.holding() : null);
+    drawChef(this.ctx, this.chefLook(this.chef, this.level), x, y, s, this.chefMood(), lookX, lookY, this.time, this.mode === 'playing' ? this.holding() : null);
   }
 
   private drawBossLabels(x: number, y: number, s: number): void {
@@ -3138,7 +3166,10 @@ export class Game {
       this.roundRect(x, top + 146, 112, 26, 13);
       ctx.fill();
       this.text(c, x + 56, top + 159.5, 12, '#fff', 800);
+      this.buttons.push({ x, y: top + 140, w: 112, h: 38, onTap: () => this.openScreen(i === 1 ? 'calendar' : 'profile') });
     });
+    // A dot on the day chip when today's calendar reward is waiting.
+    if (this.calendarReady()) this.dot(24 + 120 + 106, top + 148, 5, '#ff3b3b');
 
     // Big play button.
     const lvl = p.playLevel;
@@ -3217,7 +3248,7 @@ export class Game {
     ctx.fillStyle = 'rgba(20,10,25,0.95)';
     ctx.fillRect(-this.offX, navY, WORLD_W + this.offX * 2, 62 + this.insets.bottom);
     const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3);
-    const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0;
+    const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0 || this.calendarReady();
     const nav: [string, string, () => void, boolean, string][] = [
       ['🗺️', t('map'), () => this.openMap(), false, 'map'],
       ['🎉', t('events'), () => this.openScreen('events'), eventsBadge, 'events'],
@@ -3367,7 +3398,8 @@ export class Game {
 
   /** Ghost of the best run: faint outlines of its layers around the current height. */
   private drawGhost(minY: number, maxY: number): void {
-    const shape = this.progress.bestShape;
+    const friend = this.runMode === 'challenge' && this.friendGhost;
+    const shape = friend ? this.friendGhost! : this.progress.bestShape;
     if (this.mode !== 'playing' || !shape.length || (this.runMode !== 'journey' && this.runMode !== 'time' && this.runMode !== 'challenge')) return;
     const { ctx } = this;
     const from = Math.max(1, this.height - 6);
@@ -3379,12 +3411,12 @@ export class Game {
       const y = -LAYER_H * (i + 1);
       if (y < minY || y > maxY) continue;
       const [x, w] = shape[i];
-      ctx.strokeStyle = `rgba(200,230,255,${i > this.height ? 0.35 : 0.18})`;
+      ctx.strokeStyle = friend ? `rgba(255,143,184,${i > this.height ? 0.6 : 0.3})` : `rgba(200,230,255,${i > this.height ? 0.35 : 0.18})`;
       this.roundRect(x, y, w, LAYER_H, 6);
       ctx.stroke();
     }
     ctx.restore();
-    if (to > this.height + 1) this.text('👻 your best run', shape[to][0] + shape[to][1] / 2, -LAYER_H * (to + 1) - 10, 10, 'rgba(200,230,255,0.6)', 600);
+    if (to > this.height + 1) this.text(friend ? '👻 friend’s run' : '👻 your best run', shape[to][0] + shape[to][1] / 2, -LAYER_H * (to + 1) - 10, 10, friend ? 'rgba(255,143,184,0.85)' : 'rgba(200,230,255,0.6)', 600);
   }
 
   /** Dashed line across the stack at a past height, so players can see their record coming. */
@@ -3584,6 +3616,13 @@ export class Game {
         this.text(got ? c.name.replace(/^(Chef|Master|Grand Master|Grand Chef|Emperor Chef|Dragon Chef|Sensei|Captain|Iron Chef|Legend) /, '') : '???', x + cw / 2, y + 106, 12, got ? '#4a2618' : 'rgba(255,255,255,0.5)', 800);
         const st = p.stars[i] || 0;
         this.text('★'.repeat(st) + '☆'.repeat(3 - st), x + cw / 2, y + 120, 11, got ? '#e0a800' : 'rgba(255,255,255,0.25)', 900);
+        const cl = Progress.cardLevel(p.cards[i + 1] ?? (got ? 1 : 0));
+        if (cl >= 2) {
+          ctx.fillStyle = cl >= 4 ? '#d4a537' : '#4a2618';
+          this.roundRect(x + cw - 34, y + 6, 28, 16, 8);
+          ctx.fill();
+          this.text(`Lv${cl}`, x + cw - 20, y + 14.5, 9.5, '#fff', 700);
+        }
       });
       contentH = Math.ceil(cards.length / 3) * (chh + 8);
     } else if (this.albumTab === 'stickers') {
@@ -4253,6 +4292,9 @@ export class Game {
     const tiles: [string, string, string, () => void][] = [
       ['🏯', 'Restaurant', `★ ${p.starPool} to spend`, () => this.openScreen('restaurant', 'more')],
       ['🎟️', 'Sushi Pass', passClaimable ? `${passClaimable} reward${passClaimable > 1 ? 's' : ''} ready!` : `Tier ${Math.min(PASS_TIERS, Math.floor(p.pass.xp / PASS_XP))}/${PASS_TIERS}`, () => this.openScreen('pass', 'more')],
+      ['🪪', 'Profile', p.prestige ? `Prestige ${p.prestige} · badges` : 'Stats, badges, prestige', () => this.openScreen('profile', 'more')],
+      ['📅', 'Calendar', this.calendarReady() ? 'Today’s reward ready!' : `Day ${p.calendar.n}/28`, () => this.openScreen('calendar', 'more')],
+      ['🏛️', 'Museum', `${RECIPES.filter((r) => (p.recipeCounts[r.name] ?? 0) > 0).length}/${RECIPES.length} dishes · mastery`, () => this.openScreen('museum', 'more')],
       ['🧑‍🍳', 'My Chef', `Chef ${p.avatar.name}`, () => this.openScreen('avatar', 'more')],
       ['🏆', 'Achievements', this.achClaimable() ? `${this.achClaimable()} reward${this.achClaimable() > 1 ? 's' : ''} ready!` : `${ACHIEVEMENTS.reduce((n, a) => n + (p.achSeen[a.id] ?? 0), 0)}/${ACHIEVEMENTS.length * 4} unlocked`, () => this.openScreen('trophies', 'more')],
       ['💞', 'Regulars', `${REGULARS.filter((r) => heartLevel(p.hearts[r.id] ?? 0) >= 2).length} friends`, () => this.openScreen('regulars', 'more')],
@@ -5345,6 +5387,264 @@ export class Game {
     this.screenEnd(f, y - f.y0);
   }
 
+  // ------------------------------------------------------------ chef cards
+
+  /** Chefs whose card is Lv 2+ wear a gold uniform. */
+  private chefLook(c: Chef, level: number): Chef {
+    if (Progress.cardLevel(this.progress.cards[level] ?? 0) < 2) return c;
+    return { ...c, outfit: '#d4a537', accent: '#fff3b0' };
+  }
+
+  // ------------------------------------------------------------ calendar
+
+  /** Day d (1-28): coins every day, boosters on day 7 and 21, packs on 14, a big prize on 28. */
+  private calendarReward(d: number): string {
+    if (d === 28) return '1000 coins + 5 packs + Loyal Chef Plate';
+    if (d === 14) return '3 sticker packs + 150 coins';
+    if (d % 7 === 0) return '3 boosters + 120 coins';
+    return `${30 + d * 5} coins`;
+  }
+
+  private calendarReady(): boolean {
+    return this.progress.calendar.last !== dayKey() && !this.lockedAt('gift');
+  }
+
+  /** Claims today's calendar day. Missing a day never resets it: the next claim is just the next day. */
+  private claimCalendar(): void {
+    const p = this.progress;
+    if (!this.calendarReady()) return this.showToast('Come back tomorrow for the next day!');
+    const d = p.calendar.n % 28 + 1;
+    p.calendar = { n: d === 28 ? 0 : p.calendar.n + 1, last: dayKey() };
+    if (d === 28) {
+      this.bankCoins(1000);
+      this.openPacks(5);
+      this.unlockExclusive('plate', 'calendar', 'Loyal Chef Plate');
+      if (!p.badges.includes('calendar')) p.badges.push('calendar');
+      this.celebrate('📅 DAY 28!', 'Loyal Chef Plate, 1000 coins and 5 sticker packs. The calendar starts again!');
+    } else if (d === 14) {
+      this.openPacks(3);
+      this.bankCoins(150);
+      this.celebrate('📅 DAY 14!', '3 sticker packs + 150 coins');
+    } else if (d % 7 === 0) {
+      for (let i = 0; i < 3; i++) {
+        const b = BOOSTERS[Math.floor(Math.random() * BOOSTERS.length)];
+        this.boosters[b.id] = (this.boosters[b.id] ?? 0) + 1;
+      }
+      save.setBoosters(this.boosters);
+      this.bankCoins(120);
+      this.celebrate(`📅 DAY ${d}!`, '3 boosters + 120 coins');
+    } else {
+      this.bankCoins(30 + d * 5);
+      this.showToast(`📅 Day ${d}: +${30 + d * 5} coins`);
+    }
+    sfx.coin();
+    p.persist();
+    track('calendar', { day: d });
+  }
+
+  private drawCalendar(): void {
+    const p = this.progress;
+    const f = this.screenBegin('LOGIN CALENDAR', 'One reward a day · missing a day never resets it');
+    let y = f.y0 + 4;
+    const cw = (WORLD_W - 32 - 6 * 6) / 7;
+    const next = p.calendar.n % 28 + 1;
+    const ready = this.calendarReady();
+    for (let d = 1; d <= 28; d++) {
+      const x = 16 + ((d - 1) % 7) * (cw + 6);
+      const yy = y + Math.floor((d - 1) / 7) * (cw + 22);
+      const got = d < next;
+      const today = d === next;
+      const big = d % 7 === 0;
+      this.card(x, yy, cw, cw + 14, got ? 'rgba(42,90,60,0.95)' : today && ready ? 'rgba(110,80,10,0.95)' : big ? 'rgba(70,40,80,0.95)' : 'rgba(48,30,52,0.95)');
+      if (today && ready) {
+        this.ctx.strokeStyle = `rgba(255,211,77,${0.6 + 0.4 * Math.sin(this.time * 5)})`;
+        this.ctx.lineWidth = 2.5;
+        this.roundRect(x, yy, cw, cw + 14, 14);
+        this.ctx.stroke();
+      }
+      this.text(String(d), x + cw / 2, yy + 11, 10, 'rgba(255,255,255,0.7)', 700);
+      this.text(got ? '✓' : d === 28 ? '🏆' : d === 14 ? '🎴' : big ? '🎁' : '🪙', x + cw / 2, yy + cw / 2 + 8, d === 28 ? 22 : 18, got ? '#8fdc93' : '#fff', got ? 700 : 400);
+      if (today && ready) this.listTap(x, yy, cw, cw + 14, f, () => this.claimCalendar());
+    }
+    y += 4 * (cw + 22) + 4;
+    this.card(16, y, WORLD_W - 32, 70, 'rgba(60,35,20,0.95)');
+    this.text(ready ? `TODAY: DAY ${next}` : `NEXT: DAY ${next} (tomorrow)`, 32, y + 20, 13, '#ffd34d', 700, 'left');
+    this.fitText(this.calendarReward(next), 32, y + 44, 200, 12, '#fff', 'left', 600);
+    this.pill(WORLD_W - 124, y + 19, 92, ready ? 'CLAIM' : 'TOMORROW', f, () => this.claimCalendar(), ready ? 'gold' : 'quiet');
+    y += 78;
+    this.wrapLeft('Day 7 and 21: 3 boosters · Day 14: 3 sticker packs · Day 28: the Loyal Chef Plate, 1000 coins and 5 packs.', 16, y + 4, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
+    y += 40;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ museum
+
+  private drawMuseum(): void {
+    const { ctx } = this;
+    const p = this.progress;
+    const f = this.screenBegin('SUSHI MUSEUM', `${RECIPES.filter((r) => (p.recipeCounts[r.name] ?? 0) > 0).length}/${RECIPES.length} dishes · ${p.stats.fancy ?? 0} fancy cuts · ${RECIPE_GOAL} serves = gold frame`);
+    let y = f.y0 + 4;
+    // Wooden shelves, two dishes each.
+    const cw = (WORLD_W - 32) / 2;
+    for (let i = 0; i < RECIPES.length; i += 2) {
+      ctx.fillStyle = '#4a2f1c';
+      this.roundRect(16, y, WORLD_W - 32, 112, 12);
+      ctx.fill();
+      ctx.fillStyle = '#7a4e2a';
+      ctx.fillRect(22, y + 84, WORLD_W - 44, 8);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(22, y + 92, WORLD_W - 44, 4);
+      for (let k = 0; k < 2 && i + k < RECIPES.length; k++) {
+        const r = RECIPES[i + k];
+        const n = p.recipeCounts[r.name] ?? 0;
+        const cx = 16 + cw * k + cw / 2;
+        if (n >= RECIPE_GOAL) {
+          ctx.strokeStyle = '#d4a537';
+          ctx.lineWidth = 3;
+          this.roundRect(cx - 70, y + 8, 140, 82, 10);
+          ctx.stroke();
+        }
+        if (n > 0) this.drawDish(cx, y + 60, 0.62, 0, r);
+        else {
+          ctx.globalAlpha = 0.25;
+          this.drawDish(cx, y + 60, 0.62, 0, { ...r, pattern: r.pattern.map(() => 'nori' as Ingredient) });
+          ctx.globalAlpha = 1;
+          this.text('?', cx, y + 46, 20, 'rgba(255,255,255,0.6)', 700);
+        }
+        this.fitText(n > 0 ? r.name : '???', cx, y + 102, cw - 20, 11, n > 0 ? '#ffe2c6' : 'rgba(255,255,255,0.45)', 'center', 700);
+        if (n > 0) this.text(`×${n}`, cx + 58, y + 16, 10, n >= RECIPE_GOAL ? '#ffd34d' : 'rgba(255,255,255,0.7)', 700);
+      }
+      y += 120;
+    }
+    // Ingredient mastery.
+    y += 4;
+    this.text(`INGREDIENT MASTERY · ${MASTERY} layers each = gold layers +1 coin per PERFECT`, 16, y + 8, 11, '#ffd34d', 700, 'left');
+    y += 22;
+    const kinds = Object.keys(COLORS) as Ingredient[];
+    kinds.forEach((k, i) => {
+      const x = 16 + (i % 2) * (cw + 0);
+      const yy = y + Math.floor(i / 2) * 40;
+      const n = p.mastery[k] ?? 0;
+      const done = n >= MASTERY;
+      this.card(x + (i % 2 ? 4 : 0), yy, cw - 4, 34, done ? 'rgba(90,70,20,0.95)' : 'rgba(48,30,52,0.95)');
+      ctx.fillStyle = COLORS[k];
+      this.roundRect(x + 12 + (i % 2 ? 4 : 0), yy + 9, 22, 16, 4);
+      ctx.fill();
+      this.text(k, x + 42 + (i % 2 ? 4 : 0), yy + 12, 11, '#fff', 700, 'left');
+      this.bar(x + 42 + (i % 2 ? 4 : 0), yy + 21, cw - 100, n / MASTERY, done ? '#ffd34d' : '#ff8a5b', 5);
+      this.text(done ? '✨' : `${n}`, x + cw - 14 + (i % 2 ? 0 : -4), yy + 17, 10, done ? '#ffd34d' : 'rgba(255,255,255,0.7)', 700, 'right');
+    });
+    y += Math.ceil(kinds.length / 2) * 40 + 4;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ profile and prestige
+
+  private drawProfile(): void {
+    const { ctx } = this;
+    const p = this.progress;
+    const f = this.screenBegin('PROFILE', p.prestige ? `Prestige ${p.prestige} · +${p.prestige * 10}% coins forever` : 'Your chef, your records, your badges');
+    let y = f.y0 + 4;
+    // Header with the avatar and a prestige crown.
+    this.card(16, y, WORLD_W - 32, 150, 'rgba(60,35,70,0.95)');
+    ctx.save();
+    this.roundRect(16, y, WORLD_W - 32, 150, 14);
+    ctx.clip();
+    drawChef(ctx, avatarChef(p.avatar), 86, y + 90, 0.85, 'happy', 200, y + 160, this.time);
+    ctx.restore();
+    if (p.prestige) this.text(['👑', '💎', '🌟', '🔥', '🐉'][Math.min(4, p.prestige - 1)] + (p.prestige > 5 ? ` ${p.prestige}` : ''), 120, y + 24, 20, '#fff', 400);
+    this.text(`Chef ${p.avatar.name}`, 160, y + 30, 20, '#fff', 700, 'left');
+    this.text(`Chef Rank ${p.rank} · Level ${p.unlocked}`, 160, y + 56, 12, '#ffd34d', 700, 'left');
+    this.text(`${p.totalStars}★ · ${p.chefsBeaten} chefs beaten`, 160, y + 76, 12, 'rgba(255,255,255,0.8)', 600, 'left');
+    this.text(`${this.progress.rest.reviews} critic reviews · ${Object.values(p.hearts).reduce((a, b) => a + b, 0)} hearts`, 160, y + 96, 12, 'rgba(255,255,255,0.8)', 600, 'left');
+    this.pill(160, y + 110, 120, 'EDIT CHEF', f, () => this.openScreen('avatar', 'profile'), 'quiet');
+    y += 160;
+    // Records.
+    const rows: [string, string][] = [
+      ['Best stack', `${this.best} layers`], ['PERFECTs', `${p.stats.perfects ?? 0}`], ['Orders served', `${p.stats.served ?? 0}`],
+      ['Fancy cuts', `${p.stats.fancy ?? 0}`], ['Sous-chef wins', `${p.stats.bonus ?? 0}`], ['Gauntlet best', `${p.gauntletBest} chefs`],
+      ['Coins earned', `${(p.stats.coins ?? 0).toLocaleString('en')}`], ['Days played', `${p.stats.days ?? 0}`],
+    ];
+    const cw = (WORLD_W - 32 - 8) / 2;
+    rows.forEach(([k, v], i) => {
+      const x = 16 + (i % 2) * (cw + 8);
+      const yy = y + Math.floor(i / 2) * 50;
+      this.card(x, yy, cw, 44);
+      this.text(k, x + 12, yy + 14, 10.5, 'rgba(255,255,255,0.65)', 600, 'left');
+      this.fitText(v, x + 12, yy + 31, cw - 20, 14, '#fff', 'left', 700);
+    });
+    y += Math.ceil(rows.length / 2) * 50 + 6;
+    // Badges.
+    this.text('BADGES', 16, y + 8, 12, '#ffd34d', 700, 'left');
+    y += 22;
+    const badges: [string, string][] = [
+      ...p.badges.filter((b) => b.startsWith('season:')).map((b) => { const [, n, icon, name] = b.split(':'); return [icon, `${name} (S${n})`] as [string, string]; }),
+      ...(p.badges.includes('calendar') ? [['📅', 'Loyal 28'] as [string, string]] : []),
+      ...ACHIEVEMENTS.filter((a) => (p.achSeen[a.id] ?? 0) >= 4).map((a) => [a.icon, `${a.name} IV`] as [string, string]),
+      ...(p.restaurant.michelin ? [['⭐', `${p.restaurant.michelin} Michelin`] as [string, string]] : []),
+      ...(p.prestige ? [['👑', `Prestige ${p.prestige}`] as [string, string]] : []),
+    ];
+    if (!badges.length) {
+      this.wrapLeft('Finish a Sushi Pass season, the 28-day calendar, an achievement family or a Michelin star to earn badges.', 16, y + 4, WORLD_W - 32, 11, 'rgba(255,255,255,0.65)');
+      y += 40;
+    } else {
+      const bw = (WORLD_W - 32 - 16) / 3;
+      badges.forEach(([icon, name], i) => {
+        const x = 16 + (i % 3) * (bw + 8);
+        const yy = y + Math.floor(i / 3) * 76;
+        this.card(x, yy, bw, 68, 'rgba(70,50,20,0.95)');
+        this.text(icon, x + bw / 2, yy + 26, 24, '#fff', 400);
+        this.fitText(name, x + bw / 2, yy + 54, bw - 10, 10, '#ffe2c6', 'center', 700);
+      });
+      y += Math.ceil(badges.length / 3) * 76;
+    }
+    // Prestige.
+    y += 6;
+    const can = p.unlocked > 100;
+    this.card(16, y, WORLD_W - 32, 96, can ? 'rgba(80,20,90,0.95)' : 'rgba(40,25,45,0.9)');
+    this.text('👑 PRESTIGE', 32, y + 24, 14, can ? '#e0aaff' : 'rgba(255,255,255,0.6)', 700, 'left');
+    if (can) this.pill(WORLD_W - 124, y + 8, 92, 'PRESTIGE', f, () => this.askPrestige(), 'gold');
+    this.wrapLeft(can ? 'Restart from level 1 for +10% coins forever, a new crown and the Prestige Plate. You keep coins, items and the restaurant.' : `Reach level 101 to prestige (you’re on level ${p.unlocked}). Each prestige gives +10% coins forever.`, 32, y + 54, WORLD_W - 64, 10.5, 'rgba(255,255,255,0.8)');
+    y += 104;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  private askPrestige(): void {
+    this.confirmBox = {
+      title: '👑 PRESTIGE?',
+      text: `Your journey restarts at level 1 (stars and chef map reset). You keep coins, items, the restaurant, companions and collections, and get +10% coins forever.`,
+      ok: 'PRESTIGE',
+      go: () => this.prestige(),
+    };
+  }
+
+  private prestige(): void {
+    const p = this.progress;
+    p.prestige++;
+    p.unlocked = 1;
+    p.stars = [];
+    p.persist();
+    this.unlockExclusive('plate', 'prestige', 'Prestige Plate');
+    this.celebrate(`👑 PRESTIGE ${p.prestige}!`, `+${p.prestige * 10}% coins forever · the journey begins again`);
+    track('prestige', { n: p.prestige });
+  }
+
+  private drawConfirm(blocker: () => void): void {
+    const c = this.confirmBox!;
+    const { ctx } = this;
+    const cx = WORLD_W / 2;
+    const midY = this.viewH / 2;
+    blocker();
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    this.card(30, midY - 120, WORLD_W - 60, 240, '#2a1a33');
+    this.fitText(c.title, cx, midY - 86, WORLD_W - 100, 20, '#fff', 'center', 700);
+    this.wrapText(c.text, cx, midY - 50, WORLD_W - 100, 12.5, 'rgba(255,255,255,0.85)');
+    this.button(50, midY + 60, 130, 44, t('back'), () => { this.confirmBox = null; }, 'quiet');
+    this.button(WORLD_W - 180, midY + 60, 130, 44, c.ok, () => { const go = c.go; this.confirmBox = null; go(); }, 'gold');
+  }
+
   // ---------------------------------------------------------- leaderboards
 
   private drawBoards(): void {
@@ -5357,9 +5657,16 @@ export class Game {
       this.text(value, WORLD_W - 32, y + 19, 13, color, 900, 'right');
       y += 44;
     };
+    // This week's bests (they reset every Monday), and the all-time bests beside them.
+    const lb = localBoards();
+    this.text(online ? 'THIS WEEK · ONLINE' : 'THIS WEEK · on this device until online boards are set up', 16, y + 8, 11, '#9fe3ff', 700, 'left');
+    y += 20;
+    (Object.keys(BOARDS) as (keyof typeof BOARDS)[]).forEach((k) => row(BOARDS[k].name, `${lb.best[k] ?? 0}  ·  best ever ${lb.allTime[k] ?? 0}`, '#9fe3ff'));
+    y += 6;
     this.text('YOUR RECORDS', 16, y + 8, 12, '#ffd34d', 900, 'left');
     y += 20;
     row('Best height', String(this.best), '#ffd34d');
+    row('Gauntlet best', `${p.gauntletBest} chefs`);
     row('Time Attack best', String(p.timeBest));
     row('Zen best', String(p.zenBest));
     row('Puzzle stars', `${p.puzzleStars.reduce((a, b) => a + (b || 0), 0)}★`);
@@ -5417,7 +5724,7 @@ export class Game {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,15,0.7);z-index:10;padding:16px;';
     const title = kind === 'save' ? 'Paste a save code' : 'Friend’s code';
-    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge code (K3F9Q-7-42), an invite code (INV-…) or a restaurant code (R-…)';
+    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge (K3F9Q-7-42), ghost (G-…), invite (INV-…) or restaurant code (R-…)';
     wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px Fredoka,system-ui,sans-serif;color:#fff;display:grid;gap:12px">
       <label for="code-box" style="font-weight:700;font-size:18px">${title}</label>
       <p style="margin:0;font-size:13px;opacity:.75">${hint}</p>
@@ -5440,6 +5747,15 @@ export class Game {
           track('save_import');
           location.reload();
         });
+        return;
+      }
+      if (/^G-/i.test(value)) {
+        const gc = decodeGhost(value);
+        if (!gc) return error('That ghost code is damaged. Ask your friend to share it again.');
+        close();
+        this.friendGhost = gc.shape;
+        this.startRun(gc.challenge.level, 'challenge', { challenge: gc.challenge });
+        track('ghost_race');
         return;
       }
       if (/^R-/i.test(value)) {
@@ -5606,8 +5922,9 @@ export class Game {
     c.fillStyle = '#fff';
     c.font = `700 44px ${FONT}`;
     c.fillText(`Chef ${this.progress.avatar.name} · Can you beat me? Code: ${code}`, 540, 1270, 1000);
-    void shareCard(card, code, this.height).then((ok) => {
-      if (!ok) this.shareOverlay = { image: card, code };
+    const ghost = encodeGhost({ seed: this.seed, level: this.startLevel, score: this.height }, this.stack.slice(1).map((l) => [Math.round(l.x), Math.round(l.w)]));
+    void shareCard(card, ghost, this.height).then((ok) => {
+      if (!ok) this.shareOverlay = { image: card, code, ghost };
     });
   }
 
@@ -5655,6 +5972,7 @@ export class Game {
     if (this.perkChoice && this.mode === 'playing') this.drawPerkChoice(blocker);
     if (this.picker) this.drawPicker(blocker);
     if (this.story && !this.picker) this.drawStoryCard(blocker);
+    if (this.confirmBox) this.drawConfirm(blocker);
     if (this.adOverlay) {
       blocker();
       ctx.fillStyle = 'rgba(0,0,0,0.92)';
@@ -5696,10 +6014,9 @@ export class Game {
       ctx.drawImage(o.image, cx - iw / 2, midY - ih / 2 - 70, iw, ih);
       this.text(`Challenge code: ${o.code}`, cx, midY + ih / 2 - 46, 15, '#ffd34d', 900);
       this.text('Send this code to a friend: they play the same chefs and see your score to beat.', cx, midY + ih / 2 - 24, 10.5, '#fff', 600);
-      this.button(40, midY + ih / 2 - 4, 150, 44, 'COPY CODE', () => {
-        navigator.clipboard?.writeText(o.code).then(() => this.showToast('Code copied!'), () => this.showToast(`Your code: ${o.code}`));
-      }, 'gold');
-      this.button(WORLD_W - 190, midY + ih / 2 - 4, 150, 44, 'CLOSE', () => { this.shareOverlay = null; }, 'quiet');
+      this.button(30, midY + ih / 2 - 4, 108, 44, 'COPY CODE', () => this.copy(o.code, 'Code copied!'), 'gold');
+      this.button(146, midY + ih / 2 - 4, 108, 44, '👻 GHOST', () => this.copy(o.ghost, 'Ghost code copied: friends race your exact stack'), 'gold');
+      this.button(262, midY + ih / 2 - 4, 108, 44, 'CLOSE', () => { this.shareOverlay = null; }, 'quiet');
       return;
     }
     if (this.setDetail !== null) {

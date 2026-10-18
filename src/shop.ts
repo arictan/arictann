@@ -52,6 +52,8 @@ export const PLATES: Item[] = [
   { id: 'season', name: 'Season Plate', price: 0, earn: 'Sushi Pass premium, tier 30' },
   { id: 'hanami', name: 'Hanami Plate', price: 0, earn: 'Cherry Blossom Festival' },
   { id: 'snowflake', name: 'Snowflake Plate', price: 0, earn: 'Winter Holidays event' },
+  { id: 'calendar', name: 'Loyal Chef Plate', price: 0, earn: 'Day 28 of the login calendar' },
+  { id: 'prestige', name: 'Prestige Plate', price: 0, earn: 'Prestige once' },
   ...CITY_PLATES.map(([id, name]) => ({ id: `city-${id}`, name: `${name} Plate`, price: 0, earn: `World Tour: ${name}` })),
 ];
 
@@ -316,8 +318,11 @@ export function drawPlate(ctx: CanvasRenderingContext2D, id: string, cx: number,
     case 'hanami':
     case 'snowflake':
     case 'stall':
+    case 'calendar':
+    case 'prestige':
     case 'season': {
       const look: Record<string, [string, string, string]> = {
+        calendar: ['#1d3557', '#ffd34d', '#a8dadc'], prestige: ['#14080e', '#e0aaff', '#ffd34d'],
         starter: ['#2b1b17', '#ff8fb8', '#ffd6e5'], hanami: ['#ffe5ec', '#ff5d8f', '#ffffff'], snowflake: ['#e0f7ff', '#4cc9f0', '#ffffff'],
         stall: ['#c8553d', '#2d1e2f', '#f4d35e'], season: ['#3c096c', '#ffd34d', '#e0aaff'],
       };
