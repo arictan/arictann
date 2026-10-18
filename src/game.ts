@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { sfx, unlockAudio, setMuted } from './audio';
 import { askForReminders, haptic, save, scheduleReminder, setHaptics } from './platform';
 import { setMusic, setMusicIntensity } from './audio';
-import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, areaCost } from './collect';
+import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, TIP_HOURS, areaCost, popularity, tipRate } from './collect';
 import { CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
 import { decodeChallenge, encodeChallenge, shareCard, shareClip, type Challenge } from './share';
@@ -313,6 +313,7 @@ export class Game {
   private clips: ClipRecorder;
   private clip: File | null = null;
   private saveCode = '';
+  private upgradeFx: { i: number; t: number } | null = null; // sparkle on a just-upgraded restaurant area
 
   constructor(private canvas: HTMLCanvasElement, private safeProbe: HTMLElement) {
     const ctx = canvas.getContext('2d');
@@ -1777,6 +1778,7 @@ export class Game {
     }
 
     if (this.tip && !this.dish && (this.tip.t -= real) <= 0) this.tip = null;
+    if (this.upgradeFx && (this.upgradeFx.t += real) > 1.5) this.upgradeFx = null;
     if (settings.reducedMotion) {
       this.shake = 0;
       this.flash = 0;
@@ -2862,7 +2864,15 @@ export class Game {
     const m = [...this.progress.missions].sort((a2, b2) => b2.progress / b2.target - a2.progress / a2.target)[0];
     if (m) this.text(`Mission: ${missionText(m)}  ${m.progress}/${m.target}`, cx, cardTop + 174, 12, 'rgba(255,255,255,0.8)', 600);
     const goal = this.nextGoal();
-    if (goal) {
+    const pitch = this.lockedAt('restaurant') ? null : this.restaurantPitch();
+    if (pitch?.hot && this.time - this.deadAt > 0.7) {
+      // The restaurant has something to do: say so, and make the line a shortcut.
+      ctx.fillStyle = 'rgba(110,55,25,0.9)';
+      this.roundRect(36, cardTop + 186, WORLD_W - 72, 32, 16);
+      ctx.fill();
+      this.fitText(`🏯 Restaurant: ${pitch.text} ›`, cx, cardTop + 202, WORLD_W - 96, 13, '#ffd34d', 'center', 700);
+      this.buttons.push({ x: 36, y: cardTop + 186, w: WORLD_W - 72, h: 32, onTap: () => { track('restaurant_ad', { from: 'results' }); this.openScreen('restaurant'); } });
+    } else if (goal) {
       const have = Math.min(this.bank, goal.price);
       const can = this.bank >= goal.price;
       this.text(can ? `You can buy the ${goal.name}!` : `Next: ${goal.name}  ${have}/${goal.price}`, cx, cardTop + 198, 13, can ? '#ffd34d' : 'rgba(255,255,255,0.85)', 700);
@@ -2963,11 +2973,12 @@ export class Game {
     const hol = currentHoliday();
     const tick = `🌏 ${tour.city.name} tour · ${timeLeft(tour.end)}${hol ? `   🎉 ${hol.holiday.name}` : ''}`;
     this.text(tick, cx, top + 498, 11.5, '#9fe3ff', 800);
+    if (!this.lockedAt('restaurant')) this.drawRestaurantCard(30, top + 514, 340, 40);
 
     // Bottom navigation with badges for things waiting to be claimed.
     const navY = this.viewH - this.insets.bottom - 62;
     // The player's own chef waves from behind the counter when there's room (tap to customise).
-    if (navY - (top + 510) >= 150) {
+    if (navY - (top + 560) >= 150) {
       const ax = 58;
       const ay = navY - 62;
       drawChef(ctx, avatarChef(p.avatar), ax, ay, 0.62, 'happy', cx, ay - 120, this.time);
@@ -2988,7 +2999,7 @@ export class Game {
       ['🗺️', t('map'), () => this.openMap(), false, 'map'],
       ['🎉', t('events'), () => this.openScreen('events'), eventsBadge, 'events'],
       ['🛒', t('shop'), () => this.openShop(), false, 'shop'],
-      ['🏯', t('restaurant'), () => this.openScreen('restaurant'), p.starPool >= areaCost(p.restaurant.r + p.restaurant.michelin, 1), 'restaurant'],
+      ['🏯', t('restaurant'), () => this.openScreen('restaurant'), this.restaurantPitch().hot, 'restaurant'],
       ['☰', t('more'), () => this.openScreen('more'), moreBadge, 'more'],
     ];
     const nw = WORLD_W / nav.length;
@@ -3024,6 +3035,32 @@ export class Game {
       }
       this.buttons.push({ x, y: navY, w: nw, h: 62, onTap: go });
     });
+  }
+
+  /** Home-screen card for the restaurant: name, popularity and a reason to visit right now. */
+  private drawRestaurantCard(x: number, y: number, w: number, h: number): void {
+    const { ctx } = this;
+    const rs = this.progress.restaurant;
+    const R = RESTAURANTS[Math.min(rs.r, RESTAURANTS.length - 1)];
+    const pitch = this.restaurantPitch();
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, 'rgba(110,55,25,0.95)');
+    g.addColorStop(1, 'rgba(60,30,45,0.95)');
+    ctx.fillStyle = g;
+    this.roundRect(x, y, w, h, 14);
+    ctx.fill();
+    if (pitch.hot) {
+      ctx.strokeStyle = `rgba(255,211,77,${0.55 + 0.45 * Math.sin(this.time * 5)})`;
+      ctx.lineWidth = 2;
+      this.roundRect(x, y, w, h, 14);
+      ctx.stroke();
+    }
+    this.text('🏯', x + 22, y + h / 2 + 1, 20, '#fff', 400);
+    const pop = popularity(rs.r + rs.michelin, rs.levels);
+    this.fitText(`${R.name} ${'★'.repeat(pop)}`, x + 42, y + 13, 170, 12, '#ffd34d', 'left', 700);
+    this.fitText(pitch.text, x + 42, y + 28, w - 130, 11, '#fff', 'left');
+    this.drawButton(x + w - 78, y + 7, 70, h - 14, pitch.hot ? 'GO!' : 'VISIT', pitch.hot ? 'gold' : 'quiet', 12);
+    this.buttons.push({ x, y, w, h, onTap: () => { track('restaurant_ad', { from: 'home', hot: pitch.hot }); this.openScreen('restaurant'); } });
   }
 
   /** The level a home feature opens at, or 0 when it's already open. */
@@ -4026,34 +4063,105 @@ export class Game {
 
   // ------------------------------------------------------------- restaurant
 
+  /** Tips waiting in the jar: they build up per hour while you play or are away, up to TIP_HOURS. */
+  private restaurantTips(): number {
+    const rs = this.progress.restaurant as typeof this.progress.restaurant & { tipsAt?: number };
+    if (this.lockedAt('restaurant')) return 0;
+    if (!rs.tipsAt) {
+      rs.tipsAt = Date.now();
+      this.progress.persist();
+    }
+    const hours = Math.min(TIP_HOURS, (Date.now() - rs.tipsAt) / 3_600_000);
+    return Math.floor(hours * tipRate(rs.r + rs.michelin, rs.levels));
+  }
+
+  private collectTips(): void {
+    const tips = this.restaurantTips();
+    if (tips <= 0) {
+      this.showToast('The tip jar is empty. Come back soon!');
+      return;
+    }
+    (this.progress.restaurant as { tipsAt?: number }).tipsAt = Date.now();
+    this.progress.persist();
+    this.bankCoins(tips);
+    this.celebrate(`💰 +${tips} TIPS!`, 'Your guests loved it. Upgrades bring bigger tips.', 1.6);
+    sfx.coin();
+    haptic.success();
+    track('tips', { coins: tips });
+  }
+
+  /** The cheapest upgrade the player can afford right now, if any. */
+  private restaurantUpgradeReady(): boolean {
+    const p = this.progress;
+    const rs = p.restaurant;
+    return rs.levels.some((lv) => lv < AREA_MAX && p.starPool >= areaCost(rs.r + rs.michelin, lv + 1));
+  }
+
+  /** One line that sells a visit: tips waiting, an upgrade to buy, or what's next. */
+  private restaurantPitch(): { text: string; hot: boolean } {
+    const tips = this.restaurantTips();
+    const ready = this.restaurantUpgradeReady();
+    if (ready && tips >= 20) return { text: `Upgrade ready + 💰 ${tips} tips!`, hot: true };
+    if (ready) return { text: 'Upgrade ready! Make it shine ✨', hot: true };
+    if (tips >= 20) return { text: `💰 ${tips} tips waiting`, hot: true };
+    return { text: `${tipRate(this.progress.restaurant.r + this.progress.restaurant.michelin, this.progress.restaurant.levels)} tips/hour · beat chefs for ★`, hot: false };
+  }
+
   private drawRestaurant(): void {
+    const { ctx } = this;
     const p = this.progress;
     const rs = p.restaurant;
     const R = RESTAURANTS[Math.min(rs.r, RESTAURANTS.length - 1)];
     const tier = rs.r + rs.michelin;
     const done = rs.levels.reduce((a, b) => a + b, 0);
-    const f = this.screenBegin(rs.michelin ? `${R.name} ${'⭐'.repeat(Math.min(rs.michelin, 5))}` : R.name, `★ ${p.starPool} stars to spend · ${done}/${AREAS.length * AREA_MAX} upgrades`);
+    const f = this.screenBegin(rs.michelin ? `${R.name} ${'⭐'.repeat(Math.min(rs.michelin, 3))}` : R.name, `★ ${p.starPool} to spend · ${done}/${AREAS.length * AREA_MAX} upgrades · grandma’s bar reborn`);
     let y = f.y0 + 4;
-    this.drawRestaurantScene(16, y, WORLD_W - 32, 250, R.wall, R.floor, rs.levels);
-    y += 262;
-    this.wrapLeft('Earn stars by beating chefs (better stars add more). Each finished restaurant gives +5% coins forever.', 16, y + 2, WORLD_W - 32, 10, 'rgba(255,255,255,0.75)');
-    y += 20;
+    this.drawRestaurantScene(16, y, WORLD_W - 32, 270, R.wall, R.floor, rs.levels);
+    y += 280;
+
+    // Popularity and the tip jar.
+    const pop = popularity(tier, rs.levels);
+    const tips = this.restaurantTips();
+    const rate = tipRate(tier, rs.levels);
+    const cap = rate * TIP_HOURS;
+    this.card(16, y, WORLD_W - 32, 92, 'rgba(60,35,20,0.95)');
+    this.text('POPULARITY', 32, y + 18, 11, 'rgba(255,255,255,0.7)', 700, 'left');
+    for (let k = 0; k < 5; k++) this.text('★', 32 + k * 19, y + 40, 19, k < pop ? '#ffd34d' : 'rgba(255,255,255,0.2)', 700, 'left');
+    this.text(`${rate} tips per hour`, 32, y + 64, 12, '#ffe2c6', 700, 'left');
+    this.text(`jar fills in ${TIP_HOURS}h`, 32, y + 80, 10, 'rgba(255,255,255,0.55)', 600, 'left');
+    // Jar.
+    const jx = 168;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    this.roundRect(jx, y + 14, 34, 64, 10);
+    ctx.fill();
+    const fill = Math.min(1, tips / cap);
+    ctx.fillStyle = '#ffd34d';
+    this.roundRect(jx + 3, y + 75 - 58 * fill, 28, 58 * fill, 7);
+    ctx.fill();
+    this.text('💰', jx + 17, y + 46, 16, '#fff', 400);
+    this.pill(WORLD_W - 162, y + 30, 130, tips > 0 ? `COLLECT ${tips}` : 'JAR EMPTY', f, () => this.collectTips(), tips > 0 ? 'gold' : 'quiet');
+    y += 102;
+
+    this.wrapLeft('Beat chefs to earn ★. Every upgrade brings more guests and bigger tips. Finish all 8 for the next restaurant (+5% coins forever).', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
+    y += 44;
     AREAS.forEach((a, i) => {
       const lv = rs.levels[i];
-      this.card(16, y, WORLD_W - 32, 50);
-      this.text(a.name, 32, y + 18, 13, '#fff', 800, 'left');
+      const max = lv >= AREA_MAX;
+      const cost = max ? 0 : areaCost(tier, lv + 1);
+      const can = !max && p.starPool >= cost;
+      this.card(16, y, WORLD_W - 32, 64, can ? 'rgba(70,50,20,0.95)' : 'rgba(48,30,52,0.95)');
+      this.dot(46, y + 32, 20, 'rgba(255,255,255,0.08)');
+      this.text(a.icon, 46, y + 33, 20, '#fff', 400);
+      this.text(a.name, 76, y + 16, 13, '#fff', 700, 'left');
       for (let k = 0; k < AREA_MAX; k++) {
-        this.ctx.fillStyle = k < lv ? '#ffd34d' : 'rgba(255,255,255,0.2)';
-        this.roundRect(32 + k * 22, y + 30, 18, 8, 4);
-        this.ctx.fill();
+        ctx.fillStyle = k < lv ? '#ffd34d' : 'rgba(255,255,255,0.2)';
+        this.roundRect(76 + k * 22, y + 27, 18, 7, 3.5);
+        ctx.fill();
       }
-      if (lv >= AREA_MAX) {
-        this.text('✓ DONE', WORLD_W - 40, y + 25, 12, '#8fdc93', 900, 'right');
-      } else {
-        const cost = areaCost(tier, lv + 1);
-        this.pill(WORLD_W - 132, y + 9, 100, `UPGRADE ★${cost}`, f, () => this.upgradeArea(i), p.starPool >= cost ? 'gold' : 'quiet');
-      }
-      y += 58;
+      this.fitText(max ? 'Fully upgraded' : `Next: ${a.perks[lv]}`, 76, y + 49, WORLD_W - 216, 10.5, max ? '#8fdc93' : 'rgba(255,255,255,0.7)', 'left');
+      if (max) this.text('✓ DONE', WORLD_W - 40, y + 32, 12, '#8fdc93', 700, 'right');
+      else this.pill(WORLD_W - 128, y + 16, 96, `★${cost} BUILD`, f, () => this.upgradeArea(i), can ? 'gold' : 'quiet');
+      y += 72;
     });
     this.screenEnd(f, y - f.y0);
   }
@@ -4072,8 +4180,11 @@ export class Game {
     p.starPool -= cost;
     rs.levels[i]++;
     this.bankCoins(30 * rs.levels[i]);
-    this.showToast(`${AREAS[i].name} upgraded! +${30 * rs.levels[i]} coins`);
+    this.upgradeFx = { i, t: 0 };
+    this.celebrate(`${AREAS[i].icon} ${AREAS[i].name.toUpperCase()} LV ${rs.levels[i]}`, `${AREAS[i].perks[rs.levels[i] - 1]} · +${30 * rs.levels[i]} coins`, 1.8);
     sfx.serve();
+    haptic.success();
+    track('restaurant_upgrade', { area: AREAS[i].id, level: rs.levels[i], tier });
     if (rs.levels.every((l) => l >= AREA_MAX)) {
       const R = RESTAURANTS[Math.min(rs.r, RESTAURANTS.length - 1)];
       this.bankCoins(500);
@@ -4210,9 +4321,11 @@ export class Game {
       this.text(gl >= 2 ? '🌳' : '🪴', x + w - 60, y + 160 - gl * 4, 22 + gl * 6, '#fff', 400);
       if (gl >= 3) { this.text('🏮', x + w - 96, y + 166, 16, '#fff', 400); this.text('🪨', x + w - 24, y + 172, 12, '#fff', 400); }
     }
+    const cy = y + h * 0.72 - 6;
+    // Your chef works behind the counter.
+    drawChef(ctx, avatarChef(this.progress.avatar), x + w / 2, cy - 44, 0.5, 'happy', x + w / 2, cy + 60, this.time);
     // Counter
     const cl = L('counter');
-    const cy = y + h * 0.72 - 6;
     if (!cl) empty(x + 30, cy - 10, w - 60, 36);
     else {
       const g = ctx.createLinearGradient(0, cy, 0, cy + 40);
@@ -4239,6 +4352,52 @@ export class Game {
           if (vl >= 3) this.text(['🍣', '🍤', '🍙'][i % 3], px, cy - 20, 12, '#fff', 400);
         }
       }
+    }
+    // Guests: your regulars sit at the counter. Every few upgrades brings one more.
+    const done = lv.reduce((a, b) => a + b, 0);
+    if (cl) {
+      const regs = REGULARS.filter((r) => r.level <= this.progress.unlocked);
+      const n = Math.min(5, regs.length, 1 + Math.floor(done / 4));
+      for (let i = 0; i < n; i++) {
+        const gx = x + 50 + i * ((w - 100) / 4);
+        const bob = Math.sin(this.time * 3 + i * 1.7) * 2;
+        this.text(regs[i].emoji, gx, cy + 26 + bob, 24, '#fff', 400);
+        // Now and then a guest reacts to the food.
+        const beat = (this.time * 0.5 + i * 0.37) % 3;
+        if (beat < 0.9) {
+          ctx.globalAlpha = Math.min(1, beat * 4, (0.9 - beat) * 4);
+          this.text(['😋', '♥', '✨', '👍', '🍣'][(i + Math.floor(this.time / 6)) % 5], gx + 12, cy + 2 - beat * 14, 13, '#ff5d8f', 700);
+          ctx.globalAlpha = 1;
+        }
+      }
+      // Tip jar on the counter.
+      const tips = this.restaurantTips();
+      this.text(tips > 0 ? '💰' : '🫙', x + w - 40, cy - 14, 18, '#fff', 400);
+      if (tips > 0) this.text(String(tips), x + w - 40, cy + 6, 10, '#ffd34d', 700);
+    }
+    // Warm light from the lanterns.
+    if (ll) {
+      const g = ctx.createRadialGradient(x + w / 2, y + 30, 10, x + w / 2, y + 30, w * 0.8);
+      g.addColorStop(0, `rgba(255,190,110,${0.08 * ll})`);
+      g.addColorStop(1, 'rgba(255,190,110,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, w, h);
+    }
+    // Sparkles on the area that was just upgraded.
+    const fx = this.upgradeFx;
+    if (fx && fx.t < 1.4) {
+      const spots: Record<string, [number, number]> = {
+        sign: [w / 2, 27], lanterns: [w * 0.2, 34], noren: [49, 115], art: [w - 61, 92],
+        aquarium: [140, 150], garden: [w - 60, 150], counter: [w / 2, h * 0.72 + 14], conveyor: [w / 2, h * 0.72 - 16],
+      };
+      const [sx, sy] = spots[AREAS[fx.i].id];
+      for (let k = 0; k < 10; k++) {
+        const a = k * 0.63 + fx.t * 2;
+        const r = 10 + fx.t * 50;
+        ctx.globalAlpha = Math.max(0, 1 - fx.t / 1.4);
+        this.text('✦', x + sx + Math.cos(a) * r, y + sy + Math.sin(a) * r, 12 + (k % 3) * 4, k % 2 ? '#ffd34d' : '#ffffff', 700);
+      }
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }

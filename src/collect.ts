@@ -47,16 +47,27 @@ export function shardsForNext(shards: number): { have: number; need: number } | 
 
 export type AreaId = 'counter' | 'lanterns' | 'aquarium' | 'noren' | 'garden' | 'art' | 'sign' | 'conveyor';
 
-export const AREAS: { id: AreaId; name: string }[] = [
-  { id: 'counter', name: 'Sushi Counter' },
-  { id: 'lanterns', name: 'Lanterns' },
-  { id: 'aquarium', name: 'Fish Tank' },
-  { id: 'noren', name: 'Noren Curtain' },
-  { id: 'garden', name: 'Bonsai Garden' },
-  { id: 'art', name: 'Wall Art' },
-  { id: 'sign', name: 'Shop Sign' },
-  { id: 'conveyor', name: 'Conveyor Belt' },
+export const AREAS: { id: AreaId; name: string; icon: string; perks: string[] }[] = [
+  { id: 'counter', name: 'Sushi Counter', icon: '🍣', perks: ['A wooden counter for your first guests', 'Polished counter with stools: more guests sit down', 'Marble and gold: the best seat in town'] },
+  { id: 'lanterns', name: 'Lanterns', icon: '🏮', perks: ['Two paper lanterns', 'A row of lanterns', 'Glowing lanterns light up the room'] },
+  { id: 'aquarium', name: 'Fish Tank', icon: '🐠', perks: ['A small tank with a fish', 'Bigger tank, more fish', 'Coral reef tank'] },
+  { id: 'noren', name: 'Noren Curtain', icon: '🎏', perks: ['A blue doorway curtain', 'Red sushi curtain', 'Gold-trimmed curtain'] },
+  { id: 'garden', name: 'Bonsai Garden', icon: '🌳', perks: ['A potted plant', 'A bonsai tree', 'Zen garden with stone lantern'] },
+  { id: 'art', name: 'Wall Art', icon: '🖼️', perks: ['A wave painting', 'Mount Fuji painting', 'Framed masterpiece in gold'] },
+  { id: 'sign', name: 'Shop Sign', icon: '🪧', perks: ['A wooden sign', 'A painted sign', 'Neon sign that glows'] },
+  { id: 'conveyor', name: 'Conveyor Belt', icon: '🍱', perks: ['A conveyor belt', 'Plates ride the belt', 'Sushi rides the belt'] },
 ];
+
+/** Tips the restaurant earns per hour while you're away (collected on the Restaurant screen). */
+export function tipRate(tier: number, levels: number[]): number {
+  return 10 + 3 * levels.reduce((a, b) => a + b, 0) + 15 * tier;
+}
+export const TIP_HOURS = 8; // the tip jar fills up after this long
+
+/** Popularity shown as 1-5 stars: it grows with every upgrade and every finished restaurant. */
+export function popularity(tier: number, levels: number[]): number {
+  return Math.min(5, 1 + tier + Math.floor(levels.reduce((a, b) => a + b, 0) / 6));
+}
 
 export const RESTAURANTS = [
   { name: 'Street Stall', wall: '#7a4e2a', floor: '#5a3a22', reward: { cat: 'plate' as const, id: 'stall', name: 'Street Stall Plate' } },
