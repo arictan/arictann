@@ -3,7 +3,12 @@
 
 import { save } from './platform';
 
-export const MAX_LEVEL = 50;
+export const STORY_LEVELS = 50; // hand-made chefs; levels keep going forever after this
+
+/** Stars needed to enter a level: a gate every 10 levels from 11 on, at 2 stars per level before it. */
+export function starsNeeded(level: number): number {
+  return level > 1 && (level - 1) % 10 === 0 ? (level - 1) * 2 : 0;
+}
 
 export type MissionKind = 'perfects' | 'streak' | 'serve' | 'height' | 'dodge' | 'beat' | 'coinsRun' | 'recipe' | 'help' | 'flawless';
 
@@ -57,7 +62,7 @@ export function daySeed(): number {
 }
 
 export class Progress {
-  unlocked = save.json('journey.unlocked', 1); // highest level that can be played
+  unlocked = save.json('journey.unlocked', 1); // highest level reached (it may still sit behind a star gate)
   stars: number[] = save.json('journey.stars', []); // best stars per level (index = level - 1)
   rank = save.json('rank', 0);
   missions: Mission[] = save.json('missions', []);
@@ -97,6 +102,22 @@ export class Progress {
 
   get totalStars(): number {
     return this.stars.reduce((a, b) => a + (b || 0), 0);
+  }
+
+  get chefsBeaten(): number {
+    return this.stars.filter((x) => x > 0).length;
+  }
+
+  /** A level can be played once reached and its star gate (if any) is met. */
+  canEnter(level: number): boolean {
+    return level <= this.unlocked && this.totalStars >= starsNeeded(level);
+  }
+
+  /** The level TAP TO PLAY starts: the furthest one reached, or the last one before a closed gate. */
+  get playLevel(): number {
+    let l = this.unlocked;
+    while (l > 1 && !this.canEnter(l)) l--;
+    return l;
   }
 
   // ------------------------------------------------------------- missions
@@ -158,12 +179,10 @@ export class Progress {
   /** Returns true the first time this chef is beaten (a new chef card). */
   beat(level: number, stars: number): boolean {
     const first = !this.stars[level - 1];
-    if (level <= MAX_LEVEL) {
-      this.stars[level - 1] = Math.max(this.stars[level - 1] || 0, stars);
-      this.unlocked = Math.min(MAX_LEVEL, Math.max(this.unlocked, level + 1));
-    }
+    this.stars[level - 1] = Math.max(this.stars[level - 1] || 0, stars);
+    this.unlocked = Math.max(this.unlocked, level + 1);
     this.persist();
-    return first && level <= MAX_LEVEL;
+    return first;
   }
 
   // ---------------------------------------------------------------- runs

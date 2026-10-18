@@ -692,3 +692,82 @@ function shade(hex: string, amt: number): string {
   const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + (amt > 0 ? (255 - v) * amt : v * amt))));
   return `rgb(${f(n >> 16)}, ${f((n >> 8) & 255)}, ${f(n & 255)})`;
 }
+
+// ------------------------------------------------------------------ endless chefs
+
+const FIRST_NAMES = ['Aki', 'Ren', 'Kou', 'Mio', 'Haru', 'Rei', 'Sho', 'Nana', 'Kai', 'Riku', 'Hina', 'Yuto', 'Sena', 'Toma', 'Ayumi', 'Daiki', 'Noa', 'Kaede', 'Itsuki', 'Mana',
+  'Bo', 'Lan', 'Mei-lin', 'Jian', 'Hui', 'Ping', 'Seo-yeon', 'Min-jun', 'Ha-eun', 'Do-yun', 'Hoa', 'Tuan', 'Linh', 'Ploy', 'Arun', 'Niran', 'Malee', 'Tavi', 'Kiko', 'Sumi'];
+const TITLES = ['Chef', 'Chef', 'Chef', 'Sensei', 'Master', 'Captain', 'Iron Chef'];
+const INTROS = ['Show me what you’ve got!', 'This kitchen is mine!', 'Ready for a real challenge?', 'Don’t blink!', 'Let’s see your knife work.', 'Only the best survive here.', 'I’ve been waiting for you.', 'Roll with me, if you can!'];
+const BEATENS = ['Impressive!', 'You earned this one.', 'My kitchen salutes you!', 'Incredible hands!', 'I bow to your skill.', 'That was delicious!', 'Well played, chef!'];
+const GLOATS = ['Back to the start!', 'Not today!', 'Too sloppy!', 'My kitchen, my rules!', 'Try again, rookie!', 'You call that sushi?', 'Ha! Keep practising!'];
+const SKINS = ['#f1c9a5', '#e8b98f', '#f5d0b0', '#d9a77c', '#efc29a', '#f6d5bd', '#e6b48c', '#c98e64', '#a8714a'];
+const HAIR_COLORS = ['#111', '#1d1a1a', '#2b1b17', '#3a2418', '#6b3e26', '#8b1e1e', '#d8d8d8', '#231c3a', '#1d3557', '#7f4f24'];
+const OUTFITS: [string, string][] = [['#ffffff', '#d7263d'], ['#1f1f1f', '#f2b705'], ['#a8dadc', '#1d3557'], ['#ffd6e5', '#ff5d8f'], ['#2b2d42', '#ef233c'], ['#fefae0', '#bc4749'],
+  ['#caf0f8', '#0077b6'], ['#3c096c', '#e0aaff'], ['#ffbe0b', '#fb5607'], ['#344e41', '#a3b18a'], ['#540b0e', '#e09f3e'], ['#e9f5ee', '#2a9d5c']];
+const HAIRS: Hair[] = ['short', 'bun', 'bob', 'bald', 'spiky', 'ponytail', 'twinbuns', 'gray', 'curly', 'long', 'mohawk'];
+const HATS: Hat[] = ['hachimaki', 'cap', 'toque', 'bandana', 'none', 'shades', 'beanie', 'visor', 'flower'];
+const FACES: Face[] = ['none', 'none', 'mustache', 'beard', 'glasses', 'goatee', 'freckles'];
+const ATTACKS: Attack[] = ['knife', 'slam', 'splat'];
+
+/** Small seeded random generator, so a given level always produces the same chef. */
+function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const generated = new Map<number, Chef>();
+
+/**
+ * The chef for any level. Levels 1-50 are the hand-made story chefs; beyond that a new chef is
+ * generated for every level, getting tougher as the levels climb. Every 10th level is a Legend boss.
+ */
+export function chefFor(level: number): Chef {
+  if (level <= CHEFS.length) return CHEFS[level - 1];
+  const cached = generated.get(level);
+  if (cached) return cached;
+  const r = rng(level * 9973 + 17);
+  const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)];
+  const depth = level - CHEFS.length; // levels into endless mode
+  const legend = level % 10 === 0;
+  const [outfit, accent] = pick(OUTFITS);
+  const speed = Math.min(1.9, 1.5 + depth * 0.004 + r() * 0.1 + (legend ? 0.1 : 0));
+  const wobble = legend || r() < 0.6;
+  const tight = legend || r() < Math.min(0.85, 0.45 + depth * 0.004);
+  const extra = legend ? 3 : Math.floor(r() * 4);
+  const attacks = legend ? ATTACKS : ATTACKS.filter(() => r() < 0.6);
+  if (!attacks.length) attacks.push(pick(ATTACKS));
+  const rule = [`${Math.round((speed - 1) * 100)}% faster`, wobble && 'surges', tight && 'small PERFECT zone', extra && `+${extra} layer${extra === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+  // Stepping through the names by 13 (coprime with 40) means no repeats within 40 levels.
+  const first = FIRST_NAMES[(level * 13) % FIRST_NAMES.length];
+  const name = legend ? `Legend ${first}` : `${pick(TITLES)} ${first}`;
+  const chef: Chef = {
+    name,
+    rule: legend ? `LEGEND BOSS: ${rule}` : rule,
+    speed,
+    wobble,
+    tight,
+    extra,
+    kind: legend ? 0.1 : 0.1 + r() * 0.3,
+    mean: Math.min(0.5, 0.25 + depth * 0.003 + r() * 0.1 + (legend ? 0.05 : 0)),
+    attacks,
+    skin: pick(SKINS),
+    hairColor: pick(HAIR_COLORS),
+    outfit: legend ? '#1a0f0f' : outfit,
+    accent: legend ? '#ffd34d' : accent,
+    hair: pick(HAIRS),
+    hat: legend ? (r() < 0.5 ? 'crown' : 'gold') : pick(HATS),
+    face: pick(FACES),
+    intro: pick(INTROS),
+    beaten: pick(BEATENS),
+    gloat: pick(GLOATS),
+  };
+  generated.set(level, chef);
+  return chef;
+}

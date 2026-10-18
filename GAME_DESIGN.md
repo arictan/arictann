@@ -30,7 +30,8 @@ Inspired by what keeps players in Royal Match, Block Blast and Subway Surfers. E
 
 | System | How it works |
 |---|---|
-| **Chef Journey (50 levels)** | Beating a chef unlocks the next one for good. TAP TO PLAY continues from the furthest chef. The **Map** shows all 50 chefs on a winding path, and you can replay any unlocked chef. |
+| **Chef Journey (endless)** | Beating a chef unlocks the next one for good. TAP TO PLAY continues from the furthest chef. The **Map** shows the chefs on a winding path that keeps going, and you can replay any unlocked chef. Levels 1–50 are hand-made story chefs; every level after that gets a newly generated chef. |
+| **Star gates** | From level 11, every 10 levels has a gate that needs 2 stars per earlier level in total (20★ for level 11, 40★ for 21, 100★ for 51, and so on). A closed gate ends the run with a STAR GATE screen, so players replay earlier chefs for 3 stars instead of just surviving. |
 | **Stars** | Each chef awards 1–3 stars based on the share of PERFECT drops in their order (60%+ = 3 stars, 30%+ = 2 stars). The best result is kept, which gives a reason to replay. |
 | **Missions + Chef Rank** | Three missions are active at a time, such as "Land 15 PERFECTs", "Dodge 2 knife throws" or "Serve 2 Green Roll". Each pays 25 coins. Finishing all three raises **Chef Rank** (+5% coins forever, up to +100%) and deals a harder set. |
 | **"Your best" lines** | A gold dashed BEST line and a faint LAST line on the stack show your record and your previous run while you climb. |
@@ -131,7 +132,15 @@ The chance of help is the chef's kindness × 6% normally, × 15% with a combo, o
 | 49 | Grand Master Liang | Smaller PERFECT zone, 75% faster, surges, 2 extra |
 | 50 | Dragon Chef Tatsu | LEGEND: 80% faster, surges, smaller PERFECT zone, 3 extra |
 
-After level 50 the bosses repeat, 10% faster on each lap. Layer speed never exceeds 560 units/s. The chefs are friendly cartoon characters, each with different headwear, hair and outfit, and drawn in code like everything else.
+### Endless mode (level 51 and up)
+After the 50 story chefs, every level gets a new chef, generated from that level's number so it's always the same chef for everyone. Each has a mix of looks (hair, headwear, face, outfit), a name such as "Sensei Lan" or "Iron Chef Arun", catchphrases, and rules. **Every 10th level (60, 70, 80…) is a Legend boss** with a crown or gold headband, every rule turned on, and double chest coins.
+
+Difficulty keeps climbing, then levels off at a playable ceiling:
+- **Chef speed:** grows from 1.5× toward 1.9× (layer speed never exceeds 560 units/s).
+- **PERFECT zone:** it gets more likely that a chef has the small PERFECT zone (up to 85%).
+- **Attacks:** chefs get meaner (attack chance up to 50% per drop).
+- **Starting width:** shrinks from 200 after level 20, down to 140 by level 60. Wide Base still adds 60.
+- **Order length:** grows by 1 every 10 endless levels, to a maximum of 20 layers.
 
 ## Scenes (free)
 Each run plays through 10 backgrounds in a random order, and the scene crossfades to the next one every time an order is served:
