@@ -46,6 +46,32 @@ Inspired by what keeps players in Royal Match, Block Blast and Subway Surfers. E
 
 Real online leaderboards (Game Center and Google Play Games) need the store accounts set up first. See the README.
 
+## Live-ops update: 20 features from top games
+| # | Feature | Inspired by | In Sushi Stack |
+|---|---|---|---|
+| 1 | **Special layers** | Candy Crush specials | About 1 in 8 layers (from layer 3) is **Golden** (PERFECT = 3× coins), **Ice** (slides 60% faster), **Wasabi** (a missed drop burns 12 extra units) or **Mystery** (PERFECT = a free booster). During holidays the golden layer gets a seasonal name. |
+| 2 | **Fever** | Fruit Ninja, Subway Surfers | Every 10 PERFECTs in a row triggers 5 s of Fever: layers move at half speed, the PERFECT zone is 8 units wider, coins ×3, the screen glows gold and the music adds an arpeggio. Every 5th PERFECT gives a short slow-motion moment. |
+| 3 | **Game modes** | Block Blast | **Zen** (no game over, no chef attacks, 30% coins, END button). **Time Attack** (60 s, height = score). **40 Puzzles** (fixed layers, width and speed, with a slice budget; 1–3 stars by slices used). **Friend Challenge** (see #14). |
+| 4 | **Companions** | Subway Surfers, Crossy Road | 6 sous-chefs leveled with shards (10/15/25/40/60): 🐱 Neko catches knives · 🦝 Tanuki blocks soy · 🦉 Owl shows guide lines · 🦊 Kitsune +5–25% coins · 🐼 Panda slows the first layers · 🦢 Swan rebuilds a thin stack. 1 slot, 2 at Chef Rank 10. They sit on the counter. |
+| 5 | **Win streak** | Royal Match, Candy Crush | Journey runs that beat their first chef extend the streak: 3+ = hot start (3× combo), 5+ = steady hands, 8+ = a free Second Chance. A run that beats no chef resets it. |
+| 6 | **Restaurant** | Royal Match, Homescapes | Spend stars on 8 areas × 3 levels: Street Stall → Cozy Izakaya → Grand Sushi Palace → Michelin stars (endless). Each upgrade pays coins; each finished restaurant gives +5% coins forever and an exclusive item. Stars spent here never lower your star-gate total. |
+| 7 | **Sticker album** | Monopoly Go | 12 sets × 9 emoji stickers, with rarity 1–5★. 3 per pack, from chests, the daily gift, the Pass, the World Tour and the race. Duplicates become coins. Sets pay 150–700 coins; the full album pays 3,000 and the Album Master flag. A new album each Pass season. |
+| 8 | **Sushi Pass** | Brawl Stars; Google Play guide | 45-day seasons, 30 tiers × 100 XP. XP from chefs (15), missions (40), specials (50), gifts (20), PERFECTs (1) and flawless orders (+10). Free track plus a premium track ($4.99, test mode) ending in the Season Plate. |
+| 9 | **Streak freeze + mascot** | Duolingo | One free freeze each week (hold 2, or buy one for 150 coins) saves the gift streak after one missed day. Maki the cat sits on the gift button; streaks of 3/7/14/30/50/100 days are celebrated. |
+| 10 | **World Tour** | Subway Surfers | A new city every 21 days (Tokyo, Osaka, Seoul, Bangkok, Hong Kong, Taipei, Singapore), with its skyline and landmark as the first background of every run. Tokens (chefs +1, specials +3, missions +2) unlock 2 packs at 15, 400 coins at 35 and the city's plate at 60. |
+| 11 | **Holiday events** | Most top games | Lunar New Year, Cherry Blossom, Summer Fireworks, Spooky Sushi Night (Oct 15–Nov 2) and Winter: decorations over every background, seasonal golden layers, and a limited item at 40 tokens. |
+| 12 | **Sushi Sprint (daily race)** | Royal Match Lava Quest | Join, then beat 5 chefs in one run. 1,000 coins are split between you and the AI racers already finished, so finishing early pays more. Plus 2 sticker packs. |
+| 13 | **Sushi Cup (weekend)** | Royal Match King's Cup | Fri–Sun, best single-run height against 49 labelled AI rivals whose scores climb over the weekend. Prizes by rank (600 coins and the Cup Trophy flag for #1). |
+| 14 | **Share card + challenge code** | Wordle | Share an image of your stack with a code (seed-level-score). A friend who enters it plays the same seeded chefs, recipes and events, with your score as a FRIEND line. |
+| 15 | **Leaderboards** | Subway Surfers | A local screen with your records and the Cup standings. Online boards need Game Center / Play Games (see README). |
+| 16 | **Kitchen Crew** | Royal Match teams | A weekly team goal with 4 labelled AI crewmates: 60 orders = 300 coins, 120 = 3 packs, 200 = 10 shards. Real teams need a server. |
+| 17 | **Rewarded ads** | Most hit casual games | Optional only: **continue** a run once, **double** a run's coins, or open up to **3 free chests** a day. AdMob test ads on phones, a simulated test ad in the browser. VIP gets the rewards without ads. |
+| 18 | **Piggy bank** | Common in casual games | 15% of every run's coins drop into the piggy (up to 2,500). Break it for $2.99 (test mode). |
+| 19 | **Starter pack + VIP** | Most casual games | Starter Pack $1.99 once: 600 coins, 6 boosters and the Sakura Bento plate. VIP $4.99/month: rewards without ads, +60 coins and +1 free chest daily. No pay-only power. |
+| 20 | **Music + celebrations** | Duolingo, rhythm games | A generated koto-style tune whose tempo rises with your combo, with an extra layer in Fever. Confetti celebrations for 50/100/250/500/1000-layer runs, rank-ups, streaks, sets, restaurants and companions. Music and sound switch on and off separately in More. |
+
+**Home screen:** a big PLAY button, chips for win streak, daily streak (with freezes) and Chef Rank, the gift with Maki the cat, MODES, the Daily Special, missions, an event ticker, and a bottom bar (Map, Events, Shop, Restaurant, More) with red dots when something is ready to claim.
+
 ## Levels and boss chefs
 Each order is a level, and each level has a boss chef who watches you work. The chef:
 - moves left and right to follow the sliding layer, watching it and pointing at it,

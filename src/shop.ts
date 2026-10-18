@@ -1,7 +1,7 @@
 // Everything players can spend coins on. Backgrounds are free and rotate during play, so coins go to these.
 
-export type Cat = 'booster' | 'plate' | 'flag' | 'set' | 'fx';
-export type Cosmetic = Exclude<Cat, 'booster'>;
+export type Cat = 'deals' | 'booster' | 'plate' | 'flag' | 'set' | 'fx';
+export type Cosmetic = Exclude<Cat, 'booster' | 'deals'>;
 
 export interface Item { id: string; name: string; price: number; earn?: string } // `earn` = exclusive: can't be bought, only earned
 
@@ -22,10 +22,16 @@ export const BOOSTERS: Booster[] = [
   { id: 'streak', name: 'Hot Streak', desc: 'Start on a 3x combo', price: 35, color: '#e63946', glyph: '3x' },
 ];
 
-export type PlateId = 'classic' | 'geta' | 'slate' | 'bamboo' | 'wave' | 'gold' | 'marble' | 'sakura' | 'neon' | 'lacquer' | 'ice' | 'diamond' | 'dragon';
+// World Tour city plates: [id, name, colour 1, colour 2].
+export const CITY_PLATES: [string, string, string, string][] = [
+  ['tokyo', 'Tokyo', '#ff3b3b', '#ffffff'], ['osaka', 'Osaka', '#e9c46a', '#264653'], ['seoul', 'Seoul', '#4cc9f0', '#3a0ca3'],
+  ['bangkok', 'Bangkok', '#ffd60a', '#9d0208'], ['hongkong', 'Hong Kong', '#90e0ef', '#03045e'], ['taipei', 'Taipei', '#16c79a', '#f6c90e'],
+  ['singapore', 'Singapore', '#ffd166', '#ef476f'],
+];
+
 
 // Cosmetic: the plate your roll sits on.
-export const PLATES: (Item & { id: PlateId })[] = [
+export const PLATES: Item[] = [
   { id: 'classic', name: 'Classic Plate', price: 0 },
   { id: 'geta', name: 'Wooden Geta', price: 60 },
   { id: 'slate', name: 'Black Slate', price: 100 },
@@ -39,12 +45,17 @@ export const PLATES: (Item & { id: PlateId })[] = [
   { id: 'neon', name: 'Neon Tray', price: 600 },
   { id: 'diamond', name: 'Diamond Plate', price: 900 },
   { id: 'dragon', name: 'Dragon Plate', price: 0, earn: '10 chest pieces' },
+  { id: 'starter', name: 'Sakura Bento', price: 0, earn: 'Starter Pack' },
+  { id: 'stall', name: 'Street Stall Plate', price: 0, earn: 'Finish the Street Stall' },
+  { id: 'season', name: 'Season Plate', price: 0, earn: 'Sushi Pass premium, tier 30' },
+  { id: 'hanami', name: 'Hanami Plate', price: 0, earn: 'Cherry Blossom Festival' },
+  { id: 'snowflake', name: 'Snowflake Plate', price: 0, earn: 'Winter Holidays event' },
+  ...CITY_PLATES.map(([id, name]) => ({ id: `city-${id}`, name: `${name} Plate`, price: 0, earn: `World Tour: ${name}` })),
 ];
 
-export type FlagId = 'pennant' | 'star' | 'heart' | 'fish' | 'crown' | 'lantern' | 'fan' | 'rainbow' | 'week';
 
 // Cosmetic: the pick planted on the stack for every served order.
-export const FLAGS: (Item & { id: FlagId })[] = [
+export const FLAGS: Item[] = [
   { id: 'pennant', name: 'Pennant', price: 0 },
   { id: 'heart', name: 'Heart Pick', price: 40 },
   { id: 'star', name: 'Star Pick', price: 70 },
@@ -54,6 +65,10 @@ export const FLAGS: (Item & { id: FlagId })[] = [
   { id: 'rainbow', name: 'Rainbow Flag', price: 300 },
   { id: 'crown', name: 'Crown Pick', price: 500 },
   { id: 'week', name: 'Golden Week', price: 0, earn: '7-day gift streak' },
+  { id: 'noren', name: 'Noren Flag', price: 0, earn: 'Finish the Cozy Izakaya' },
+  { id: 'lunar', name: 'Lucky Red Flag', price: 0, earn: 'Lunar New Year event' },
+  { id: 'trophy', name: 'Cup Trophy', price: 0, earn: 'Win a weekend Sushi Cup' },
+  { id: 'album', name: 'Album Master', price: 0, earn: 'Complete a sticker album' },
 ];
 
 export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg';
@@ -71,7 +86,7 @@ export const SETS: (Item & { colors: Partial<Record<Ingredient, string>> })[] = 
   { id: 'legend', name: 'Legend', price: 0, earn: 'Beat level 50', colors: { rice: '#fdf0d5', nori: '#14080e', salmon: '#c1121f', tuna: '#780000', avocado: '#ffd34d', cucumber: '#e09f3e', egg: '#fff3b0' } },
 ];
 
-export type Shape = 'square' | 'heart' | 'star' | 'petal' | 'coin' | 'bubble' | 'fire' | 'bolt';
+export type Shape = 'square' | 'heart' | 'star' | 'petal' | 'coin' | 'bubble' | 'fire' | 'bolt' | 'bat';
 
 // Cosmetic: what bursts out of a PERFECT drop.
 export const EFFECTS: (Item & { shape: Shape; colors: string[] })[] = [
@@ -84,11 +99,15 @@ export const EFFECTS: (Item & { shape: Shape; colors: string[] })[] = [
   { id: 'fire', name: 'Fire', price: 500, shape: 'fire', colors: ['#ff6b1a', '#ffb703', '#ff3d3d'] },
   { id: 'bolt', name: 'Lightning', price: 800, shape: 'bolt', colors: ['#fff04a', '#9fe3ff'] },
   { id: 'phoenix', name: 'Phoenix', price: 0, earn: '25 chest pieces', shape: 'fire', colors: ['#ff006e', '#ffbe0b', '#8338ec', '#fb5607'] },
+  { id: 'goldleaf', name: 'Gold Leaf', price: 0, earn: 'Finish the Grand Sushi Palace', shape: 'petal', colors: ['#ffd34d', '#f2b705', '#fff3b0'] },
+  { id: 'fireworks', name: 'Fireworks', price: 0, earn: 'Summer Fireworks event', shape: 'star', colors: ['#ff006e', '#4cc9f0', '#ffd60a', '#80ffdb'] },
+  { id: 'bats', name: 'Bat Swarm', price: 0, earn: 'Spooky Sushi Night event', shape: 'bat', colors: ['#2b2d42', '#ff7b00'] },
 ];
 
 export const CATALOG: Record<Cosmetic, Item[]> = { plate: PLATES, flag: FLAGS, set: SETS, fx: EFFECTS };
 
 export const TABS: { cat: Cat; label: string; hint: string }[] = [
+  { cat: 'deals', label: 'DEALS', hint: 'Packs, VIP, piggy bank and free chests' },
   { cat: 'booster', label: 'BOOST', hint: 'Used up on your next run' },
   { cat: 'plate', label: 'PLATES', hint: 'Your roll sits on it' },
   { cat: 'flag', label: 'FLAGS', hint: 'Planted for every served order' },
@@ -291,12 +310,55 @@ export function drawPlate(ctx: CanvasRenderingContext2D, id: string, cx: number,
       ctx.stroke();
       break;
     }
-    default:
+    case 'starter':
+    case 'hanami':
+    case 'snowflake':
+    case 'stall':
+    case 'season': {
+      const look: Record<string, [string, string, string]> = {
+        starter: ['#2b1b17', '#ff8fb8', '#ffd6e5'], hanami: ['#ffe5ec', '#ff5d8f', '#ffffff'], snowflake: ['#e0f7ff', '#4cc9f0', '#ffffff'],
+        stall: ['#c8553d', '#2d1e2f', '#f4d35e'], season: ['#3c096c', '#ffd34d', '#e0aaff'],
+      };
+      const [base, trim, dot] = look[id];
+      ctx.fillStyle = base;
+      rr(ctx, x, y, w, h, 6 * s);
+      ctx.fill();
+      ctx.strokeStyle = trim;
+      ctx.lineWidth = 2 * s;
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const dx = x + (20 + i * 33) * s;
+        if (id === 'snowflake') drawShape(ctx, 'star', dx, y + 7 * s, 3.5 * s, dot, 0);
+        else if (id === 'stall') ctx.fillRect(dx - 6 * s, y + 5 * s, 12 * s, 3 * s);
+        else drawShape(ctx, id === 'season' ? 'star' : 'petal', dx, y + 7 * s, 3.5 * s, dot, i);
+      }
+      break;
+    }
+    default: {
+      const city = CITY_PLATES.find(([c]) => id === `city-${c}`);
+      if (city) {
+        const g = ctx.createLinearGradient(x, y, x + w, y);
+        g.addColorStop(0, city[2]);
+        g.addColorStop(1, city[3]);
+        ctx.fillStyle = g;
+        rr(ctx, x, y, w, h, 7 * s);
+        ctx.fill();
+        ctx.strokeStyle = '#ffd34d';
+        ctx.lineWidth = 1.6 * s;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = `900 ${9 * s}px system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(city[1].toUpperCase(), cx, y + 7.5 * s);
+        break;
+      }
       ctx.fillStyle = '#f4f7fb';
       rr(ctx, x, y, w, h, 7 * s);
       ctx.fill();
       ctx.fillStyle = '#3d6fb6';
       ctx.fillRect(x + 12 * s, y + 9 * s, w - 24 * s, 2 * s);
+    }
   }
 }
 
@@ -384,6 +446,35 @@ export function drawFlag(ctx: CanvasRenderingContext2D, id: string, x: number, y
       });
       break;
     }
+    case 'noren':
+      ['#2d1e2f', '#c8553d', '#2d1e2f'].forEach((c, i) => {
+        ctx.fillStyle = c;
+        ctx.fillRect(x + i * 7, ty - 1, 6, 16);
+      });
+      break;
+    case 'lunar':
+      ctx.fillStyle = '#d00000';
+      ctx.fillRect(x, ty - 1, 20, 14);
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.arc(x + 10, ty + 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'trophy':
+      ctx.fillStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.moveTo(x - 8, ty - 6);
+      ctx.lineTo(x + 8, ty - 6);
+      ctx.quadraticCurveTo(x + 8, ty + 6, x, ty + 7);
+      ctx.quadraticCurveTo(x - 8, ty + 6, x - 8, ty - 6);
+      ctx.fill();
+      ctx.fillRect(x - 4, ty + 7, 8, 3);
+      break;
+    case 'album':
+      ctx.fillStyle = '#7b2cbf';
+      ctx.fillRect(x, ty - 2, 18, 14);
+      drawShape(ctx, 'star', x + 9, ty + 5, 5, '#ffd34d', 0);
+      break;
     case 'week':
       ctx.fillStyle = '#ffd34d';
       ctx.fillRect(x, ty - 1, 20, 13);
@@ -455,6 +546,17 @@ export function drawShape(ctx: CanvasRenderingContext2D, shape: Shape, x: number
       ctx.moveTo(x, y - size * 1.3);
       ctx.quadraticCurveTo(x + size, y, x, y + size * 0.7);
       ctx.quadraticCurveTo(x - size, y, x, y - size * 1.3);
+      ctx.fill();
+      break;
+    case 'bat':
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x - size * 0.6, y - size * 0.9, x - size * 1.3, y - size * 0.3);
+      ctx.quadraticCurveTo(x - size * 0.8, y - size * 0.1, x - size * 0.6, y + size * 0.3);
+      ctx.quadraticCurveTo(x - size * 0.3, y, x, y + size * 0.3);
+      ctx.quadraticCurveTo(x + size * 0.3, y, x + size * 0.6, y + size * 0.3);
+      ctx.quadraticCurveTo(x + size * 0.8, y - size * 0.1, x + size * 1.3, y - size * 0.3);
+      ctx.quadraticCurveTo(x + size * 0.6, y - size * 0.9, x, y);
       ctx.fill();
       break;
     case 'bolt':

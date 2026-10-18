@@ -75,9 +75,45 @@ export class Progress {
   specialDay = save.json('special.day', '');
   lastRun = save.json('lastRun', 0);
 
+  // ---- added with the live-ops update
+  starPool: number = save.json('starPool', -1); // stars to spend on the restaurant (earning stars adds here too)
+  restaurant = save.json('restaurant', { r: 0, levels: [0, 0, 0, 0, 0, 0, 0, 0], michelin: 0 });
+  shards: Record<string, number> = save.json('shards', {});
+  companions: string[] = save.json('companions.equipped', []);
+  album = save.json('album', { season: 0, have: [] as number[][], setsDone: [] as number[], done: false });
+  pass = save.json('pass', { season: 0, xp: 0, free: [] as number[], prem: [] as number[], premium: false });
+  tour = save.json('tour', { key: '', tokens: 0, claimed: [] as number[] });
+  holiday = save.json('holidayEvent', { key: '', tokens: 0, claimed: false });
+  race = save.json('race', { day: '', joined: false, best: 0, finished: false, reward: 0, claimed: false });
+  cup = save.json('cup', { key: '', best: 0, claimed: false });
+  crew = save.json('crew', { key: '', mine: 0, claimed: [] as number[] });
+  winStreak = save.json('winStreak', 0);
+  freezes = save.json('freezes', 1);
+  freezeWeek = save.json('freezeWeek', '');
+  zenBest = save.json('zenBest', 0);
+  timeBest = save.json('timeBest', 0);
+  puzzleStars: number[] = save.json('puzzleStars', []);
+  vipUntil = save.json('vipUntil', 0);
+  starterBought = save.json('starterBought', false);
+  piggy = save.json('piggy', 0);
+  ads = save.json('ads', { day: '', chests: 0, vipChest: false });
+  streakMilestone = save.json('streakMilestone', 0); // highest daily-streak milestone celebrated
+
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
     if (this.weekly.week !== weekKey()) this.weekly = { week: weekKey(), best: 0, claimed: [] };
+    if (this.starPool < 0) this.starPool = this.totalStars; // first load after the update: stars already earned can be spent
+    // One free streak freeze every week, holding at most two.
+    if (this.freezeWeek !== weekKey()) {
+      this.freezeWeek = weekKey();
+      this.freezes = Math.min(2, this.freezes + 1);
+    }
+    if (this.ads.day !== dayKey()) this.ads = { day: dayKey(), chests: 0, vipChest: false };
+    this.persist();
+  }
+
+  get vip(): boolean {
+    return Date.now() < this.vipUntil;
   }
 
   persist(): void {
@@ -93,6 +129,28 @@ export class Progress {
     save.setJson('weekly', this.weekly);
     save.setJson('special.day', this.specialDay);
     save.setJson('lastRun', this.lastRun);
+    save.setJson('starPool', this.starPool);
+    save.setJson('restaurant', this.restaurant);
+    save.setJson('shards', this.shards);
+    save.setJson('companions.equipped', this.companions);
+    save.setJson('album', this.album);
+    save.setJson('pass', this.pass);
+    save.setJson('tour', this.tour);
+    save.setJson('holidayEvent', this.holiday);
+    save.setJson('race', this.race);
+    save.setJson('cup', this.cup);
+    save.setJson('crew', this.crew);
+    save.setJson('winStreak', this.winStreak);
+    save.setJson('freezes', this.freezes);
+    save.setJson('freezeWeek', this.freezeWeek);
+    save.setJson('zenBest', this.zenBest);
+    save.setJson('timeBest', this.timeBest);
+    save.setJson('puzzleStars', this.puzzleStars);
+    save.setJson('vipUntil', this.vipUntil);
+    save.setJson('starterBought', this.starterBought);
+    save.setJson('piggy', this.piggy);
+    save.setJson('ads', this.ads);
+    save.setJson('streakMilestone', this.streakMilestone);
   }
 
   /** Permanent coin bonus from Chef Rank: +5% per rank, up to double. */
@@ -179,7 +237,9 @@ export class Progress {
   /** Returns true the first time this chef is beaten (a new chef card). */
   beat(level: number, stars: number): boolean {
     const first = !this.stars[level - 1];
-    this.stars[level - 1] = Math.max(this.stars[level - 1] || 0, stars);
+    const before = this.stars[level - 1] || 0;
+    if (stars > before) this.starPool += stars - before; // only improvements add spendable stars
+    this.stars[level - 1] = Math.max(before, stars);
     this.unlocked = Math.max(this.unlocked, level + 1);
     this.persist();
     return first;

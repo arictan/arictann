@@ -62,6 +62,20 @@ Apple builds require a Mac with Xcode.
    **App Privacy → "Data Not Collected"**. Encryption export compliance is already answered: `ITSAppUsesNonExemptEncryption = NO`.
 5. Test the build through TestFlight, then submit it for review.
 
+### Ads (AdMob) — test mode until you set it up
+The game ships with Google's **public test** ad IDs, so test ads play on phones and nothing earns money yet. Before release:
+1. Create an app and a **Rewarded** ad unit at https://admob.google.com.
+2. Put your rewarded ad unit IDs in `src/monetize.ts` (`REWARDED_AD_ID`) and set `ADS_TESTING = false`.
+3. Replace the test **app IDs** in `android/app/src/main/AndroidManifest.xml` (`com.google.android.gms.ads.APPLICATION_ID`) and `ios/App/App/Info.plist` (`GADApplicationIdentifier`).
+4. On iOS, if you show personalized ads, add App Tracking Transparency (`NSUserTrackingUsageDescription`). Update `PRIVACY.md` and the store privacy forms.
+
+### In-app purchases (RevenueCat) — test mode until you set it up
+In the browser and in dev builds, purchases are simulated, and the screen says so. In a release build without setup, purchase buttons explain that purchases aren't available yet. To go live:
+1. Create these products in App Store Connect and the Google Play Console: `sushistack.starter` (non-consumable), `sushistack.vip.monthly` (auto-renewing subscription), `sushistack.piggy` (consumable) and `sushistack.pass.premium` (non-consumable, or one per season).
+2. Create a project at https://www.revenuecat.com, connect both stores, and add the products.
+3. Paste your RevenueCat public SDK key into `REVENUECAT_API_KEY` in `src/monetize.ts`.
+4. Consider restoring purchases and handling the VIP subscription status from RevenueCat entitlements (the game currently grants 30 days of VIP per purchase).
+
 ### 3. Optional: online leaderboards
 The game keeps local records (top 10 runs and a weekly challenge). To add real leaderboards, first set up the store accounts:
 - **iOS:** enable *Game Center* for the app in App Store Connect, create a leaderboard (for example `best_height`), and add the Game Center capability in Xcode.

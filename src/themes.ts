@@ -1,6 +1,6 @@
 // Backgrounds, all free: the game moves to the next one each time an order is served. Each is a sky gradient, a counter colour and an animated decoration.
 
-export type Decor = 'lanterns' | 'petals' | 'bubbles' | 'snow' | 'fireflies' | 'neon' | 'sunset' | 'rain' | 'fuji' | 'gold';
+export type Decor = 'lanterns' | 'petals' | 'bubbles' | 'snow' | 'fireflies' | 'neon' | 'sunset' | 'rain' | 'fuji' | 'gold' | 'skyline';
 
 export interface Theme {
   id: string;
@@ -9,6 +9,7 @@ export interface Theme {
   counter: string;
   counterEdge: string;
   decor: Decor;
+  city?: { accent: string; building: string; landmark: string }; // World Tour skylines
 }
 
 export const THEMES: Theme[] = [
@@ -263,6 +264,104 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, t: Theme, specks: Sp
       break;
     }
 
+    case 'skyline': {
+      const c = t.city!;
+      // Moon or sun, then two layers of buildings with lit windows, then the city's landmark.
+      ctx.fillStyle = 'rgba(255,240,200,0.8)';
+      ctx.beginPath();
+      ctx.arc(x0 + w * 0.78, h * 0.22 - camY * 0.02, 26 * k, 0, Math.PI * 2);
+      ctx.fill();
+      const base = h - camY * 0.05;
+      for (let layer = 0; layer < 2; layer++) {
+        ctx.fillStyle = layer === 0 ? c.building + 'aa' : c.building;
+        for (let i = 0; i < 12; i++) {
+          const s2 = specks[(i + layer * 12) % specks.length];
+          const bw = (24 + s2.r * 30) * k;
+          const bh = (60 + s2.z * 260 * (layer ? 0.7 : 1)) * k;
+          const bx = x0 + ((i / 12) * w + layer * 17 * k) % w;
+          ctx.fillRect(bx, base - bh, bw, bh);
+          ctx.fillStyle = 'rgba(255,230,150,0.55)';
+          for (let wy = base - bh + 8 * k; wy < base - 8 * k; wy += 14 * k) {
+            for (let wx = bx + 4 * k; wx < bx + bw - 6 * k; wx += 9 * k) if ((wx * 7 + wy * 3) % 5 < 2) ctx.fillRect(wx, wy, 4 * k, 6 * k);
+          }
+          ctx.fillStyle = layer === 0 ? c.building + 'aa' : c.building;
+        }
+      }
+      const lx = x0 + w * 0.3;
+      ctx.fillStyle = c.accent;
+      ctx.strokeStyle = c.accent;
+      ctx.lineWidth = 3 * k;
+      switch (c.landmark) {
+        case 'tower': // lattice tower
+          ctx.beginPath();
+          ctx.moveTo(lx - 30 * k, base);
+          ctx.lineTo(lx, base - 300 * k);
+          ctx.lineTo(lx + 30 * k, base);
+          ctx.stroke();
+          for (let i = 1; i < 6; i++) {
+            const yy = base - i * 50 * k;
+            const half = 30 * k * (1 - i / 6);
+            ctx.beginPath();
+            ctx.moveTo(lx - half, yy);
+            ctx.lineTo(lx + half, yy);
+            ctx.stroke();
+          }
+          break;
+        case 'castle':
+          for (let i = 0; i < 3; i++) {
+            const yy = base - 120 * k - i * 40 * k;
+            const half = (60 - i * 15) * k;
+            ctx.beginPath();
+            ctx.moveTo(lx - half - 10 * k, yy);
+            ctx.lineTo(lx, yy - 26 * k);
+            ctx.lineTo(lx + half + 10 * k, yy);
+            ctx.fill();
+            ctx.fillRect(lx - half * 0.7, yy, half * 1.4, 40 * k);
+          }
+          break;
+        case 'needle':
+          ctx.fillRect(lx - 4 * k, base - 280 * k, 8 * k, 280 * k);
+          ctx.beginPath();
+          ctx.ellipse(lx, base - 230 * k, 22 * k, 10 * k, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'temple':
+          ctx.beginPath();
+          ctx.moveTo(lx - 50 * k, base);
+          ctx.lineTo(lx - 20 * k, base - 120 * k);
+          ctx.lineTo(lx, base - 260 * k);
+          ctx.lineTo(lx + 20 * k, base - 120 * k);
+          ctx.lineTo(lx + 50 * k, base);
+          ctx.fill();
+          break;
+        case 'towers':
+          ctx.fillRect(lx - 20 * k, base - 300 * k, 22 * k, 300 * k);
+          ctx.fillRect(lx + 10 * k, base - 240 * k, 26 * k, 240 * k);
+          ctx.beginPath();
+          ctx.moveTo(lx - 20 * k, base - 300 * k);
+          ctx.lineTo(lx - 9 * k, base - 330 * k);
+          ctx.lineTo(lx + 2 * k, base - 300 * k);
+          ctx.fill();
+          break;
+        case 'stack':
+          for (let i = 0; i < 8; i++) {
+            const yy = base - (i + 1) * 34 * k;
+            ctx.beginPath();
+            ctx.moveTo(lx - 22 * k, yy + 34 * k);
+            ctx.lineTo(lx - 28 * k, yy);
+            ctx.lineTo(lx + 28 * k, yy);
+            ctx.lineTo(lx + 22 * k, yy + 34 * k);
+            ctx.fill();
+          }
+          ctx.fillRect(lx - 2 * k, base - 330 * k, 4 * k, 60 * k);
+          break;
+        case 'bay':
+          for (let i = 0; i < 3; i++) ctx.fillRect(lx - 50 * k + i * 38 * k, base - 210 * k, 22 * k, 210 * k);
+          ctx.fillRect(lx - 60 * k, base - 225 * k, 120 * k, 14 * k);
+          break;
+      }
+      break;
+    }
     case 'gold':
       for (const s of specks) {
         const x = x0 + s.x * w;
@@ -282,4 +381,101 @@ export function drawBackdrop(ctx: CanvasRenderingContext2D, t: Theme, specks: Sp
       break;
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * Seasonal decorations drawn over any background while a holiday event runs:
+ * lunar (red lanterns and falling gold coins), hanami (blossoms), fireworks, halloween (bats and
+ * pumpkins) and winter (snow and gifts).
+ */
+export function drawHolidayOverlay(ctx: CanvasRenderingContext2D, decor: string, specks: Speck[], time: number, camY: number, x0: number, w: number, h: number): void {
+  const span = h + 80;
+  const yOf = (s: Speck, drift: number) => (((s.y * span - camY * s.z + drift) % span) + span) % span - 40;
+  ctx.save();
+  switch (decor) {
+    case 'lunar':
+      for (const s of specks.slice(0, 18)) {
+        const y = yOf(s, time * 50 * (0.5 + s.z));
+        const x = x0 + s.x * w + Math.sin(time + s.r * 9) * 10;
+        ctx.globalAlpha = 0.5 + s.z;
+        ctx.fillStyle = '#ffd34d';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 5 * Math.abs(Math.cos(time * 3 + s.r * 9)) + 1, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case 'hanami':
+      for (const s of specks.slice(0, 40)) {
+        const y = yOf(s, time * 45 * (0.5 + s.z));
+        const x = x0 + ((s.x * w + Math.sin(time + s.r * 9) * 30) % w + w) % w;
+        ctx.globalAlpha = 0.6 + s.z * 0.6;
+        ctx.fillStyle = s.r < 0.5 ? '#ffd1e3' : '#ff8fb8';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 6, 3.4, time * 2 + s.r * 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    case 'fireworks':
+      for (let i = 0; i < 3; i++) {
+        const t = (time * 0.6 + i / 3) % 1;
+        const fx = x0 + w * (0.2 + i * 0.3);
+        const fy = h * (0.18 + (i % 2) * 0.12);
+        const hue = (i * 120 + Math.floor(time * 0.6 + i / 3) * 70) % 360;
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = `hsl(${hue} 100% 65%)`;
+        for (let k = 0; k < 14; k++) {
+          const a = (k / 14) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.arc(fx + Math.cos(a) * t * 60, fy + Math.sin(a) * t * 60 + t * t * 20, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      break;
+    case 'halloween':
+      for (const s of specks.slice(0, 10)) {
+        const x = x0 + ((s.x * w + time * 30 * (s.r - 0.5)) % w + w) % w;
+        const y = yOf(s, Math.sin(time * 2 + s.r * 10) * 20);
+        const flap = Math.sin(time * 12 + s.r * 20) * 0.5 + 0.5;
+        ctx.globalAlpha = 0.6 + s.z;
+        ctx.fillStyle = '#1b1b1b';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x - 8, y - 8 * flap - 2, x - 16, y - 2);
+        ctx.quadraticCurveTo(x - 8, y + 2, x, y + 4);
+        ctx.quadraticCurveTo(x + 8, y + 2, x + 16, y - 2);
+        ctx.quadraticCurveTo(x + 8, y - 8 * flap - 2, x, y);
+        ctx.fill();
+      }
+      // Pumpkins glowing along the bottom edge.
+      for (let i = 0; i < 4; i++) {
+        const px = x0 + w * (0.08 + i * 0.28);
+        const py = h - 26;
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = '#ff7b00';
+        ctx.beginPath();
+        ctx.ellipse(px, py, 16, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#2d6a4f';
+        ctx.fillRect(px - 2, py - 16, 4, 6);
+        ctx.fillStyle = `rgba(255,230,120,${0.6 + 0.4 * Math.sin(time * 6 + i)})`;
+        ctx.beginPath();
+        ctx.moveTo(px - 8, py - 3); ctx.lineTo(px - 4, py - 7); ctx.lineTo(px - 2, py - 2); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(px + 8, py - 3); ctx.lineTo(px + 4, py - 7); ctx.lineTo(px + 2, py - 2); ctx.fill();
+        ctx.fillRect(px - 6, py + 3, 12, 3);
+      }
+      break;
+    case 'winter':
+      ctx.fillStyle = '#ffffff';
+      for (const s of specks.slice(0, 40)) {
+        const y = yOf(s, time * 35 * (0.5 + s.z));
+        const x = x0 + ((s.x * w + Math.sin(time + s.r * 9) * 14) % w + w) % w;
+        ctx.globalAlpha = 0.5 + s.z;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5 + s.z * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+  }
+  ctx.restore();
 }
