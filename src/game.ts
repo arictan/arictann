@@ -128,7 +128,10 @@ export class Game {
   private toast: { text: string; life: number } | null = null;
 
   // Boss chef for the current level. One level = one order.
-  private chefX = WORLD_W / 2;
+  private chefX = 60;
+  private chefSide = -1; // -1 = left edge, 1 = right edge; the chef walks across now and then
+  private sinceSwitch = 0;
+  private dish: { recipe: Recipe; t: number; from: { x: number; y: number }; side: number; look: number; ate: boolean } | null = null; // served-order animation
   private reaction: { mood: Mood; life: number } | null = null;
   private bubble: { text: string; life: number } | null = null;
   private introIn = 0; // seconds until the next chef is announced
@@ -229,6 +232,7 @@ export class Game {
     this.bubble = { text: c.intro, life: 2.2 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
+    this.switchSides();
   }
 
   private get theme(): Theme {
@@ -257,6 +261,9 @@ export class Game {
     this.projectiles = [];
     this.splats = [];
     this.banner = null;
+    this.dish = null;
+    this.chefSide = -1;
+    this.chefX = this.chefHome(-1);
     this.newOrder();
     this.spawnMoving();
     this.camY = this.targetCam();
@@ -449,6 +456,8 @@ export class Game {
     if (this.steady > 0) this.steady--;
     this.sinceEvent++;
     const served = this.height - this.order.start >= this.order.length;
+    // The new boss switches sides on arrival, so only walk across mid-order.
+    if (++this.sinceSwitch >= 5 && !this.event && !served) this.switchSides();
     if (served) this.serve();
     this.moveDir *= -1;
     this.spawnMoving();
@@ -487,12 +496,33 @@ export class Game {
     if (bad) haptic.light();
   }
 
+  // The chef fills the space between the top bar and the top of the stack, which the camera keeps
+  // at 48% of the screen height, so they never sit over the blocks.
   private bossScale(): number {
-    return Math.max(1.4, Math.min(2, this.viewH / 430));
+    return Math.max(1.1, Math.min(1.9, (this.viewH * 0.48 - 110 - this.insets.top) / 136));
   }
 
   private bossY(): number {
-    return this.insets.top + 140 + 62 * this.bossScale();
+    return this.viewH * 0.48 - 70 - 70 * this.bossScale();
+  }
+
+  private chefHome(side: number): number {
+    const edge = 34 * this.bossScale();
+    return side < 0 ? edge : WORLD_W - edge;
+  }
+
+  /** The order card sits on the side away from the chef and slides over as they cross. */
+  private cardX(): number {
+    const left = this.chefHome(-1);
+    const right = this.chefHome(1);
+    const t = Math.max(0, Math.min(1, (this.chefX - left) / (right - left)));
+    const w = 236;
+    return (WORLD_W - 12 - w) * (1 - t) + 12 * t;
+  }
+
+  private switchSides(): void {
+    this.chefSide = -this.chefSide;
+    this.sinceSwitch = 0;
   }
 
   private runEvent(kind: Attack | Help): void {
@@ -630,8 +660,9 @@ export class Game {
     const coins = Math.max(1, Math.round(this.order.reward * 2));
     this.ordersServed++;
     this.banner = null;
+    // The finished roll pops up, then drops down to a customer at the bottom corner.
+    this.dish = { recipe: this.order.recipe, t: 0, from: { x: top.x + top.w / 2, y: top.y - this.camY - 30 }, side: -this.chefSide, look: Math.random(), ate: false };
     this.flags.push({ x: top.x + top.w / 2, y: top.y, hue: (this.ordersServed * 47) % 360 });
-    this.popup(WORLD_W / 2, top.y - 60, `${this.order.recipe.name} served!`, '#ffffff', 22);
     this.addCoins(coins + 5 * this.ordersServed, WORLD_W / 2, top.y - 34, `${CHEFS[(this.ordersServed - 1) % CHEFS.length].name} beaten!`);
     this.react('happy', 1.2, CHEFS[(this.ordersServed - 1) % CHEFS.length].beaten);
     // A new scene for every order served.
@@ -739,11 +770,16 @@ export class Game {
     if (this.banner && (this.banner.life -= dt) <= 0) this.banner = null;
     for (const sp of this.splats) sp.life -= dt;
     this.splats = this.splats.filter((sp) => sp.life > 0);
-    // The chef shuffles left and right to keep the sliding layer in view.
-    if (this.moving && this.mode === 'playing') {
-      const margin = 45 * this.bossScale();
-      const target = Math.max(margin, Math.min(WORLD_W - margin, this.moving.x + this.moving.w / 2));
-      this.chefX += (target - this.chefX) * Math.min(1, dt * 2.5);
+    // The chef keeps to one side, walking across when they switch.
+    this.chefX += (this.chefHome(this.chefSide) - this.chefX) * Math.min(1, dt * 3);
+    if (this.dish) {
+      this.dish.t += dt;
+      if (!this.dish.ate && this.dish.t >= 1.65) {
+        this.dish.ate = true;
+        sfx.perfect(6);
+        haptic.success();
+      }
+      if (this.dish.t > 3.2) this.dish = null;
     }
     this.popups = this.popups.filter((pp) => pp.life > 0);
     this.shake = Math.max(0, this.shake - dt * 30);
@@ -986,28 +1022,31 @@ export class Game {
     const c = this.chef;
     const e = this.event;
     const chestY = y + 42 * s;
-    if (this.banner && this.mode === 'playing' && !e) {
-      // New boss: level banner across the chef's chest.
-      const bx = Math.max(110, Math.min(WORLD_W - 110, x));
+    if (this.banner && this.mode === 'playing') {
+      // New boss: level banner under the order card, on the side away from the chef.
+      const bx = this.cardX() + 118;
+      const byc = this.insets.top + 182;
       ctx.globalAlpha = Math.min(1, this.banner.life * 3);
       ctx.fillStyle = 'rgba(20,10,25,0.85)';
-      this.roundRect(bx - 105, chestY - 26, 210, 52, 14);
+      this.roundRect(bx - 105, byc - 26, 210, 52, 14);
       ctx.fill();
-      this.text(this.banner.title, bx, chestY - 9, 22, '#ffffff', 900);
-      this.text(this.banner.sub, bx, chestY + 13, 12, '#ffd34d', 700);
+      this.text(this.banner.title, bx, byc - 9, 22, '#ffffff', 900);
+      this.text(this.banner.sub, bx, byc + 13, 12, '#ffd34d', 700);
       ctx.globalAlpha = 1;
-    } else if (!e || this.mode !== 'playing') {
+    }
+    if (!e || this.mode !== 'playing') {
       // Name badge pinned on the uniform.
       const tag = c.name.toUpperCase();
       ctx.font = '800 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       const tw = ctx.measureText(tag).width + 16;
+      const tx = Math.max(tw / 2 + 4, Math.min(WORLD_W - tw / 2 - 4, x));
       ctx.fillStyle = c.accent;
-      this.roundRect(x - tw / 2, chestY - 9, tw, 18, 9);
+      this.roundRect(tx - tw / 2, chestY - 9, tw, 18, 9);
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.8)';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      this.text(tag, x, chestY + 1, 11, '#ffffff', 800);
+      this.text(tag, tx, chestY + 1, 11, '#ffffff', 800);
     }
 
     // Warning (attack) or good-news (help) label while the chef winds up.
@@ -1015,11 +1054,11 @@ export class Game {
       const label = e.bad ? ATTACK_INFO[e.kind as Attack].label : HELP_INFO[e.kind as Help].label;
       const ly = chestY;
       const pulse = 1 + 0.08 * Math.sin(this.time * 20);
-      ctx.save();
-      ctx.translate(x, ly);
-      ctx.scale(pulse, pulse);
       ctx.font = '900 16px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       const lw = ctx.measureText(label).width + 26;
+      ctx.save();
+      ctx.translate(Math.max(lw / 2 + 8, Math.min(WORLD_W - lw / 2 - 8, x)), ly);
+      ctx.scale(pulse, pulse);
       ctx.fillStyle = e.bad ? '#e63946' : '#2a9d5c';
       this.roundRect(-lw / 2, -15, lw, 30, 15);
       ctx.fill();
@@ -1028,12 +1067,12 @@ export class Game {
     }
 
     if (!this.bubble) return;
-    // Speech bubble beside the head, on whichever side has more room.
+    // Speech bubble beside the chef's mouth, toward the middle of the screen; it stays above the stack.
     ctx.font = '800 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     const bw = ctx.measureText(this.bubble.text).width + 20;
     const right = x < WORLD_W / 2;
     const bx = Math.max(6, Math.min(WORLD_W - 6 - bw, right ? x + 28 * s : x - 28 * s - bw));
-    const by = y - 34 * s;
+    const by = this.mode === 'playing' ? y + 8 * s : y - 34 * s;
     ctx.globalAlpha = Math.min(1, this.bubble.life * 4);
     ctx.fillStyle = '#ffffff';
     this.roundRect(bx, by, bw, 26, 13);
@@ -1041,11 +1080,197 @@ export class Game {
     ctx.beginPath();
     const tx = right ? bx + 12 : bx + bw - 12;
     ctx.moveTo(tx - 6, by + 24);
-    ctx.lineTo(right ? x + 20 * s : x - 20 * s, y - 14 * s);
+    ctx.lineTo(right ? x + 16 * s : x - 16 * s, y + 10 * s);
     ctx.lineTo(tx + 6, by + 24);
     ctx.fill();
     this.text(this.bubble.text, bx + bw / 2, by + 13.5, 13, '#3a1d12', 800);
     ctx.globalAlpha = 1;
+  }
+
+  /** Three maki pieces of the order's recipe on a little wooden board, centred on (x, y). */
+  private drawDish(x: number, y: number, s: number, rot: number, recipe: Recipe): void {
+    const { ctx } = this;
+    const fill = [...new Set(recipe.pattern.filter((k) => k !== 'rice' && k !== 'nori'))];
+    if (!fill.length) fill.push('egg');
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    this.roundRect(-50, 14, 100, 10, 4);
+    ctx.fill();
+    ctx.fillStyle = '#a0683a';
+    this.roundRect(-52, 10, 104, 10, 4);
+    ctx.fill();
+    ctx.fillStyle = '#7a4e2a';
+    ctx.fillRect(-40, 20, 12, 5);
+    ctx.fillRect(28, 20, 12, 5);
+    for (const px of [-31, 0, 31]) {
+      ctx.fillStyle = '#24321f';
+      ctx.beginPath();
+      ctx.arc(px, -4, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f6f1e4';
+      ctx.beginPath();
+      ctx.arc(px, -4, 12.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 8; i++) {
+        const a = i * 0.8 + px;
+        ctx.beginPath();
+        ctx.ellipse(px + Math.cos(a) * 9.5, -4 + Math.sin(a) * 9.5, 2, 1.2, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Filling: one wedge per ingredient.
+      fill.forEach((k, i) => {
+        ctx.fillStyle = COLORS[k];
+        ctx.beginPath();
+        ctx.moveTo(px, -4);
+        ctx.arc(px, -4, 6.5, (i / fill.length) * Math.PI * 2, ((i + 1) / fill.length) * Math.PI * 2);
+        ctx.closePath();
+        ctx.fill();
+      });
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(px - 5, -11, 4, 2, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  private drawCustomer(x: number, y: number, look: number, ate: boolean, lookX: number, lookY: number): void {
+    const { ctx } = this;
+    const shirts = ['#4aa3df', '#e76f51', '#6cc070', '#9b5de5', '#f2b705', '#ef476f'];
+    const hairs = ['#1d1a1a', '#3a2418', '#6b3e26', '#2b1b17', '#111'];
+    const skins = ['#f1c9a5', '#e8b98f', '#c98e64', '#f5d0b0', '#a8714a', '#efc29a'];
+    const pick = <T,>(a: T[], k: number) => a[Math.floor(((look * 97 + k * 13.7) % 1) * a.length)];
+    const skin = pick(skins, 1);
+    const hair = pick(hairs, 2);
+    const longHair = look > 0.5;
+    if (longHair) {
+      ctx.fillStyle = hair;
+      ctx.beginPath();
+      ctx.ellipse(x, y + 4, 28, 30, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = pick(shirts, 0);
+    this.roundRect(x - 36, y + 20, 72, 70, 20);
+    ctx.fill();
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.arc(x, y, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 24.5, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.quadraticCurveTo(x, y - 12, x - 23, y - 6);
+    ctx.fill();
+    // Eyes: watching the dish arrive, then blissful once it's eaten.
+    for (const ex of [-8, 8]) {
+      if (ate) {
+        ctx.strokeStyle = '#2a1a1a';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(x + ex, y + 1, 4, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.stroke();
+      } else {
+        const d = Math.hypot(lookX - x, lookY - y) || 1;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(x + ex, y - 1, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#2a1a1a';
+        ctx.beginPath();
+        ctx.arc(x + ex + ((lookX - x) / d) * 2.2, y - 1 + ((lookY - y) / d) * 2.2, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = 'rgba(255,120,130,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(x - 15, y + 8, 4.5, 2.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 15, y + 8, 4.5, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7a2a2a';
+    ctx.beginPath();
+    if (ate) {
+      ctx.moveTo(x - 8, y + 9);
+      ctx.quadraticCurveTo(x, y + 20, x + 8, y + 9);
+      ctx.closePath();
+    } else {
+      ctx.ellipse(x, y + 12, 3.5, 4.5, 0, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+
+  /** Served-order celebration: the roll pops up, then arcs down to a customer who eats it. */
+  private drawServe(): void {
+    const d = this.dish;
+    if (!d) return;
+    const { ctx } = this;
+    const t = d.t;
+    const bottom = this.viewH - this.insets.bottom;
+    const cx = d.side < 0 ? 62 : WORLD_W - 62;
+    // Customer slides up from the bottom edge, then back down.
+    const rise = t < 0.4 ? 1 - Math.pow(1 - t / 0.4, 3) : t > 2.8 ? 1 - (t - 2.8) / 0.4 : 1;
+    const cy = bottom + 40 - 110 * rise;
+    const plateY = cy + 30;
+    const peak = { x: WORLD_W / 2, y: Math.max(this.insets.top + 230, d.from.y - 80) };
+
+    let x = peak.x;
+    let y = peak.y;
+    let sc = 1.25;
+    let rot = 0;
+    if (t < 0.45) {
+      const k = t / 0.45;
+      const e = 1 - Math.pow(1 - k, 3);
+      x = d.from.x + (peak.x - d.from.x) * e;
+      y = d.from.y + (peak.y - d.from.y) * e;
+      sc = 1.25 * (1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2));
+    } else if (t < 0.95) {
+      y += Math.sin(t * 10) * 3;
+      rot = Math.sin(t * 12) * 0.08;
+    } else if (t < 1.65) {
+      const k = (t - 0.95) / 0.7;
+      const ctrl = { x: (peak.x + cx) / 2, y: peak.y - 70 };
+      x = (1 - k) * (1 - k) * peak.x + 2 * (1 - k) * k * ctrl.x + k * k * cx;
+      y = (1 - k) * (1 - k) * peak.y + 2 * (1 - k) * k * ctrl.y + k * k * plateY;
+      sc = 1.25 - 0.55 * k;
+      rot = k * Math.PI * 2 * (d.side < 0 ? -1 : 1);
+    } else {
+      x = cx;
+      y = plateY;
+      sc = 0.7 * Math.max(0, 1 - (t - 1.9) / 0.6); // eaten
+    }
+
+    this.drawCustomer(cx, cy, d.look, d.ate, x, y);
+    if (sc > 0.02) this.drawDish(x, y, sc, rot, d.recipe);
+
+    if (t > 0.15 && t < 1.3) {
+      ctx.globalAlpha = Math.min(1, (t - 0.15) * 5, (1.3 - t) * 5);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(40,15,20,0.8)';
+      ctx.font = '900 26px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeText('ORDER UP!', peak.x, peak.y - 50);
+      this.text('ORDER UP!', peak.x, peak.y - 50, 26, '#ffd34d', 900);
+      ctx.globalAlpha = 1;
+    }
+    if (d.ate) {
+      // Hearts float up and a "Yum!" bubble from the happy customer.
+      const k = t - 1.65;
+      ctx.globalAlpha = Math.max(0, 1 - k / 1.4);
+      for (let i = 0; i < 3; i++) {
+        const hx = cx + (i - 1) * 22 + Math.sin(k * 4 + i) * 4;
+        const hy = cy - 40 - k * 50 - i * 8;
+        this.text('♥', hx, hy, 18 + i * 3, '#ff5d8f', 900);
+      }
+      const bx = d.side < 0 ? cx + 30 : cx - 30 - 66;
+      ctx.fillStyle = '#ffffff';
+      this.roundRect(bx, cy - 40, 66, 26, 13);
+      ctx.fill();
+      this.text('Yum!', bx + 33, cy - 26.5, 14, '#3a1d12', 900);
+      ctx.globalAlpha = 1;
+    }
   }
 
   private drawSplat(sp: Splat): void {
@@ -1074,7 +1299,7 @@ export class Game {
     const o = this.order;
     const done = this.height - o.start;
     const w = 236;
-    const x = (WORLD_W - w) / 2;
+    const x = this.cardX();
     ctx.fillStyle = 'rgba(255,248,235,0.94)';
     this.roundRect(x, y, w, 52, 12);
     ctx.fill();
@@ -1220,6 +1445,7 @@ export class Game {
     if (this.mode === 'playing') {
       this.drawOrderCard(top + 100);
       this.drawBossLabels(this.chefX, this.bossY(), this.bossScale());
+      this.drawServe();
     }
 
     if (this.paused) {

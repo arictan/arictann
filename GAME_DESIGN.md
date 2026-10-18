@@ -33,8 +33,16 @@ Each order is a level, and each level has a boss chef who watches you work. The 
 
 Beating a boss pays its level × 5 bonus coins, on top of the order's coins.
 
+### Order up!
+Finishing an order plays a short celebration. The finished roll (three maki pieces on a wooden board, filled with that recipe's ingredients) pops up from the stack with "ORDER UP!".
+It then arcs down to a customer who slides up in the bottom corner, watches it arrive, eats it, and floats hearts with a "Yum!".
+
+### Staying out of the way
+The chef stays on the left or right edge, sized to fit between the top bar and the top of the stack, so they never cover the blocks. The order card sits on the opposite side.
+The chef walks across to the other side every 5 drops and whenever a new boss arrives, and the order card slides over to match. Speech bubbles, attack warnings and the level banner all stay above the stack.
+
 ### Chefs fight back (or help)
-The chef stands large behind the counter, and the stack is drawn in front of them. After each drop the chef may act.
+After each drop the chef may act.
 Every action is announced with a label on the chef's chest and a short wind-up, so the player can react.
 
 | | Action | What happens |
