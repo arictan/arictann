@@ -2137,15 +2137,19 @@ export class Game {
       }
       this.wasAligned = aligned;
     }
-    if ((this.a11yT -= real) <= 0) {
+    // Screen reader: every 0.4 s, the next frame records the text it draws, so buttons
+    // without a label can be named after the words drawn on them.
+    if (this.a11yRec) {
+      this.a11yRec = false;
+      const texts = this.qaTexts ?? [];
+      this.qaTexts = null;
+      this.mirrorA11y(texts);
+    } else if ((this.a11yT -= real) <= 0) {
       this.a11yT = 0.4;
-      // Repeated names get a number ("PLAY", "PLAY 2") so every button stays reachable.
-      const seen: Record<string, number> = {};
-      const named = this.buttons.filter((b) => b.label && b.label.trim()).map((b) => {
-        const n = (seen[b.label!] = (seen[b.label!] ?? 0) + 1);
-        return { name: n > 1 ? `${b.label} ${n}` : b.label!, b };
-      });
-      mirrorButtons(named.map((x) => x.name), (l) => named.find((x) => x.name === l)?.b.onTap());
+      if (!this.qaTexts) {
+        this.qaTexts = [];
+        this.a11yRec = true;
+      }
     }
     this.camY += (this.targetCam() - this.camY) * Math.min(1, dt * 4);
 
@@ -2809,6 +2813,7 @@ export class Game {
     const c = this.chef;
     const e = this.event;
     const chestY = y + 42 * s;
+    let badge: [number, number] | null = null; // x range of the chest badge or attack label
     if (this.banner && this.mode === 'playing') {
       // New boss: level banner under the order card, on the side away from the chef.
       // Sized to fit long endless-mode rules, and kept on screen.
@@ -2830,6 +2835,7 @@ export class Game {
       ctx.font = `800 11px ${FONT}`;
       const tw = ctx.measureText(tag).width + 16;
       const tx = Math.max(tw / 2 + 4, Math.min(WORLD_W - tw / 2 - 4, x));
+      badge = [tx - tw / 2, tx + tw / 2];
       ctx.fillStyle = c.accent;
       this.roundRect(tx - tw / 2, chestY - 9, tw, 18, 9);
       ctx.fill();
@@ -2846,6 +2852,8 @@ export class Game {
       const pulse = 1 + 0.08 * Math.sin(this.time * 20);
       ctx.font = `900 16px ${FONT}`;
       const lw = ctx.measureText(label).width + 26;
+      const lx = Math.max(lw / 2 + 8, Math.min(WORLD_W - lw / 2 - 8, x));
+      badge = [lx - lw / 2, lx + lw / 2];
       ctx.save();
       ctx.translate(Math.max(lw / 2 + 8, Math.min(WORLD_W - lw / 2 - 8, x)), ly);
       ctx.scale(pulse, pulse);
@@ -2866,6 +2874,8 @@ export class Game {
     // Keep clear of the level banner while it shows.
     const bannerY = this.insets.top + 182;
     if (this.banner && this.mode === 'playing' && by < bannerY + 30 && by + 26 > bannerY - 26) by = bannerY + 32;
+    // ...and of the name badge (or attack label) on the chef's chest.
+    if (badge && bx < badge[1] && bx + bw > badge[0] && by < chestY + 15 && by + 26 > chestY - 15) by = chestY + 17;
     ctx.globalAlpha = Math.min(1, this.bubble.life * 4);
     ctx.fillStyle = '#ffffff';
     this.roundRect(bx, by, bw, 26, 13);
@@ -3461,6 +3471,7 @@ export class Game {
       row1.push([tr('share'), () => { this.reactPick = true; }, 'quiet']);
       // Photo mode: a small camera button in the card's corner.
       this.button(WORLD_W - 76, cardTop + 12, 44, 36, '📷', () => this.openPhoto(), 'quiet');
+      this.buttons[this.buttons.length - 1].label = 'Photo mode';
       if (this.clip) row1.push(['🎬 CLIP', () => { track('clip_share'); void shareClip(this.clip!, this.height); }, 'quiet']);
       const w1 = (WORLD_W - 72 - (row1.length - 1) * 8) / row1.length;
       row1.forEach(([label, go, style], i) => this.button(36 + i * (w1 + 8), cardTop + 232, w1, 44, label, go, style));
@@ -5126,7 +5137,11 @@ export class Game {
     // Tabs.
     const tabs: [typeof this.restTab, string][] = [['build', 'BUILD'], ['decor', 'DECOR'], ['staff', 'STAFF'], ['menu', 'MENU'], ['themes', 'THEMES'], ['trucks', '🚚']];
     const tw = (WORLD_W - 32 - 5 * 5) / 6;
-    tabs.forEach(([id, name], i) => this.pill(16 + i * (tw + 5), y, tw, name, f, () => { this.restTab = id; }, this.restTab === id ? 'primary' : 'quiet'));
+    tabs.forEach(([id, name], i) => {
+      this.pill(16 + i * (tw + 5), y, tw, name, f, () => { this.restTab = id; }, this.restTab === id ? 'primary' : 'quiet');
+      const last = this.buttons[this.buttons.length - 1];
+      if (id === 'trucks' && last?.label === '🚚') last.label = 'FOOD TRUCKS';
+    });
     y += 44;
     if (this.restTab === 'build') y = this.drawRestBuild(f, y);
     else if (this.restTab === 'decor') y = this.drawRestDecor(f, y);
@@ -6831,6 +6846,56 @@ export class Game {
   private lastScreenTitle = '';
   private wasAligned = false;
   private a11yT = 0;
+  private a11yRec = false;
+
+  /** Mirrors the screen's buttons as real buttons for VoiceOver / TalkBack (see a11y.ts). */
+  private mirrorA11y(texts: NonNullable<typeof this.qaTexts>): void {
+    const catcher = WORLD_W * this.viewH * 0.5; // tap-anywhere areas aren't buttons to a screen reader
+    const words = (str?: string) => !!str && /\p{L}{2,}/u.test(str);
+    const inside = (t: (typeof texts)[number], b: Button) => {
+      const cx = (t.x0 + t.x1) / 2;
+      const cy = (t.y0 + t.y1) / 2;
+      return cx >= b.x - 2 && cx <= b.x + b.w + 2 && cy >= b.y - 2 && cy <= b.y + b.h + 2;
+    };
+    // Taps are checked newest first, so an overlay's full-screen blocker hides every button drawn before it.
+    let from = 0;
+    this.buttons.forEach((b, i) => { if (b.w * b.h > catcher) from = i + 1; });
+    const real = this.buttons.slice(from);
+    // The text on a button's row (outside any other button), e.g. "Knife Throw" for its PLAY pill.
+    const rowOf = (b: Button, n = 2) => texts.filter((t) => words(t.str) && !inside(t, b) && Math.abs((t.y0 + t.y1) / 2 - (b.y + b.h / 2)) < b.h / 2 + 10 && !real.some((o) => o !== b && inside(t, o)))
+      .slice(0, n).map((t) => t.str.trim()).join(' · ');
+    const list = real.map((b) => {
+      let name = b.label?.trim() ?? '';
+      if (!words(name)) {
+        const own = [...new Set(texts.filter((t) => inside(t, b)).map((t) => t.str.trim()).filter(Boolean))];
+        if (own.some((x) => words(x))) name = own.join(', ');
+        else {
+          // An icon button (◀, ▶, a price): name it after the text on its row.
+          const row = rowOf(b);
+          const icon = name === '◀' ? 'previous' : name === '▶' ? 'next' : name;
+          if (row) name = icon ? `${row}: ${icon}` : row;
+        }
+      }
+      return { name, b };
+    }).filter((x) => x.name);
+    const count: Record<string, number> = {};
+    for (const x of list) count[x.name] = (count[x.name] ?? 0) + 1;
+    const seen: Record<string, number> = {};
+    const named: { name: string; b: Button }[] = [];
+    for (const { b, name: base } of list) {
+      let name = base;
+      // Several "PLAY"s: say which row each belongs to.
+      if (count[base] > 1) {
+        const row = rowOf(b, 1);
+        if (row) name = `${row}: ${base}`;
+      }
+      if (name.length > 90) name = `${name.slice(0, 88)}…`;
+      // Names still repeated get a number ("READ", "READ 2") so every button stays reachable.
+      const n = (seen[name] = (seen[name] ?? 0) + 1);
+      named.push({ name: n > 1 ? `${name} ${n}` : name, b });
+    }
+    mirrorButtons(named.map((x) => x.name), (l) => named.find((x) => x.name === l)?.b.onTap());
+  }
   private reactPick = false;
   private friendEmoji = '';
 
@@ -6849,7 +6914,7 @@ export class Game {
       const x = 62 + i * 55;
       this.dot(x, midY - 6, 24, 'rgba(255,255,255,0.1)');
       this.text(e, x, midY - 5, 28, '#fff', 400);
-      this.buttons.push({ x: x - 26, y: midY - 32, w: 52, h: 52, onTap: () => { this.reactPick = false; this.shareRun(i); } });
+      this.buttons.push({ x: x - 26, y: midY - 32, w: 52, h: 52, onTap: () => { this.reactPick = false; this.shareRun(i); }, label: `React ${e}` });
     });
     this.button(cx - 80, midY + 46, 160, 42, 'NO EMOJI', () => { this.reactPick = false; this.shareRun(); }, 'quiet');
   }

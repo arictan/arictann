@@ -36,8 +36,13 @@ See https://www.revenuecat.com/privacy
 ## Notifications
 If you allow them, the game schedules local reminders on your device: at most one daily reminder, and one when your restaurant's tip jar is full. No server is involved.
 
+## Home-screen widget and Live Activity
+If you add the widget, the game shares your restaurant name and popularity, tip-jar status, calendar day, level and next chef with it through storage on your
+device (an iOS App Group or Android app preferences). The Lock Screen Live Activity shows the same tip-jar status.
+None of this leaves your device.
+
 ## Sharing
-When you share a score, the image and challenge code go only where you choose to send them.
+When you share a score or a photo, the image, challenge code and any emoji you picked go only where you choose to send them.
 
 ## Children
 The game is not directed at children under 13, and ads are requested as general-audience ads.

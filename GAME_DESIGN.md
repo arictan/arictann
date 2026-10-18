@@ -288,10 +288,49 @@ After each run, the results screen shows progress toward the cheapest item you d
 - **Restaurant Pass (24):** $2.99/month, in test mode until the store is set up. It gives +50% tips, +4 h jar, the Imperial theme and 4 gold styles.
 - **Store events (25):** in-app event images and copy are in `store/IN_APP_EVENTS.md`.
 
+## Worlds, competition and 20 more features
+
+**Competition**
+- **Leagues (1):** 7 weekly tiers from Bronze to Master, 30 players each. You earn points for each chef you beat (+10, or +15 if flawless), each PERFECT (+1) and the Daily Special (+20). The top 7 move up, the bottom 5 move down, and coins depend on your rank. Rivals are AI and labelled "(AI)".
+- **Streak Quest (2):** a 3-day race with 100 players. Beat 7 chefs in a row in the journey; a run that ends with no chef served knocks you out. Survivors split 10,000 coins. The other 99 are AI.
+- **Nemesis (3):** a chef who beats you 3 times becomes your nemesis. They get faster, attack more and taunt you, and show as 😈 on the map. Beat them for a badge.
+
+**Gameplay**
+- **Rescue levels (4):** 10 hand-made levels. Floods and storms raise water you must out-stack; quakes give you a time limit and shake the stack. Each level earns 1–3 stars.
+- **Twin layers (5):** two halves slide apart and back together, and you drop them when they meet. They show up at random from level 60.
+- **Modifiers (6):** Mirror, Blind (the layer is only an outline), Tiny, Double speed and Twins. Each has a daily challenge.
+- **Mini-games (7):** Knife Throw, Rice Rhythm and Fish Catch unlock at levels 11, 21 and 31. The first win each day pays 150 coins.
+- **Omakase Tower (8):** 50 floors each week, with a seeded twist on each floor. Checkpoints every 10 floors pay rewards.
+
+**Worlds**
+- **New cuisines after level 100 (9):** from level 101 the journey cycles through Pizza, Burger and Pancake worlds and back to Sushi, 50 levels each. Each world has its own chefs, outfits, 5 ingredients and recipes, and opens with a story card.
+- **Recipe Lab (10):** mix ingredients you've stacked 20+ times to find 8 secret recipes. You get 10 tries a day, and each try gives a warmer/colder hint. Secret recipes then appear in orders.
+- **Food truck branches (11):** each World Tour city plate you own opens a food truck that earns tips around the clock. Trucks have 5 upgrade levels.
+
+**Feel**
+- **Chef voices (12):** Animal Crossing-style babble when a chef speaks, pitched per chef. It can be turned off in Settings.
+- **Jukebox (13):** 5 generated music tracks: Koto Classic, Lo-fi Kitchen, Taiko Festival, City Pop Night and Winter Bells. They drop from chests or can be bought.
+- **Photo mode (14):** the 📷 button on the results card renders the whole tower, with 5 filters and 4 frames, ready to save or share.
+- **Left-handed layout (15):** corner buttons and the results row are mirrored.
+
+**Social**
+- **Pass & Play (16):** two players take turns on one phone with the same seed, so they face the same chefs and layers. The higher stack wins.
+- **Emoji reactions (17):** pick an emoji when sharing a challenge code. Your friend sees it when they open the code and again when their run ends.
+
+**Native and accessibility**
+- **Home-screen widget (18):** shows your restaurant, its popularity, how full the tip jar is, your login-calendar day, and your level and next chef. The bridge is in `src/widget.ts`. The native iOS (WidgetKit) and Android (AppWidget) code is in `native/`, with install steps.
+- **Live Activity (19):** on iOS, the tip jar's fill shows on the Lock Screen and in the Dynamic Island. Its code is in `native/ios`.
+- **Accessibility (20):**
+  - An optional haptic tick when the layer lines up.
+  - Screen-reader announcements for screens, chefs, PERFECTs and results.
+  - A hidden list of real buttons that mirrors every button on the canvas, so VoiceOver and TalkBack can navigate the menus. Buttons without a label are named from the text drawn on them or on their row ("Knife Throw: PLAY", "Hat · Chef toque: next"), and buttons hidden behind an overlay are left out.
+
 ## Not done yet (needs accounts or a server)
 - **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
 - **Inviter rewards, live duels and crews with real players:** these need player accounts and a server. Today, duels and ghost races replay a shared seed against the score and shape inside the code, and crew mates and cup rivals are labelled AI.
 - **Rewards for the friend whose restaurant you visit:** these also need accounts.
 - **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
 - **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
-- **Full translation** of chef dialogue, item names and store listings.
+- **Real league and quest opponents:** these need a server. Today they are seeded AI, labelled "(AI)".
+- **Widget and Live Activity in the native projects:** the code in `native/` hasn't been compiled here. Add it in Xcode and Android Studio (see `native/README.md`) and test it on a device.
+- **Full translation** of chef dialogue, item names, the newest feature screens and store listings.
