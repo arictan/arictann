@@ -128,6 +128,10 @@ export class Progress {
   league: LeagueState = save.json('league', { week: '', tier: 0, pts: 0, result: null });
   quest: QuestState = save.json('quest', { key: '', joined: false, stage: 0, out: false, claimed: false });
   losses: Record<number, number> = save.json('losses', {}); // journey losses per chef level (for the nemesis)
+  rescueStars: number[] = save.json('rescueStars', []);
+  tower = save.json('tower', { week: '', cp: 0, best: 0, claimed: [] as number[] }); // Omakase Tower: checkpoint floor this week
+  minis: Record<string, { best: number; wins: number; day: string }> = save.json('minis', {});
+  modchal = save.json('modchal', { day: '', done: [] as string[], stars: 0 });
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -204,6 +208,10 @@ export class Progress {
     save.setJson('league', this.league);
     save.setJson('quest', this.quest);
     save.setJson('losses', this.losses);
+    save.setJson('rescueStars', this.rescueStars);
+    save.setJson('tower', this.tower);
+    save.setJson('minis', this.minis);
+    save.setJson('modchal', this.modchal);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

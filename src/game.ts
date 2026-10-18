@@ -8,7 +8,7 @@ import { CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RA
 import { PRODUCTS, buyReal, monetize, nativeAds, showRewardedAd, type ProductId } from './monetize';
 import { decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, type Challenge } from './share';
 import { BOARDS, localBoards, online, submitScore } from './services';
-import { STORY_LEVELS, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, type MissionKind, starsNeeded } from './progress';
+import { STORY_LEVELS, PIECES_FOR, Progress, RECIPE_GOAL, STREAK_REWARDS, WEEKLY_GOALS, dayKey, daySeed, missionText, weekKey, type MissionKind, starsNeeded } from './progress';
 import { THEMES, drawBackdrop, drawHolidayOverlay, makeSpecks, type Theme } from './themes';
 import { settings, saveSettings } from './settings';
 import { LANGS, t, t as tr } from './i18n';
@@ -20,6 +20,8 @@ import { GUEST_SERVES_PER_DAY, STAFF, STYLES, THEMES as REST_THEMES, criticToday
 import { drawRestaurantScene, seatPos, type SceneGuest } from './scene';
 import type { AreaId } from './collect';
 import { DEMOTE, LEAGUES, LEAGUE_SIZE, NEMESIS_AT, NEMESIS_TAUNTS, PROMOTE, QUEST_POT, QUEST_STAGES, currentQuest, leagueRivals, leagueWeek, questSurvivors, settleLeague } from './compete';
+import { FLOOR_ICON, MODS, MOD_LIST, RESCUES, TOWER_FLOORS, rescueStars, towerFloors, towerReward, type Mod } from './modes';
+import { MINIS, makeMini, type MiniGame, type MiniId } from './minigames';
 import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
@@ -104,12 +106,13 @@ interface Layer {
   origin: number; // world x where this layer's texture is anchored, so trimming never shifts it
   special?: SpecialLayer; // rare layers that change the drop (see spawnMoving)
   fancy?: boolean; // a "fancy cut": landed during a 5+ PERFECT streak
+  twin?: boolean; // two halves that slide together (tap when they meet)
 }
 
 /** Layers placed of one ingredient to master it (mastered ingredients turn gold and pay a little extra). */
 export const MASTERY = 100;
 
-type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet';
+type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet' | 'rescue' | 'tower' | 'modchal';
 
 const FEVER_TIME = 5; // seconds of Fever after every 10 PERFECTs in a row
 const TIME_ATTACK = 60; // seconds
@@ -183,7 +186,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void }
@@ -292,7 +295,7 @@ export class Game {
   private doubled = false; // used the double-coins ad this run
   private bankedRunCoins = 0; // coins from this run already added to the bank (a revive can end a run twice)
   private milestonesHit = new Set<number>();
-  private resultKind: 'lost' | 'special' | 'gate' | 'zen' | 'time' | 'puzzle-won' | 'puzzle-lost' | 'challenge' = 'lost';
+  private resultKind: 'lost' | 'special' | 'gate' | 'zen' | 'time' | 'puzzle-won' | 'puzzle-lost' | 'challenge' | 'rescue-won' | 'rescue-lost' = 'lost';
 
   // Companions active this run.
   private nekoLeft = 0;
@@ -320,7 +323,7 @@ export class Game {
   private flurryLeft = 0;
   private flurryT = 0;
   private tip: { title: string; text: string; t: number } | null = null; // coaching card
-  private picker: { level: number; mode: RunMode; opts: { puzzle?: number; challenge?: Challenge }; picked: Set<BoosterId> } | null = null;
+  private picker: { level: number; mode: RunMode; opts: { puzzle?: number; challenge?: Challenge; rescue?: number; mods?: Mod[] }; picked: Set<BoosterId> } | null = null;
   private picked: Set<BoosterId> | null = null; // boosters chosen for the current run
 
   // Personality update: story overlay, achievement check timer.
@@ -340,6 +343,15 @@ export class Game {
   private weather: { kind: 'wind' | 'rain'; dir: number } | null = null;
   private lastPerfect = false;
   private nemesisLevelCached = 0;
+  // Modes update: run modifiers, twin layers, rescue levels, the tower, mini-games.
+  private mods = new Set<Mod>();
+  private twinPhase = 0;
+  private twinSep = 0;
+  private rescueRun: { i: number; water: number; t: number; tremor: number; margin: number } | null = null;
+  private towerStart = 1; // floor the current tower run started on
+  private mini: MiniGame | null = null;
+  private miniPaid = false;
+  private modChal: Mod | null = null;
   private friendGhost: [number, number][] | null = null; // shape of a friend's run from a ghost code
   private confirmBox: { title: string; text: string; ok: string; go: () => void } | null = null;
   // Intro: logo on every launch; the story panels only the first time.
@@ -394,7 +406,7 @@ export class Game {
 
   /** Every screen except the game itself scrolls (and taps fire on release there). */
   private get scrolling(): boolean {
-    return this.mode !== 'playing' && this.mode !== 'dead' && this.mode !== 'title';
+    return this.mode !== 'playing' && this.mode !== 'dead' && this.mode !== 'title' && this.mode !== 'mini';
   }
 
   private get scrollPos(): number {
@@ -476,7 +488,10 @@ export class Game {
   private announceChef(): void {
     const c = this.chef;
     const nem = this.isNemesis();
-    this.banner = { title: this.runMode === 'critic' ? '🧐 FOOD CRITIC' : this.special ? 'DAILY SPECIAL' : nem ? `😈 NEMESIS · LV ${this.level}` : t('level', this.level), sub: this.runMode === 'critic' ? 'Small PERFECT zone · 2★ for a glowing review' : nem ? `Beat you ${this.progress.losses[this.level]} times · stronger now` : c.rule, life: 2.4 };
+    this.banner = this.runMode === 'modchal' && this.modChal ? { title: `${MODS[this.modChal].icon} ${MODS[this.modChal].name.toUpperCase()}`, sub: MODS[this.modChal].desc, life: 2.4 }
+      : this.runMode === 'rescue' ? { title: `🆘 ${RESCUES[this.rescueRun!.i].name.toUpperCase()}`, sub: RESCUES[this.rescueRun!.i].story, life: 3 }
+      : this.runMode === 'tower' ? { title: `🗼 FLOOR ${this.towerStart + this.ordersServed}`, sub: this.mods.size ? [...this.mods].map((m) => `${MODS[m].icon} ${MODS[m].name}`).join(' · ') : this.weather ? (this.weather.kind === 'wind' ? '🌬️ Wind' : '🌧️ Rain') : 'No twist on this floor', life: 2.2 }
+      : { title: this.runMode === 'critic' ? '🧐 FOOD CRITIC' : this.special ? 'DAILY SPECIAL' : nem ? `😈 NEMESIS · LV ${this.level}` : t('level', this.level), sub: this.runMode === 'critic' ? 'Small PERFECT zone · 2★ for a glowing review' : nem ? `Beat you ${this.progress.losses[this.level]} times · stronger now` : c.rule, life: 2.4 };
     this.bubble = { text: nem ? NEMESIS_TAUNTS[this.level % NEMESIS_TAUNTS.length] : c.intro, life: 2.2 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
@@ -544,6 +559,9 @@ export class Game {
     if (this.gated) this.openMap();
     else if (this.runMode === 'zen' || this.runMode === 'time') this.startRun(this.progress.playLevel, this.runMode);
     else if (this.runMode === 'gauntlet') this.startRun(this.startLevel, 'gauntlet');
+    else if (this.runMode === 'rescue') this.startRescue(this.resultKind === 'rescue-won' ? Math.min(RESCUES.length - 1, this.rescueRun!.i + 1) : this.rescueRun!.i);
+    else if (this.runMode === 'tower') this.startTower();
+    else if (this.runMode === 'modchal' && this.modChal) this.startModChal(this.modChal);
     else if (this.runMode === 'puzzle') this.startRun(1, 'puzzle', { puzzle: this.resultKind === 'puzzle-won' ? Math.min(PUZZLES - 1, this.puzzle + 1) : this.puzzle });
     else if (this.runMode === 'challenge' && this.challenge) this.startRun(this.challenge.level, 'challenge', { challenge: this.challenge });
     else if (this.runMode === 'critic') this.startCritic();
@@ -553,7 +571,7 @@ export class Game {
 
   /** Daily Special and Food Critic runs: one long set order that ends the run when served. */
   private get special(): boolean {
-    return this.runMode === 'special' || this.runMode === 'critic';
+    return this.runMode === 'special' || this.runMode === 'critic' || this.runMode === 'modchal';
   }
 
   /** Runs that use journey progress: they unlock chefs, earn stars and respect star gates. */
@@ -563,14 +581,14 @@ export class Game {
 
   /** Zen, Time Attack and Puzzles have no chef attacks or help. */
   private get calmChefs(): boolean {
-    return this.runMode === 'zen' || this.runMode === 'time' || this.runMode === 'puzzle';
+    return this.runMode === 'zen' || this.runMode === 'time' || this.runMode === 'puzzle' || this.runMode === 'rescue';
   }
 
   /**
    * Starts a run. Journey runs start at a chef level (by default the furthest one open); other modes
    * pick their own setup. Every run is seeded so a challenge code can replay it.
    */
-  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge; picked?: Set<BoosterId> } = {}): void {
+  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge; picked?: Set<BoosterId>; rescue?: number; mods?: Mod[] } = {}): void {
     if (mode === 'journey' && !this.progress.canEnter(level)) {
       this.showToast(`Star gate: ${starsNeeded(level)}★ needed to enter level ${level} (you have ${this.progress.totalStars}★)`);
       return;
@@ -583,6 +601,10 @@ export class Game {
       return;
     }
     this.picked = opts.picked ?? new Set();
+    this.mods = new Set(opts.mods ?? []);
+    this.modChal = mode === 'modchal' ? (opts.mods?.[0] ?? null) : null;
+    this.rescueRun = mode === 'rescue' ? { i: opts.rescue ?? 0, water: LAYER_H * 1.5, t: 0, tremor: 4, margin: 0 } : null;
+    if (mode === 'tower') this.towerStart = this.towerState().cp + 1;
     if (!opts.challenge) this.friendGhost = null;
     this.runMode = mode;
     this.challenge = opts.challenge ?? null;
@@ -612,7 +634,7 @@ export class Game {
     this.slowStart = use('slow');
     // Later levels start on a narrower roll, down to 140 by level 60.
     const levelW = mode === 'puzzle' ? puzzleConfig(this.puzzle).width : level <= 20 ? BASE_W : Math.max(140, BASE_W - (level - 20) * 1.5);
-    this.baseW = levelW + (use('wide') ? WIDE_W - BASE_W : 0);
+    this.baseW = (levelW + (use('wide') ? WIDE_W - BASE_W : 0)) * (this.mods.has('tiny') ? 0.6 : 1);
     this.magnet = use('magnet');
     this.shield = use('shield');
     this.lucky = use('lucky');
@@ -766,6 +788,22 @@ export class Game {
       this.order = { recipe: BASIC_RECIPES[this.puzzle % BASIC_RECIPES.length], length: cfg.layers, start: this.height, reward: 0 };
       return;
     }
+    if (this.runMode === 'rescue') {
+      const rs = RESCUES[this.rescueRun!.i];
+      this.order = { recipe: BASIC_RECIPES[this.rescueRun!.i % BASIC_RECIPES.length], length: rs.target, start: this.height, reward: 0 };
+      if (rs.kind === 'storm') this.weather = { kind: 'wind', dir: this.rand() < 0.5 ? -1 : 1 };
+      return;
+    }
+    if (this.runMode === 'tower') {
+      // Each floor is one short order with that floor's modifier.
+      const floor = this.towerStart + this.ordersServed;
+      const fm = towerFloors()[Math.min(TOWER_FLOORS, floor) - 1] ?? '';
+      this.mods = new Set(fm && fm !== 'wind' && fm !== 'rain' ? [fm as Mod] : []);
+      this.weather = fm === 'wind' ? { kind: 'wind', dir: this.rand() < 0.5 ? -1 : 1 } : fm === 'rain' ? { kind: 'rain', dir: 0 } : null;
+      const pool = RECIPES.filter((r) => (r.level ?? 0) <= this.level);
+      this.order = { recipe: pool[Math.floor(this.rand() * pool.length)], length: 4 + Math.floor(floor / 6), start: this.height, reward: 0 };
+      return;
+    }
     if (this.special) {
       // Everyone gets the same Daily Special: one long order of a set recipe.
       // The critic orders the fanciest dish you can make; the Daily Special is the same for everyone.
@@ -821,6 +859,7 @@ export class Game {
     if (settings.assist) v *= 0.82;
     if (this.isNemesis()) v *= 1 + 0.05 * this.nemesisPower();
     if (this.flipT > 0) v *= 1.4;
+    if (this.mods.has('double')) v *= 1.6;
     if (this.weather?.kind === 'wind') v *= 1 + 0.28 * this.moveDir * this.weather.dir; // faster with the wind, slower against it
     if (this.fever > 0) v *= 0.5;
     if (this.steady > 0) v *= 0.55;
@@ -841,6 +880,16 @@ export class Game {
       this.progress.seen.push(kind);
       this.progress.persist();
       this.coach(`NEW: ${intro.name}`, intro.tip, 4);
+    }
+    // Twin layers: always with the Twins modifier, sometimes from level 60.
+    if (this.mods.has('twin') || (this.journey && this.level >= 60 && this.height >= 3 && this.rand() < 0.12)) {
+      this.moving.twin = true;
+      this.moving.x = top.x;
+      this.moving.origin = top.x;
+      this.moving.w = top.w;
+      this.twinPhase = 0;
+      this.twinSep = 70;
+      return;
     }
     // About one layer in eight is special (never in puzzles, never in the first few layers).
     if (this.runMode !== 'puzzle' && this.height >= 3 && this.rand() < 0.12) {
@@ -900,6 +949,10 @@ export class Game {
       this.advanceIntro();
       return;
     }
+    if (this.mode === 'mini' && this.mini) {
+      this.mini.tap(wx, wy - this.insets.top - 40);
+      return;
+    }
 
     switch (this.mode) {
       case 'title':
@@ -932,6 +985,10 @@ export class Game {
       // Slippery: the eel slides on a little after the tap.
       m.x += 10 * this.moveDir;
       m.origin += 10 * this.moveDir;
+    }
+    if (m.twin) {
+      this.dropTwin(m);
+      return;
     }
     const top = this.top;
     const dx = m.x - top.x;
@@ -1658,6 +1715,11 @@ export class Game {
       this.puzzleWon();
       return;
     }
+    if (this.runMode === 'rescue') {
+      this.rescueWon();
+      return;
+    }
+    if (this.runMode === 'tower' && this.towerFloorDone(this.towerStart + this.ordersServed - 1)) return;
 
     // Long-term progress: stars and the next chef unlocked, chef card, missions, recipe book, chest.
     if (this.journey && beatLevel % 10 === 0 && beatLevel <= STORY_LEVELS) this.queueStory(chapterFor(beatLevel), true);
@@ -1792,7 +1854,7 @@ export class Game {
   }
 
   private die(): void {
-    this.resultKind = this.runMode === 'puzzle' ? 'puzzle-lost' : this.runMode === 'time' ? 'time' : this.runMode === 'challenge' ? 'challenge' : 'lost';
+    this.resultKind = this.runMode === 'puzzle' ? 'puzzle-lost' : this.runMode === 'time' ? 'time' : this.runMode === 'challenge' ? 'challenge' : this.runMode === 'rescue' ? 'rescue-lost' : 'lost';
     this.mode = 'dead';
     this.reaction = null;
     this.event = null;
@@ -1877,6 +1939,7 @@ export class Game {
 
   /** Daily Special cleared: pays once per day, then shows the results screen as a win. */
   private winSpecial(): void {
+    if (this.runMode === 'modchal' && this.modChal) this.modChalWon(this.modChal);
     if (this.runMode === 'critic') {
       this.criticStars = Progress.starsFor(this.orderStats.perfects, this.orderStats.drops);
       this.criticResult(this.criticStars);
@@ -1925,6 +1988,12 @@ export class Game {
       this.updateIntro(real);
       return;
     }
+    if (this.mode === 'mini') {
+      this.updateMini(real);
+      if (this.celebration && (this.celebration.t -= real) <= 0) this.celebration = null;
+      return;
+    }
+    this.updateRescue(real);
 
     // Overlays and celebrations run in real time.
     if (this.adOverlay) this.adOverlay.t = Math.max(0, this.adOverlay.t - real);
@@ -1985,7 +2054,11 @@ export class Game {
     }
     if (!this.story && this.storyQueue.length) this.story = this.storyQueue.shift()!;
     if (this.mode === 'playing' && !this.perkChoice && !this.story) this.updateRage(real);
-    if (m && this.mode !== 'dead' && !this.perkChoice && !this.picker && !this.story) {
+    if (m?.twin && this.mode !== 'dead' && !this.perkChoice && !this.picker && !this.story) {
+      // Twins: the two halves swing apart and back together over the stack.
+      this.twinPhase += (this.speed() / 140) * dt;
+      this.twinSep = Math.abs(Math.cos(this.twinPhase)) * 70;
+    } else if (m && this.mode !== 'dead' && !this.perkChoice && !this.picker && !this.story) {
       const step = this.speed() * dt * this.moveDir;
       m.x += step;
       m.origin += step;
@@ -2068,6 +2141,12 @@ export class Game {
       this.drawIntro();
       return;
     }
+    if (this.mode === 'mini' && this.mini) {
+      this.drawMiniGame();
+      this.drawOverlays();
+      this.drawToast();
+      return;
+    }
     if (this.scrolling) {
       if (this.mode === 'shop') this.drawShop();
       else if (this.mode === 'map') this.drawMap();
@@ -2091,6 +2170,10 @@ export class Game {
       else if (this.mode === 'calendar') this.drawCalendar();
       else if (this.mode === 'league') this.drawLeague();
       else if (this.mode === 'quest') this.drawQuest();
+      else if (this.mode === 'rescues') this.drawRescues();
+      else if (this.mode === 'towerview') this.drawTower();
+      else if (this.mode === 'minis') this.drawMinis();
+      else if (this.mode === 'modchals') this.drawModChals();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -2107,6 +2190,12 @@ export class Game {
     const minY = this.camY - LAYER_H;
     const maxY = this.camY + this.viewH;
     this.drawGhost(minY, maxY);
+    const mirror = this.mods.has('mirror') && (this.mode === 'playing' || this.mode === 'dead');
+    if (mirror) {
+      ctx.save();
+      ctx.translate(WORLD_W, 0);
+      ctx.scale(-1, 1);
+    }
     for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
     for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) drawFlag(ctx, this.equip.flag, f.x, f.y, f.hue);
     if (this.mode !== 'title') {
@@ -2130,7 +2219,22 @@ export class Game {
       ctx.setLineDash([]);
     }
     if (this.moving && this.mode !== 'dead') {
-      this.drawLayer(this.moving);
+      const mv = this.moving;
+      if (mv.twin) {
+        // Two halves, apart by twinSep on each side.
+        const half = mv.w / 2;
+        this.drawLayer({ ...mv, w: half, x: mv.x - this.twinSep });
+        this.drawLayer({ ...mv, w: half, x: mv.x + half + this.twinSep, origin: mv.origin });
+      } else if (this.mods.has('blind')) {
+        // Blind: just a flickering outline.
+        ctx.strokeStyle = `rgba(255,255,255,${0.35 + 0.25 * Math.sin(this.time * 9)})`;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        this.roundRect(mv.x, mv.y, mv.w, LAYER_H, 6);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else this.drawLayer(mv);
+      if (mirror) ctx.restore();
       if (this.moving.special && this.mode === 'playing') {
         const m = this.moving;
         this.text(this.specialLabel(m.special!), Math.max(80, Math.min(WORLD_W - 80, m.x + m.w / 2)), m.y - 12, 11, '#ffffff', 900);
@@ -2141,7 +2245,8 @@ export class Game {
         this.roundRect(this.moving.x - 2, this.moving.y - 2, this.moving.w + 4, LAYER_H + 4, 8);
         ctx.stroke();
       }
-    }
+    } else if (mirror) ctx.restore();
+    this.drawWater();
     for (const p of this.projectiles) {
       if (p.kind === 'knife') {
         drawKnife(ctx, p.x, p.y, p.rot, 1.3);
@@ -3064,6 +3169,12 @@ export class Game {
       if (icons.length) this.fitText(icons.join(' '), 16 + this.insets.left, top + 64, 110, 14, '#fff', 'left', 600);
       if (this.weather) this.text(this.weather.kind === 'wind' ? `🌬️ wind ${this.weather.dir > 0 ? '→' : '←'}` : '🌧️ rain', 16 + this.insets.left, top + 86, 12, '#bde0fe', 700, 'left');
       if (this.runMode === 'gauntlet') this.text(`⚔️ ${this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
+      if (this.runMode === 'tower') this.text(`🗼 ${this.towerStart + this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
+      if (this.rescueRun) {
+        const rr = this.rescueRun;
+        const quake = RESCUES[rr.i].kind === 'quake';
+        this.text(quake ? `⏱ ${Math.ceil(this.timeLeft)}s` : `🌊 ${Math.max(0, rr.margin).toFixed(1)}`, WORLD_W - 16 - this.insets.right, top + 64, 16, (quake ? this.timeLeft < 10 : rr.margin < 3) ? '#ff6b6b' : '#9fe3ff', 700, 'right');
+      }
     }
     if (this.mode === 'playing' && this.runMode === 'time') {
       this.text(`⏱ ${Math.ceil(this.timeLeft)}s`, WORLD_W - 70, top + 64, 22, this.timeLeft < 10 ? '#ff6b6b' : '#ffffff', 900);
@@ -3095,8 +3206,10 @@ export class Game {
   private resultTitle(): string {
     switch (this.resultKind) {
       case 'gate': return 'STAR GATE!';
-      case 'special': return this.runMode === 'critic' ? (this.criticStars >= 2 ? 'GLOWING REVIEW!' : 'REVIEW: MEH') : 'SPECIAL CLEARED!';
+      case 'special': return this.runMode === 'tower' ? '🗼 TOWER CONQUERED!' : this.runMode === 'modchal' ? `${MODS[this.modChal ?? 'mirror'].icon} CHALLENGE CLEARED!` : this.runMode === 'critic' ? (this.criticStars >= 2 ? 'GLOWING REVIEW!' : 'REVIEW: MEH') : 'SPECIAL CLEARED!';
       case 'zen': return 'ZEN COMPLETE';
+      case 'rescue-won': return '🆘 RESCUED!';
+      case 'rescue-lost': return this.rescueRun && RESCUES[this.rescueRun.i].kind === 'quake' && this.timeLeft <= 0 ? 'THE QUAKE HIT!' : this.rescueRun && this.rescueRun.margin <= 0 ? 'WASHED AWAY!' : 'DROPPED IT!';
       case 'time': return this.timeLeft <= 0 ? 'TIME’S UP!' : 'DROPPED IT!';
       case 'lost': if (this.runMode === 'gauntlet') return `GAUNTLET: ${this.ordersServed} CHEF${this.ordersServed === 1 ? '' : 'S'}`; return this.newBest ? t('newBest') : t('dropped');
       case 'puzzle-won': return `PUZZLE ${this.puzzle + 1} SOLVED!`;
@@ -3109,6 +3222,10 @@ export class Game {
   private resultSub(): string {
     const layers = `${this.height} layer${this.height === 1 ? '' : 's'}`;
     switch (this.resultKind) {
+      case 'rescue-won': case 'rescue-lost': {
+        const rs = RESCUES[this.rescueRun?.i ?? 0];
+        return `${rs.name} · ${this.height}/${rs.target} layers · ${'★'.repeat(this.progress.rescueStars[this.rescueRun?.i ?? 0] || 0)}`;
+      }
       case 'zen': return `${layers} · Zen best ${this.progress.zenBest}`;
       case 'lost': if (this.runMode === 'gauntlet') return `Gauntlet best ${this.progress.gauntletBest} chefs · ${layers}`; return `Level ${this.level} · ${layers} · Best ${this.best}`;
       case 'time': return `${layers} in 60s · best ${this.progress.timeBest}`;
@@ -3142,7 +3259,7 @@ export class Game {
     ctx.fill();
     this.panel(cardTop + 70, this.resultTitle(), this.resultSub());
     const beaten = this.ordersServed;
-    this.text(`${beaten} chef${beaten === 1 ? '' : 's'} beaten   ·   +${this.runCoins} coins`, cx, cardTop + 108, 15, '#ffd34d', 700);
+    this.text(this.runMode === 'rescue' ? `${this.height} layers stacked   ·   +${this.runCoins} coins` : this.runMode === 'tower' ? `${beaten} floor${beaten === 1 ? '' : 's'} climbed   ·   +${this.runCoins} coins` : `${beaten} chef${beaten === 1 ? '' : 's'} beaten   ·   +${this.runCoins} coins`, cx, cardTop + 108, 15, '#ffd34d', 700);
     if (this.gated) this.text(`Need ${this.gated}★ for level ${this.level} · you have ${this.progress.totalStars}★. Replay chefs for 3 stars!`, cx, cardTop + 130, 11, '#9fe3ff', 700);
     const gap = this.best - this.height;
     if (this.resultKind === 'lost' && !this.newBest && gap > 0 && gap <= 3) this.text(`So close! Only ${gap} more for a new best`, cx, cardTop + 130, 14, '#ffb4a2', 700);
@@ -4162,6 +4279,10 @@ export class Game {
       ['🧘 Zen', `No game over, no attacks, calm music · best ${p.zenBest}`, 'RELAX', () => this.startRun(p.playLevel, 'zen')],
       ['⏱ Time Attack', `Stack as high as you can in 60 seconds · best ${p.timeBest}`, 'GO', () => this.startRun(p.playLevel, 'time')],
       ...(this.nemesisLevel() ? [['😈 Nemesis rematch', `${chefFor(this.nemesisLevel()).name} beat you ${p.losses[this.nemesisLevel()]} times · reward ${this.nemesisReward()} coins`, 'REMATCH', () => this.startRun(this.nemesisLevel())] as [string, string, string, () => void]] : []),
+      ['🆘 Rescue', `Save grandma’s stall · ${this.progress.rescueStars.filter((x) => x > 0).length}/${RESCUES.length} saved`, 'OPEN', () => this.openScreen('rescues', 'modes')],
+      ['🗼 Omakase Tower', `${TOWER_FLOORS} weekly floors · checkpoint ${this.towerState().cp}`, 'CLIMB', () => this.openScreen('towerview', 'modes')],
+      ['🎭 Modifiers', 'Mirror, blind, tiny, double speed, twins', 'OPEN', () => this.openScreen('modchals', 'modes')],
+      ['🎮 Mini-games', 'Knife Throw, Rice Rhythm, Fish Catch', 'OPEN', () => this.openScreen('minis', 'modes')],
       ['⚔️ Gauntlet', `Boss after boss, no breaks, no perks · best ${p.gauntletBest} chefs`, 'FIGHT', () => this.startRun(Math.max(5, p.playLevel), 'gauntlet')],
       ['🍱 Daily Special', p.specialDay === dayKey() ? 'Cleared today, practice anytime' : 'One special order, +150 coins today', 'PLAY', () => this.startRun(this.specialLevel(), 'special')],
       ['🤝 Friend Challenge', 'Enter a friend’s code and beat their score', 'ENTER CODE', () => this.openCodeInput()],
@@ -5739,6 +5860,346 @@ export class Game {
     this.celebrate('😈 NEMESIS DEFEATED!', `${chefFor(level).name} bows to you · +${reward} coins`);
     track('nemesis_beaten', { level });
     p.persist();
+  }
+
+  // ------------------------------------------------------------ twin layers
+
+  /** Twins land where they are: a gap smaller than the PERFECT zone joins them cleanly. */
+  private dropTwin(m: Layer): void {
+    const top = this.top;
+    const sep = this.twinSep;
+    const tol = PERFECT_TOL + 2 + (settings.assist ? 3 : 0) + (this.fever > 0 ? 8 : 0);
+    m.twin = false;
+    if (sep <= tol) {
+      m.x = top.x;
+      m.w = top.w;
+      this.combo++;
+      this.orderStats.perfects++;
+      this.lastPerfect = true;
+      this.place(m);
+      this.popup(m.x + m.w / 2, m.y - 18, this.combo > 1 ? `TWINS! PERFECT x${this.combo}` : 'TWINS! PERFECT', '#fff3b0', 18);
+      this.mission('perfects');
+      this.mission('streak', this.combo);
+      this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 24);
+      sfx.perfect(this.combo);
+      haptic.medium();
+      return;
+    }
+    const w = top.w - sep * 2;
+    this.lastPerfect = false;
+    this.combo = 0;
+    if (w < 6) {
+      this.fall({ ...m, x: top.x - sep, w: m.w / 2 }, -1);
+      this.fall({ ...m, x: top.x + m.w / 2 + sep, w: m.w / 2 }, 1);
+      this.moving = null;
+      this.die();
+      return;
+    }
+    // The outer edge of each half hangs over and is sliced off.
+    this.fall({ ...m, x: top.x - sep, w: sep }, -1);
+    this.fall({ ...m, x: top.x + top.w - sep, w: sep }, 1);
+    m.x = top.x + sep;
+    m.w = w;
+    this.orderStats.slices++;
+    this.place(m);
+    sfx.slice();
+    haptic.light();
+  }
+
+  // ------------------------------------------------------------ rescue levels
+
+  private startRescue(i: number): void {
+    if (i > 0 && !(this.progress.rescueStars[i - 1] > 0)) return this.showToast('Finish the previous rescue first');
+    this.startRun(RESCUES[i].level, 'rescue', { rescue: i });
+  }
+
+  /** Water rises (faster over time) or the quake clock ticks; tremors shove the top layer. */
+  private updateRescue(real: number): void {
+    const r = this.rescueRun;
+    if (!r || this.mode !== 'playing' || this.perkChoice || this.story || this.picker) return;
+    const rs = RESCUES[r.i];
+    r.t += real;
+    if (rs.kind === 'quake') {
+      this.timeLeft = Math.max(0, rs.time - r.t);
+      if ((r.tremor -= real) <= 0) {
+        r.tremor = 3 + this.rand() * 2;
+        this.runEvent('slam');
+        this.popup(WORLD_W / 2, this.top.y - 60, '〰️ TREMOR!', '#ffb703', 18);
+      }
+      r.margin = this.timeLeft;
+      if (this.timeLeft <= 0) {
+        this.moving = null;
+        this.die();
+      }
+      return;
+    }
+    if (r.t > 2) r.water -= rs.rise * LAYER_H * (1 + (r.t - 2) / 60) * real;
+    r.margin = (r.water - this.top.y) / LAYER_H - 1;
+    if (r.margin <= 0) {
+      this.moving = null;
+      sfx.slice();
+      this.die();
+    }
+  }
+
+  private rescueWon(): void {
+    const r = this.rescueRun!;
+    const rs = RESCUES[r.i];
+    const stars = rescueStars(rs.kind, rs.kind === 'quake' ? this.timeLeft : r.margin);
+    const p = this.progress;
+    const first = !p.rescueStars[r.i];
+    p.rescueStars[r.i] = Math.max(p.rescueStars[r.i] || 0, stars);
+    this.addCoins(first ? 150 + r.i * 30 : 30, WORLD_W / 2, this.top.y - 80, 'Rescued!');
+    this.resultKind = 'rescue-won';
+    this.specialWon = true;
+    this.mode = 'dead';
+    this.deadAt = this.time;
+    this.moving = null;
+    this.bubble = { text: '👵 Thank you, dear!', life: 99 };
+    this.celebrate('🆘 RESCUED!', `${rs.name} · ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`);
+    track('rescue', { i: r.i, stars });
+    this.endRun();
+  }
+
+  /** Rising water with waves, and grandma's stall bobbing on it. */
+  private drawWater(): void {
+    const r = this.rescueRun;
+    if (!r || this.runMode !== 'rescue' || RESCUES[r.i].kind === 'quake') return;
+    const { ctx } = this;
+    const L = -this.offX;
+    const W = WORLD_W + this.offX * 2;
+    const y0 = r.water;
+    ctx.fillStyle = 'rgba(40,120,200,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(L, y0);
+    for (let x = 0; x <= W; x += 10) ctx.lineTo(L + x, y0 + Math.sin(this.time * 3 + x * 0.05) * 4);
+    ctx.lineTo(L + W, this.camY + this.viewH + 50);
+    ctx.lineTo(L, this.camY + this.viewH + 50);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 10) ctx.lineTo(L + x, y0 + Math.sin(this.time * 3 + x * 0.05) * 4);
+    ctx.stroke();
+    const bob = Math.sin(this.time * 2) * 3;
+    this.qaSkip = true;
+    this.text('🛖', 34, y0 - 16 + bob, 30, '#fff', 400);
+    this.text('👵', 34, y0 - 40 + bob, 20, '#fff', 400);
+    if (r.margin < 3) this.text('Hurry!', 70, y0 - 50 + bob, 12, '#ffffff', 700, 'left');
+    this.qaSkip = false;
+  }
+
+  private drawRescues(): void {
+    const p = this.progress;
+    const f = this.screenBegin('🆘 RESCUE', 'Save grandma’s stall from floods, quakes and storms');
+    let y = f.y0 + 4;
+    RESCUES.forEach((rs, i) => {
+      const open = i === 0 || p.rescueStars[i - 1] > 0;
+      const st = p.rescueStars[i] || 0;
+      this.card(16, y, WORLD_W - 32, 70, open ? (rs.kind === 'quake' ? 'rgba(80,60,20,0.95)' : rs.kind === 'storm' ? 'rgba(40,40,80,0.95)' : 'rgba(20,60,90,0.95)') : 'rgba(30,20,35,0.8)');
+      this.text(open ? (rs.kind === 'quake' ? '〰️' : rs.kind === 'storm' ? '🌀' : '🌊') : '🔒', 44, y + 35, 24, '#fff', 400);
+      this.text(`${i + 1}. ${rs.name}`, 72, y + 20, 14, open ? '#fff' : 'rgba(255,255,255,0.5)', 700, 'left');
+      this.fitText(rs.kind === 'quake' ? `Stack ${rs.target} in ${rs.time}s · tremors` : `Stack ${rs.target} before the water reaches you`, 72, y + 40, 200, 10.5, 'rgba(255,255,255,0.75)', 'left');
+      this.text('★'.repeat(st) + '☆'.repeat(3 - st), 72, y + 57, 11, st ? '#ffd34d' : 'rgba(255,255,255,0.3)', 700, 'left');
+      if (open) this.pill(WORLD_W - 108, y + 19, 78, st ? 'REPLAY' : 'SAVE!', f, () => this.startRescue(i), st ? 'quiet' : 'gold');
+      y += 78;
+    });
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ omakase tower
+
+  private towerState() {
+    const p = this.progress;
+    if (p.tower.week !== weekKey()) p.tower = { week: weekKey(), cp: 0, best: 0, claimed: [] };
+    return p.tower;
+  }
+
+  private startTower(): void {
+    const tw = this.towerState();
+    if (tw.cp >= TOWER_FLOORS) return this.showToast('You conquered the tower this week! New floors on Monday.');
+    this.startRun(4 + tw.cp + 1, 'tower');
+  }
+
+  /** Records a finished floor; returns true when the whole tower is done (the run ends). */
+  private towerFloorDone(floor: number): boolean {
+    const tw = this.towerState();
+    tw.best = Math.max(tw.best, floor);
+    if (floor % 10 === 0 && floor > tw.cp) {
+      tw.cp = floor;
+      const reward = towerReward(floor);
+      if (!tw.claimed.includes(floor)) {
+        tw.claimed.push(floor);
+        this.bankCoins(reward);
+        this.openChest(this.level);
+        this.celebrate(floor === TOWER_FLOORS ? '🗼 TOWER CONQUERED!' : `🗼 CHECKPOINT ${floor}!`, `+${reward} coins and a chest · you’ll restart from here`);
+        if (floor === TOWER_FLOORS && !this.progress.badges.includes('tower')) this.progress.badges.push('tower');
+      }
+    }
+    this.progress.persist();
+    if (floor >= TOWER_FLOORS) {
+      this.winSpecial();
+      return true;
+    }
+    return false;
+  }
+
+  private drawTower(): void {
+    const { ctx } = this;
+    const tw = this.towerState();
+    const floors = towerFloors();
+    const f = this.screenBegin('🗼 OMAKASE TOWER', `${TOWER_FLOORS} floors · new twists every week · checkpoints every 10 · ${timeLeft(leagueWeek().end)}`);
+    let y = f.y0 + 4;
+    this.card(16, y, WORLD_W - 32, 74, 'rgba(60,35,70,0.95)');
+    this.text(`Checkpoint: floor ${tw.cp} · best ${tw.best}`, 32, y + 22, 13, '#ffd34d', 700, 'left');
+    this.fitText('Each floor is one short order with a twist. Lose and you restart from your last checkpoint.', 32, y + 42, WORLD_W - 64, 10, 'rgba(255,255,255,0.75)', 'left');
+    y += 84;
+    this.pill(16, y, WORLD_W - 32, tw.cp >= TOWER_FLOORS ? '✓ CONQUERED THIS WEEK' : `CLIMB FROM FLOOR ${tw.cp + 1}`, f, () => this.startTower(), 'gold');
+    y += 46;
+    // The tower, top floor first.
+    for (let fl = TOWER_FLOORS; fl >= 1; fl--) {
+      const done = fl <= tw.best;
+      const cp = fl % 10 === 0;
+      const next = fl === tw.cp + 1;
+      const w = 220 - (fl / TOWER_FLOORS) * 60;
+      const x = WORLD_W / 2 - w / 2;
+      ctx.fillStyle = next ? '#ff8a5b' : done ? '#5a8a5a' : cp ? '#7a4e2a' : '#3a2a45';
+      this.roundRect(x, y, w, 24, 6);
+      ctx.fill();
+      if (cp) {
+        ctx.strokeStyle = '#ffd34d';
+        ctx.lineWidth = 2;
+        this.roundRect(x, y, w, 24, 6);
+        ctx.stroke();
+      }
+      this.text(`${fl}`, x + 18, y + 12.5, 10.5, '#fff', 700);
+      this.text(FLOOR_ICON[floors[fl - 1]] ?? '🍣', WORLD_W / 2, y + 12.5, 13, '#fff', 400);
+      if (cp) this.text(tw.claimed.includes(fl) ? '✓' : `🎁 ${towerReward(fl)}`, x + w - 8, y + 12.5, 10, '#ffd34d', 700, 'right');
+      y += 28;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ modifier challenges
+
+  private startModChal(m: Mod): void {
+    this.startRun(Math.max(3, this.progress.playLevel - 2), 'modchal', { mods: [m] });
+  }
+
+  private modChalWon(m: Mod): void {
+    const p = this.progress;
+    if (p.modchal.day !== dayKey()) p.modchal = { day: dayKey(), done: [], stars: p.modchal.stars };
+    if (!p.modchal.done.includes(m)) {
+      p.modchal.done.push(m);
+      p.modchal.stars++;
+      this.bankCoins(100);
+      this.showToast(`${MODS[m].icon} ${MODS[m].name} cleared! +100 coins · ✦ ${p.modchal.stars}`);
+    }
+    p.persist();
+  }
+
+  private drawModChals(): void {
+    const p = this.progress;
+    const today = p.modchal.day === dayKey() ? p.modchal.done : [];
+    const f = this.screenBegin('🎭 MODIFIER CHALLENGES', `One order with a twist · first clear each day: +100 coins · ✦ ${p.modchal.stars}`);
+    let y = f.y0 + 4;
+    for (const m of MOD_LIST) {
+      const done = today.includes(m);
+      this.card(16, y, WORLD_W - 32, 66, done ? 'rgba(42,90,60,0.95)' : 'rgba(48,30,52,0.95)');
+      this.text(MODS[m].icon, 44, y + 33, 26, '#fff', 400);
+      this.text(MODS[m].name, 74, y + 22, 14, '#fff', 700, 'left');
+      this.fitText(MODS[m].desc, 74, y + 44, 200, 10.5, 'rgba(255,255,255,0.75)', 'left');
+      this.pill(WORLD_W - 104, y + 17, 74, done ? '✓ AGAIN' : 'PLAY', f, () => this.startModChal(m), done ? 'quiet' : 'gold');
+      y += 74;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ------------------------------------------------------------ mini-games
+
+  private startMini(id: MiniId): void {
+    if (this.progress.unlocked < MINIS[id].unlock) return this.showToast(`${MINIS[id].name} unlocks at level ${MINIS[id].unlock}`);
+    this.mini = makeMini(id);
+    this.miniPaid = false;
+    this.screenBack = this.mode === 'minis' ? 'minis' : 'title';
+    this.mode = 'mini';
+    track('mini_start', { id });
+  }
+
+  private updateMini(real: number): void {
+    const g = this.mini;
+    if (!g) return;
+    g.update(real);
+    if (g.sound) {
+      ({ hit: () => sfx.drop(), perfect: () => sfx.perfect(3), miss: () => sfx.slice(), fail: () => sfx.die(), win: () => sfx.celebrate(), throw: () => sfx.whoosh() } as Record<string, () => void>)[g.sound]?.();
+      if (g.sound === 'fail' || g.sound === 'miss') haptic.error();
+      g.sound = null;
+    }
+    if (g.done && !this.miniPaid) {
+      this.miniPaid = true;
+      const p = this.progress;
+      const rec = p.minis[g.id] ?? { best: 0, wins: 0, day: '' };
+      rec.best = Math.max(rec.best, g.score);
+      if (g.won) {
+        const firstToday = rec.day !== dayKey();
+        rec.wins++;
+        rec.day = dayKey();
+        const coins = firstToday ? 150 : 40;
+        this.bankCoins(coins);
+        this.celebrate(`${MINIS[g.id].icon} YOU WIN!`, `+${coins} coins${firstToday ? ' (first win today)' : ''}`, 1.8);
+      }
+      p.minis[g.id] = rec;
+      p.persist();
+      track('mini_end', { id: g.id, won: g.won, score: g.score });
+    }
+  }
+
+  private drawMiniGame(): void {
+    const { ctx } = this;
+    const g = this.mini!;
+    const L = -this.offX;
+    const W = WORLD_W + this.offX * 2;
+    const bg = ctx.createLinearGradient(0, 0, 0, this.viewH);
+    bg.addColorStop(0, g.id === 'fish' ? '#0b3a5a' : g.id === 'rhythm' ? '#3a1a4a' : '#4a2a1a');
+    bg.addColorStop(1, '#1a0d20');
+    ctx.fillStyle = bg;
+    ctx.fillRect(L, 0, W, this.viewH);
+    const top = this.insets.top;
+    this.text(`${MINIS[g.id].icon} ${MINIS[g.id].name.toUpperCase()}`, WORLD_W / 2, top + 30, 20, '#fff', 700);
+    this.text(g.status, WORLD_W / 2, top + 56, 14, '#ffd34d', 700);
+    ctx.save();
+    ctx.translate(0, top + 40);
+    g.draw(ctx, WORLD_W, this.viewH - top - 110 - this.insets.bottom, this.time);
+    ctx.restore();
+    if (g.done) {
+      ctx.fillStyle = 'rgba(20,10,25,0.8)';
+      ctx.fillRect(L, 0, W, this.viewH);
+      this.qaCover();
+      this.card(40, this.viewH / 2 - 100, WORLD_W - 80, 200, '#2a1a33');
+      this.text(g.won ? 'YOU WIN!' : 'SO CLOSE!', WORLD_W / 2, this.viewH / 2 - 60, 28, g.won ? '#ffd34d' : '#ff9a8a', 700);
+      this.text(`Score ${g.score} · best ${this.progress.minis[g.id]?.best ?? g.score}`, WORLD_W / 2, this.viewH / 2 - 24, 14, '#fff', 600);
+      this.button(60, this.viewH / 2 + 20, 130, 46, t('back'), () => { this.mini = null; this.mode = this.screenBack; }, 'quiet');
+      this.button(WORLD_W - 190, this.viewH / 2 + 20, 130, 46, t('retry'), () => this.startMini(g.id));
+    } else this.button(16, this.viewH - this.insets.bottom - 56, 90, 40, t('back'), () => { this.mini = null; this.mode = this.screenBack; }, 'quiet');
+  }
+
+  private drawMinis(): void {
+    const p = this.progress;
+    const f = this.screenBegin('🎮 MINI-GAMES', 'A new one opens after each story chapter · first win each day: +150');
+    let y = f.y0 + 4;
+    for (const id of Object.keys(MINIS) as MiniId[]) {
+      const mg = MINIS[id];
+      const open = p.unlocked >= mg.unlock;
+      const rec = p.minis[id];
+      this.card(16, y, WORLD_W - 32, 84, open ? 'rgba(48,30,52,0.95)' : 'rgba(30,20,35,0.8)');
+      this.text(open ? mg.icon : '🔒', 46, y + 42, 30, '#fff', 400);
+      this.text(mg.name, 78, y + 22, 15, open ? '#fff' : 'rgba(255,255,255,0.5)', 700, 'left');
+      this.wrapLeft(open ? mg.desc : `Opens at level ${mg.unlock}`, 78, y + 42, 190, 10.5, 'rgba(255,255,255,0.75)');
+      if (rec) this.text(`best ${rec.best} · ${rec.wins} wins`, 78, y + 72, 10, '#ffd34d', 700, 'left');
+      if (open) this.pill(WORLD_W - 104, y + 26, 74, 'PLAY', f, () => this.startMini(id), 'gold');
+      y += 92;
+    }
+    this.screenEnd(f, y - f.y0);
   }
 
   // ------------------------------------------------------------ chef cards
