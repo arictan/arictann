@@ -3,6 +3,7 @@
 
 import { save } from './platform';
 import { DEFAULT_AVATAR, type Avatar, type StatId } from './meta';
+import { DEFAULT_REST, type RestState } from './restaurant';
 
 export const STORY_LEVELS = 50; // hand-made chefs; levels keep going forever after this
 
@@ -116,6 +117,7 @@ export class Progress {
   lastDay = save.json('lastDay', '');
   duels: { code: string; level: number; theirs: number; mine: number; at: number }[] = save.json('duels', []);
   installId: string = save.json('installId', '');
+  rest: RestState = { ...DEFAULT_REST, ...save.json('rest', {}) };
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -182,6 +184,7 @@ export class Progress {
     save.setJson('lastDay', this.lastDay);
     save.setJson('duels', this.duels);
     save.setJson('installId', this.installId);
+    save.setJson('rest', this.rest);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

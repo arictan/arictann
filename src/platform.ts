@@ -64,6 +64,17 @@ export async function scheduleReminder(title: string, body: string): Promise<voi
   } catch { /* plugin unavailable */ }
 }
 
+/** Schedules a one-off local notification (replacing any earlier one with the same id). */
+export async function scheduleAt(id: number, title: string, body: string, at: Date): Promise<void> {
+  if (!native || at.getTime() <= Date.now()) return;
+  try {
+    const { display } = await LocalNotifications.checkPermissions();
+    if (display !== 'granted') return;
+    await LocalNotifications.cancel({ notifications: [{ id }] });
+    await LocalNotifications.schedule({ notifications: [{ id, title, body, schedule: { at } }] });
+  } catch { /* plugin unavailable */ }
+}
+
 const store = {
   get(key: string): string | null {
     try { return localStorage.getItem(key); } catch { return null; }

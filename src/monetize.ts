@@ -21,7 +21,7 @@ const ADS_TESTING = true;
 // Paste your RevenueCat public SDK key here to turn on real purchases.
 const REVENUECAT_API_KEY = '';
 
-export type ProductId = 'starter' | 'vip' | 'piggy' | 'pass';
+export type ProductId = 'starter' | 'vip' | 'piggy' | 'pass' | 'restpass';
 
 export interface Product { id: ProductId; storeId: string; name: string; price: string; desc: string }
 
@@ -30,6 +30,7 @@ export const PRODUCTS: Record<ProductId, Product> = {
   vip: { id: 'vip', storeId: 'sushistack.vip.monthly', name: 'VIP Chef', price: '$4.99 / month', desc: 'Ad rewards without watching ads, +60 coins and 1 extra free chest every day.' },
   piggy: { id: 'piggy', storeId: 'sushistack.piggy', name: 'Piggy Bank', price: '$2.99', desc: 'Break the piggy bank and keep every coin saved inside.' },
   pass: { id: 'pass', storeId: 'sushistack.pass.premium', name: 'Premium Sushi Pass', price: '$4.99', desc: 'Unlocks the premium reward track for this season.' },
+  restpass: { id: 'restpass', storeId: 'sushistack.restaurant.monthly', name: 'Restaurant Pass', price: '$2.99 / month', desc: '+50% tips, a tip jar that holds 4 hours more, the Imperial Gold theme and 4 exclusive decor styles.' },
 };
 
 export const monetize = {
