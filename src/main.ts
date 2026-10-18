@@ -14,10 +14,16 @@ void fontReady().then(() => {
 
   let last = performance.now();
   function frame(now: number): void {
-    game.update((now - last) / 1000);
-    game.render();
-    last = now;
+    // Schedule the next frame first, so one bad frame can never freeze the game.
     requestAnimationFrame(frame);
+    const dt = (now - last) / 1000;
+    last = now;
+    try {
+      game.update(dt);
+      game.render();
+    } catch (e) {
+      console.error(e);
+    }
   }
   requestAnimationFrame(frame);
 

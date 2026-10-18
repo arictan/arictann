@@ -2014,7 +2014,7 @@ export class Game {
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {
     const { ctx } = this;
-    r = Math.min(r, w / 2, h / 2);
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -2759,7 +2759,8 @@ export class Game {
       return;
     }
 
-    this.text(String(this.height), cx, top + 62, this.fever > 0 && this.mode === 'playing' ? 42 : 50, '#fff', 900);
+    // The live height (the results card shows it once the run ends).
+    if (this.mode === 'playing') this.text(String(this.height), cx, top + 62, this.fever > 0 ? 42 : 50, '#fff', 900);
     if (this.mode === 'playing' && this.fever > 0) {
       // Fever: golden glow around the screen edges.
       const g = ctx.createRadialGradient(cx, midY, this.viewH * 0.3, cx, midY, this.viewH * 0.75);
@@ -3239,7 +3240,7 @@ export class Game {
       }
     }
     ctx.restore();
-    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom === 'map' ? 'title' : this.shopFrom; }, 'quiet');
+    this.button(16, backY, WORLD_W - 32, 46, t('back'), () => { this.mode = this.shopFrom === 'map' ? 'title' : this.shopFrom; }, 'quiet');
   }
 
   /** A chef's face in a circle; greyed out with a lock when not yet reached. */
@@ -3432,7 +3433,7 @@ export class Game {
     ctx.restore();
     this.listMax = Math.max(0, contentH - areaH + 10);
     this.albumScroll = Math.min(this.albumScroll, this.listMax);
-    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom; }, 'quiet');
+    this.button(16, backY, WORLD_W - 32, 46, t('back'), () => { this.mode = this.shopFrom; }, 'quiet');
   }
 
   private dealsHeight(): number {
@@ -3556,10 +3557,16 @@ export class Game {
       g.addColorStop(1, 'rgba(20,10,25,0.85)');
       ctx.fillStyle = g;
       ctx.fillRect(-this.offX, areaTop + areaH - 30, WORLD_W + this.offX * 2, 30);
-      this.text('▾ more', cx, areaTop + areaH - 8, 11, 'rgba(255,255,255,0.8)', 800);
+      // A solid chip, so it never reads as part of the card underneath.
+      ctx.fillStyle = 'rgba(20,10,25,0.95)';
+      this.roundRect(cx - 34, areaTop + areaH - 20, 68, 20, 10);
+      ctx.fill();
+      this.qaSkip = true; // floats over the scrolling list on purpose
+      this.text('▾ more', cx, areaTop + areaH - 9.5, 11, 'rgba(255,255,255,0.85)', 700);
+      this.qaSkip = false;
     }
 
-    this.button(16, backY, WORLD_W - 32, 46, 'BACK', () => { this.mode = this.shopFrom; this.shopSel = null; }, 'quiet');
+    this.button(16, backY, WORLD_W - 32, 46, t('back'), () => { this.mode = this.shopFrom; this.shopSel = null; }, 'quiet');
   }
 
   private drawBoosterCard(b: (typeof BOOSTERS)[number], x: number, y: number, w: number, h: number): void {
@@ -3731,8 +3738,9 @@ export class Game {
     const top = this.insets.top;
     ctx.fillStyle = 'rgba(20,10,25,0.68)';
     ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
-    this.text(title, WORLD_W / 2, top + 31, 22, '#fff', 900);
-    if (sub) this.text(sub, WORLD_W / 2, top + 56, 12, '#ffd34d', 700);
+    // Kept clear of the sound button on the left and the coin counter on the right.
+    this.fitText(title, WORLD_W / 2, top + 31, WORLD_W - 170, 22, '#fff', 'center', 700);
+    if (sub) this.fitText(sub, WORLD_W / 2, top + 56, WORLD_W - 24, 12, '#ffd34d', 'center', 700);
     const backY = this.viewH - this.insets.bottom - 60;
     const areaTop = top + (sub ? 72 : 60);
     const areaH = backY - 10 - areaTop;
@@ -4255,7 +4263,7 @@ export class Game {
     const season = currentSeason();
     const reached = Math.min(PASS_TIERS, Math.floor(p.xp / PASS_XP));
     const th = season.theme;
-    const f = this.screenBegin(`${th.icon} ${th.name.toUpperCase()} PASS`, `Season ${season.n} · ${timeLeft(season.end)} · XP: chefs, missions, PERFECTs`);
+    const f = this.screenBegin(`${th.icon} ${th.name.toUpperCase()}`, `Sushi Pass season ${season.n} · ${timeLeft(season.end)} · XP from chefs, missions, PERFECTs`);
     let y = f.y0 + 4;
     this.card(16, y, WORLD_W - 32, 74, 'rgba(60,20,80,0.95)');
     this.ctx.fillStyle = th.color;

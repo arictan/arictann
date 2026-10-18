@@ -218,15 +218,37 @@ After each run, the results screen shows progress toward the cheapest item you d
 - **Combos with escalating feedback**, plus streak coin bonuses.
 - **Orders give short-term goals**, and each one also changes the scene.
 
-## Roadmap
-1. **More shop items:** new ingredient sets (ebi, unagi, ikura), flag-pick designs and knife trails.
-2. **Daily special.** One fixed recipe per day, with a streak counter and a bonus coin reward.
-3. **Customers.** Animated customers with patience timers and tips for perfect rolls.
-4. **Leaderboards.** Game Center and Play Games, plus a weekly event.
-5. **Monetization:**
-   - A rewarded ad to "save the roll" once per run (undo the miss).
-   - A rewarded ad to double the coins from a run.
-   - A one-time "Remove ads" purchase.
-   - Optionally, interstitial ads every 3rd game over, never during play.
+## Depth update: 20 more features
 
-   Ads require updating `PRIVACY.md`, the store privacy forms, and adding App Tracking Transparency on iOS.
+**Gameplay**
+1. **Gradual unlocks and a tutorial.** New players see only PLAY and a "How to play" card. The shop and daily gift open at level 2, modes and the map at 3, events at 4, the restaurant at 5, and the rest at 6. Each feature gets a celebration the first time it opens and a NEW tag until it is visited. The first run is slowed down, a finger shows where to tap, and coach cards explain PERFECTs, slicing and serving.
+2. **New ingredients.** Ebi (level 8, a PERFECT counts double for your combo), unagi (15, slippery: it slides a little after the tap), tofu (25, wobbles) and ikura (35, a PERFECT pays bonus coins). Each comes with its own recipe.
+3. **Boss rage.** Every 10th level, the boss rages halfway through the order: faster layers, more attacks, and knife flurries. Endless Legend bosses add a "final fury" near the end.
+4. **Booster picker.** Before a run you pick which owned boosters to use. Unpicked ones stay in the bag, and the picker remembers your last choice.
+5. **Perks.** After each chef in a journey run, you pick 1 of 3 perks for the rest of the run, for example Wide Roll, Bodyguard or Hot Kitchen. They stack.
+6. **Ghost.** Faint outlines of your best run show the shape you're racing.
+
+**Personality**
+7. **My Chef.** Your own chef avatar with 8 parts (the golden toque and crown are earned on the journey). It appears on the home screen, in story panels and on share cards.
+8. **Regulars.** Ten named customers place the orders, each with a favourite dish. Serving them earns hearts across 5 friendship levels, each with a reward and a new line of dialogue. At Friend level they make special requests: a longer order for double coins.
+9. **Story.** One chapter every 10 levels, from reopening grandmother's sushi bar to the Golden Plate, then the endless Legends. Each chapter has an opening and an ending, and you can re-read them.
+10. **Achievements.** 60 in total: 15 families with 4 tiers each, paying 50, 150, 400 and 1,000 coins.
+11. **Gallery.** Every 6 PERFECTs reveal a tile of a 4×4 picture. There are 12 pictures, each worth 300 coins.
+12. **Themed Pass seasons.** Each Sushi Pass season takes a theme from the calendar (Sakura Spring, Summer Matsuri, Spooky Kitchen, Winter Lights and others), with a matching prize plate.
+
+**Platform**
+13. **Settings:** music, sound, vibration, reduced motion, colour-blind symbols, assist mode, highlight clips and language. A gear on the home screen keeps them reachable before MORE opens.
+14. **Languages.** The main UI is translated into Japanese, Korean, Spanish, Portuguese and Hindi. Chef lines and item names stay in English.
+15. **Analytics.** Events (tutorial steps, runs, level beats, perks, purchases, ad rewards) are logged on the device. A hook is ready for Firebase or any other SDK, and nothing is sent by default.
+16. **Remote config.** Balance values (coin boost, perk frequency, rage point, tutorial speed, invite reward, an announcement message) have offline defaults and an optional JSON URL.
+17. **Save transfer.** A compressed, checksummed code moves your progress to another device.
+18. **Invites.** Every player has an invite code, and a friend who enters it gets a welcome gift.
+19. **Duels.** Every friend challenge you play is recorded as a win or loss, with a rematch on the same seed.
+20. **Highlight clips.** When turned on, the canvas is recorded in overlapping 6-second segments, so the last 6–12 s of a run can be shared as a video.
+
+## Not done yet (needs accounts or a server)
+- **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
+- **Inviter rewards and real duels:** these need player accounts to tell the inviter or opponent. Today, duels replay a shared seed and compare against the score inside the code.
+- **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
+- **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
+- **Full translation** of chef dialogue, item names and store listings.

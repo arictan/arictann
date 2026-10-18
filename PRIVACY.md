@@ -10,6 +10,19 @@ _Last updated: 2026-10-18_
 Your progress is saved **only on your device**: coins, levels, stars, purchases, collections, settings and records.
 It is deleted when you uninstall the app. Online events marked "(AI)" use computer players and send nothing anywhere.
 
+## Gameplay statistics
+The game keeps a small log of gameplay events (for example "run ended at level 12") **on your device only**, to
+show your stats and achievements. It is not sent anywhere. If a future version sends anonymous statistics, this
+policy will be updated first and the app will say so.
+
+## Save transfer, invites and friend codes
+Save codes, invite codes and challenge codes are made on your device and only go where you paste or send them.
+A save code contains your game progress (no personal information).
+
+## Highlight clips
+If you turn on highlight clips, the game records only its own screen while you play. Clips stay on your device
+unless you choose to share one.
+
 ## Ads (Google AdMob)
 Ads only play when you choose to watch one for a reward. Google AdMob may collect device identifiers,
 approximate location (from your IP address), and ad interaction data to show and measure ads. On iOS you can
