@@ -16,7 +16,7 @@ show your stats and achievements. It is not sent anywhere. If a future version s
 policy will be updated first and the app will say so.
 
 ## Save transfer, invites and friend codes
-Save codes, invite codes and challenge codes are made on your device and only go where you paste or send them.
+Save codes, invite codes, challenge and ghost codes, and restaurant codes are made on your device and only go where you paste or send them. A restaurant code contains your chef's name and look and your restaurant's layout.
 A save code contains your game progress (no personal information).
 
 ## Highlight clips
@@ -34,7 +34,7 @@ RevenueCat receives an anonymous app user ID and your purchase receipts to confi
 See https://www.revenuecat.com/privacy
 
 ## Notifications
-If you allow them, the game schedules at most one local reminder a day on your device. No server is involved.
+If you allow them, the game schedules local reminders on your device: at most one daily reminder, and one when your restaurant's tip jar is full. No server is involved.
 
 ## Sharing
 When you share a score, the image and challenge code go only where you choose to send them.

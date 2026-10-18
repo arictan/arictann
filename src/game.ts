@@ -1724,7 +1724,7 @@ export class Game {
       this.flurryT = 0.4;
       this.runEvent('knife');
     }
-    if (this.runMode === 'puzzle' || this.calmChefs || this.level % 10 !== 0) return;
+    if (this.runMode === 'puzzle' || this.calmChefs || this.special || this.level % 10 !== 0) return; // the critic and the Daily Special never rage
     const done = (this.height - this.order.start) / this.order.length;
     const phase = done >= 0.85 && this.level > STORY_LEVELS ? 2 : done >= cfg.rageAt ? 1 : 0;
     if (phase > this.rage) {

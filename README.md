@@ -11,6 +11,9 @@ See [GAME_DESIGN.md](GAME_DESIGN.md) for the design, and [PRIVACY.md](PRIVACY.md
 src/game.ts      stacking, orders, screens and rendering
 src/chef.ts      boss chefs (50 story chefs + generated endless ones) and how they're drawn
 src/meta.ts      avatar, regular customers, story, achievements, gallery, Pass themes
+src/restaurant.ts restaurant decor styles, themes, staff, critic, menu, restaurant codes
+src/scene.ts     the detailed restaurant interior
+src/services.ts  leaderboards: local weekly boards + hook for Game Center / Play Games
 src/progress.ts  long-term progress (journey, missions, stats), saved on the device
 src/live.ts      date-driven events (World Tour, holidays, race, cup, crew, Pass seasons)
 src/i18n.ts      UI translations (en, ja, ko, es, pt, hi, tr)
@@ -83,16 +86,19 @@ The game ships with Google's **public test** ad IDs, so test ads play on phones 
 
 ### In-app purchases (RevenueCat) — test mode until you set it up
 In the browser and in dev builds, purchases are simulated, and the screen says so. In a release build without setup, purchase buttons explain that purchases aren't available yet. To go live:
-1. Create these products in App Store Connect and the Google Play Console: `sushistack.starter` (non-consumable), `sushistack.vip.monthly` (auto-renewing subscription), `sushistack.piggy` (consumable) and `sushistack.pass.premium` (non-consumable, or one per season).
+1. Create these products in App Store Connect and the Google Play Console: `sushistack.starter` (non-consumable), `sushistack.vip.monthly` (auto-renewing subscription), `sushistack.piggy` (consumable), `sushistack.pass.premium` (non-consumable, or one per season) and `sushistack.restaurant.monthly` (auto-renewing subscription: the Restaurant Pass).
 2. Create a project at https://www.revenuecat.com, connect both stores, and add the products.
 3. Paste your RevenueCat public SDK key into `REVENUECAT_API_KEY` in `src/monetize.ts`.
-4. Consider restoring purchases and handling the VIP subscription status from RevenueCat entitlements (the game currently grants 30 days of VIP per purchase).
+4. Consider restoring purchases and handling the VIP subscription status from RevenueCat entitlements (the game currently grants 30 days of VIP or Restaurant Pass per purchase).
+
+### In-app events
+See [store/IN_APP_EVENTS.md](store/IN_APP_EVENTS.md) for ready-made event cards (images + copy) for the App Store and Google Play.
 
 ### 3. Optional: online leaderboards
 The game keeps local records (top 10 runs and a weekly challenge). To add real leaderboards, first set up the store accounts:
 - **iOS:** enable *Game Center* for the app in App Store Connect, create a leaderboard (for example `best_height`), and add the Game Center capability in Xcode.
 - **Android:** create a Play Games Services project in the Play Console, with a leaderboard of the same purpose.
-- Then add a Capacitor game-services plugin and submit the score where the game ends a run (`endRun()` in `src/game.ts`).
+- Then add a Capacitor game-services plugin and register it with `setOnlineServices()` in `src/services.ts`. Scores are already submitted at the end of every run, to the board IDs listed in `BOARDS`.
 
 ### Store images
 `store/ios/` has six 1320×2868 screenshots (iPhone 6.9"; App Store Connect scales them for smaller iPhones).

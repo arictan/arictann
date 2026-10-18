@@ -246,9 +246,52 @@ After each run, the results screen shows progress toward the cheapest item you d
 19. **Duels.** Every friend challenge you play is recorded as a win or loss, with a rematch on the same seed.
 20. **Highlight clips.** When turned on, the canvas is recorded in overlapping 6-second segments, so the last 6–12 s of a run can be shared as a video.
 
+## Restaurant and 25 more features
+
+**The restaurant** is now a place to return to every day:
+- **Detailed scene:**
+  - Window with the real-time sky.
+  - Menu board, tiled floor and steaming dishes.
+  - Your chef behind the counter, plus up to 6 regulars on stools.
+  - Staff at work and a cat that naps once the room is cosy.
+  - Theme particles: petals, snow, fireflies, leaves or gold.
+- **Tips:** the tip jar earns coins per hour while you're away and holds 8 h. The dishwasher and the Pass make it hold more. A local reminder fires when it's full, if the player allowed reminders.
+- **Guests (1):** tap a guest showing "!" to serve them, for coins and a heart for that regular. Up to 40 a day.
+- **Decor styles (2):** each area has 3 looks. One is free, one costs coins, and one is earned with critic reviews or the Restaurant Pass.
+- **Themes (3):** Classic, Sakura Terrace, Summer Matsuri, Maple Inn, Haunted Izakaya, Winter Onsen and Imperial Gold. Seasonal themes are free to claim in their season.
+- **Food Critic (4):** visits about one day in three. Serve one long, tight order with 2★ for a review. Reviews add popularity, tips and decor unlocks.
+- **Staff (5):** a waiter (more tips), a dishwasher (bigger jar), a greeter (more seats and hearts) and an apprentice (daily boosters). Each has 3 levels.
+- **Visit friends (6):** share a restaurant code (R-…). Friends see your room and can leave a ❤️ for coins.
+- **Menu board (7):** pick today's special. It turns up more in runs and pays 2× coins there, and any menu adds +20% tips.
+
+**Gameplay**
+- **New boss moves (8):** from level 20, the bite shaves the top layer. From 30, the speed flip reverses the layer and speeds it up. From 40, the freezer blast frosts the edges of the screen.
+- **Sous-chef bonus round (9):** every 3rd chef offers 3 extra drops that don't count toward the order. Three PERFECTs win a chest.
+- **Fancy cuts (10):** PERFECTs during a 5+ streak land with a gold garnish and pay +1 coin.
+- **Weather (11):** from level 12. Wind makes layers faster one way and slower the other; rain makes them skid.
+- **Gauntlet mode (12):** boss after boss with short orders, no breaks and no perks. It keeps a best score.
+- **Ingredient mastery (13):** 100 layers of an ingredient gives it a gold rim and +1 coin per PERFECT.
+
+**Social and collecting**
+- **Leaderboards (14):** `services.ts` keeps weekly and all-time boards on the device, with a hook for Game Center / Play Games.
+- **Duels (15):** a full live duel needs a server. Instead, ghost codes give a same-seed race against a friend's exact run.
+- **Crews (16):** need a server (see below).
+- **Ghost codes (17):** a G-… code carries your run's shape. Friends see it in pink as they play.
+- **Chef cards (18):** card copies level up (3 / 6 / 10 copies). From Lv 2 the chef wears a gold uniform.
+- **Museum (19):** every dish on wooden shelves, with gold frames at 10 serves and ingredient mastery bars.
+- **Profile and season trophies (20):** finishing a Sushi Pass season adds a themed badge to the profile.
+- **Prestige (21):** from level 101, restart the journey for +10% coins forever and the Prestige Plate.
+
+**Retention and business**
+- **Reminders (22):** the tip-jar reminder described above.
+- **Login calendar (23):** 28 days that never reset on a missed day. Day 28 gives the Loyal Chef Plate.
+- **Restaurant Pass (24):** $2.99/month, in test mode until the store is set up. It gives +50% tips, +4 h jar, the Imperial theme and 4 gold styles.
+- **Store events (25):** in-app event images and copy are in `store/IN_APP_EVENTS.md`.
+
 ## Not done yet (needs accounts or a server)
 - **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
-- **Inviter rewards and real duels:** these need player accounts to tell the inviter or opponent. Today, duels replay a shared seed and compare against the score inside the code.
+- **Inviter rewards, live duels and crews with real players:** these need player accounts and a server. Today, duels and ghost races replay a shared seed against the score and shape inside the code, and crew mates and cup rivals are labelled AI.
+- **Rewards for the friend whose restaurant you visit:** these also need accounts.
 - **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
 - **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
 - **Full translation** of chef dialogue, item names and store listings.
