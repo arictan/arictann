@@ -4,6 +4,7 @@
 import { save } from './platform';
 import { DEFAULT_AVATAR, type Avatar, type StatId } from './meta';
 import { DEFAULT_REST, type RestState } from './restaurant';
+import { defaultDiner, type DinerState } from './diner';
 import type { LeagueState, QuestState } from './compete';
 
 export const STORY_LEVELS = 50; // hand-made chefs; levels keep going forever after this
@@ -136,6 +137,7 @@ export class Progress {
   lab = save.json('lab', { day: '', tries: 0, log: [] as { mix: string[]; hint: number; found?: string }[] });
   branches: Record<string, { lv: number; tipsAt: number }> = save.json('branches', {});
   tracks: string[] = save.json('tracks', ['classic']); // jukebox tracks owned
+  diner: DinerState = { ...defaultDiner(), ...save.json('diner', {}) }; // pantry, kitchen, guests, street (see diner.ts)
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -220,6 +222,7 @@ export class Progress {
     save.setJson('lab', this.lab);
     save.setJson('branches', this.branches);
     save.setJson('tracks', this.tracks);
+    save.setJson('diner', this.diner);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

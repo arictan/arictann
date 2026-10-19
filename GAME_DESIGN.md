@@ -325,12 +325,70 @@ After each run, the results screen shows progress toward the cheapest item you d
   - Screen-reader announcements for screens, chefs, PERFECTs and results.
   - A hidden list of real buttons that mirrors every button on the canvas, so VoiceOver and TalkBack can navigate the menus. Buttons without a label are named from the text drawn on them or on their row ("Knife Throw: PLAY", "Hat · Chef toque: next"), and buttons hidden behind an overlay are left out.
 
+## The restaurant loop: 20 features
+
+Every run now feeds the restaurant, and the restaurant feeds every run:
+**stack layers → stock the pantry → cook dishes → serve guests → coins → upgrades, expansions and the street → stronger runs.**
+
+**Every run matters to the restaurant**
+1. **Pantry from runs:** each landed layer stocks one of its ingredient, and a PERFECT stocks two. The pantry holds 30 of each, up to 75 with the Big Fridge. The results card shows "🧺 +24 to the pantry".
+2. **Order board (guest requests):** up to 3 regulars post a request for a dish, with a new one every 20 minutes. Fill it from the display case or by serving that dish in any run. It pays 2× the dish price and gives 2 hearts. Requested dishes turn up more often in the journey.
+3. **Restaurant powers your runs:** three kitchen upgrades are run boosts. Sharp Knives give +1/+2/+3 to the PERFECT zone, the Big Rice Cooker makes the first roll 5/10/15% wider, and the Lucky Cat adds 4/8/12% coins.
+4. **Dish levels:** each dish has 5 levels. Orders served in runs and plates sold count toward them (5/15/40/100). The price rises from 1× to 2.2×, and the menu shows the level, price and how far to the next level.
+
+**Come back often, never punished**
+
+5. **Rush Hour:** lunch runs 12:00–13:00 and dinner 19:00–20:00 (90 minutes with the Ramen Bar).
+   - The tip jar fills 2× as fast, guests come back in seconds and tips are doubled.
+   - Rush chests open at 8, 16 and 24 guests; the third has rare tableware.
+   - An optional reminder arrives 5 minutes before. Missing a rush costs nothing.
+6. **Kitchen burners:** a dish takes 2, 5, 15 or 30 minutes depending on how long its recipe is. Plated dishes sit in a glass display case and ride the conveyor belt.
+   - Upgrades: Fast Stove (−15/30/45% time), Extra Burner (up to 4) and Display Case (up to 18 dishes).
+   - "Cook again" repeats a burner's last dish with one tap.
+7. **Juicy collecting:** collecting the jar makes coins burst out. Every tap in the next 2.4 s adds 2%, up to +20%. The base amount is banked first, so nothing is lost if the app closes.
+8. **Golden guest:** once a day, at a time picked from the date between 10:00 and 20:00, a glowing guest takes the first seat and waits until you serve them. They leave coins, rare tableware, a music track, boosters or a free decor style.
+
+**Long-term goals**
+
+9. **Expansion chapters:** Counter Bar, Second Floor, Rooftop Garden and the Flagship. Each has a short grandma story, 3–4 tasks and its own perk (more seats, +10/15/20/30% tips).
+   - Each one also changes the room: a "2F ↑ OPEN" plaque, rooftop string lights, a golden crown and a red carpet.
+10. **Sakura Street:** 6 shops to buy, from 1,500 to 15,000 coins. Each adds tips per hour and a perk:
+    - Tea House: +10% guest tips.
+    - Fish Market: daily salmon and tuna delivery.
+    - Ramen Bar: longer Rush Hours.
+    - Bath House: double staff XP.
+    - Arcade: double rush chests.
+    - The street is drawn as a panorama with your restaurant in the middle.
+11. **Guide rating ✪1–5:** guide points come from popularity, dish levels, expansions, shops, critic reviews, decor, sets and requests. Each new star is a celebration and unlocks a new guest type that tips more:
+    - ✪0 Locals 1×
+    - ✪1 Office workers 1.15×
+    - ✪2 Tourists 1.3×
+    - ✪3 Food bloggers 1.5×
+    - ✪4 Celebrities 1.8×
+    - ✪5 Royalty 2.3×
+12. **Tableware collections:** 6 sets of 5 pieces, from Kyoto Clay to the rare Golden Dynasty, shown on wooden shelves. Each finished set gives +5% tips forever, and duplicates pay 40 coins. Pieces drop from bosses, Rush chests, the golden guest, goal chests and the weekly report.
+
+**Characters and story**
+
+13. **Beaten chefs come to eat:** rival chefs you've beaten sit at your counter, up to 3 a day. They're drawn as real chefs with a name badge, and they say a line ("I came here to spy. I'm staying for dessert."). The guestbook pays out at 5/15/30/50/100 chefs hosted.
+14. **Rival across the street (AI):** each week a computer rival restaurant, always labelled "(AI)", aims for about what you earned last week. Out-earn them by Sunday night for +600 coins and their sign on your wall.
+15. **Staff grow when you play:** hired staff gain XP from every layer you stack and rank up from Rookie through Regular, Pro and Star to Legend. Each rank adds +2% tips, and staff cheer from the side of the screen during PERFECT streaks.
+16. **Review feed:** short, funny guest reviews appear after dishes, requests, Rush Hour, golden guests, chef visits and very tall runs.
+
+**Events and rewards**
+
+17. **Festival stall:** on days 15–21 of every month there is a festival with 12 themes (Hanami, Tanabata, Obon, Yokai Parade…). Runs and the restaurant earn tokens, which buy 6 stall items. A finished stall gives 1,000 coins and a keepsake that stays in your room (+2% tips).
+18. **Daily goals:** 3 small goals a day, fixed for the day. Rush goals only show up if a Rush Hour is still ahead. The chest pays 150 coins, festival tokens and a chance of tableware.
+19. **Weekly report:** on the first visit of a new week you see a card with a daily income chart, guests, dishes sold, best dish, requests, chef guests, the rating change and the rival result. It pays a reward and a piece of tableware, and can be shared.
+20. **Dream restaurant:** the top card shows a painting of the finished flagship. It fills with colour as you progress, with a percentage and the next step.
+
 ## Not done yet (needs accounts or a server)
 - **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
 - **Inviter rewards, live duels and crews with real players:** these need player accounts and a server. Today, duels and ghost races replay a shared seed against the score and shape inside the code, and crew mates and cup rivals are labelled AI.
 - **Rewards for the friend whose restaurant you visit:** these also need accounts.
 - **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
 - **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
+- **A real rival restaurant run by a friend:** this needs accounts. The weekly rival is AI and labelled so.
 - **Real league and quest opponents:** these need a server. Today they are seeded AI, labelled "(AI)".
 - **Widget and Live Activity in the native projects:** the code in `native/` hasn't been compiled here. Add it in Xcode and Android Studio (see `native/README.md`) and test it on a device.
 - **Full translation** of chef dialogue, item names, the newest feature screens and store listings.

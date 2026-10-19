@@ -34,7 +34,7 @@ RevenueCat receives an anonymous app user ID and your purchase receipts to confi
 See https://www.revenuecat.com/privacy
 
 ## Notifications
-If you allow them, the game schedules local reminders on your device: at most one daily reminder, and one when your restaurant's tip jar is full. No server is involved.
+If you allow them, the game schedules local reminders on your device: at most one daily reminder, one when your restaurant's tip jar is full, one before the next Rush Hour, and one when a dish you started cooking is ready. No server is involved.
 
 ## Home-screen widget and Live Activity
 If you add the widget, the game shares your restaurant name and popularity, tip-jar status, calendar day, level and next chef with it through storage on your

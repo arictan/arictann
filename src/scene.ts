@@ -5,7 +5,14 @@ import { drawChef, type Chef } from './chef';
 import { FONT } from './font';
 import { type RestTheme } from './restaurant';
 
-export interface SceneGuest { emoji: string; hungry: boolean; critic?: boolean }
+export interface SceneGuest {
+  emoji: string;
+  hungry: boolean;
+  critic?: boolean;
+  want?: string; // emoji of the dish this guest asked for
+  golden?: boolean; // the once-a-day golden guest
+  chef?: Chef; // a rival chef you've beaten, eating here
+}
 
 export interface SceneOpts {
   x: number; y: number; w: number; h: number;
@@ -20,6 +27,11 @@ export interface SceneOpts {
   menu: string; // emoji of today's dish, or ''
   name: string; // shown on the sign
   hour: number; // 0-23, for the window sky
+  rush?: boolean; // Rush Hour: warm light and a banner
+  expansions?: number; // 0-4: counter bar, second floor, rooftop garden, flagship
+  dishes?: string[]; // plated dishes waiting in the display case (ride the belt)
+  keepsakes?: string[]; // festival keepsakes on the floor
+  cooking?: number; // burners in use (steam from the kitchen)
 }
 
 const C = { counter: 0, lanterns: 1, aquarium: 2, noren: 3, garden: 4, art: 5, sign: 6, conveyor: 7 };
@@ -175,6 +187,31 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
     label(ctx, o.name.toUpperCase(), x + w / 2, y + 29, 14, neon ? '#ffd6f0' : ss === 1 ? '#f4ecd8' : '#ffd34d', 136);
   }
 
+  // ---- expansions: a 2F sign over the door, rooftop string lights, the flagship's golden crown
+  const ex = o.expansions ?? 0;
+  if (ex >= 3) {
+    ctx.strokeStyle = 'rgba(40,30,20,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i <= 16; i++) {
+      const px = x + (i / 16) * w;
+      const py = y + 6 + Math.sin((i / 16) * Math.PI * 4) * 3 + 3;
+      if (i) ctx.lineTo(px, py);
+      else ctx.moveTo(px, py);
+    }
+    ctx.stroke();
+    for (let i = 0; i < 16; i++) {
+      const px = x + ((i + 0.5) / 16) * w;
+      const py = y + 9 + Math.sin(((i + 0.5) / 16) * Math.PI * 4) * 3 + 3;
+      const on = 0.55 + 0.45 * Math.sin(t * 3 + i * 1.3);
+      ctx.fillStyle = [`rgba(255,211,77,${on})`, `rgba(255,120,150,${on})`, `rgba(140,220,255,${on})`][i % 3];
+      ctx.beginPath();
+      ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (ex >= 4) emoji(ctx, '👑', x + w / 2, y + 8, 14);
+
   // ---- lanterns
   const ll = L[C.lanterns];
   const ls = S[C.lanterns];
@@ -221,6 +258,13 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
     label(ctx, nl >= 2 ? '寿司' : 'の', x + 49, y + 90, 14, nl >= 2 && ns !== 2 ? '#2d1e2f' : '#fff');
   }
   if (o.staff.greeter) emoji(ctx, '💁', x + 49, floorY - 18 + Math.sin(t * 2) * 1.5, 22);
+  if (ex >= 2) {
+    // A little "2F ↑" plaque by the door: the upstairs dining room is open.
+    ctx.fillStyle = '#5a3a22';
+    rr(ctx, x + 22, y + 48, 54, 12, 4);
+    ctx.fill();
+    label(ctx, '2F ↑ OPEN', x + 49, y + 54.5, 7.5, '#ffd34d');
+  }
 
   // ---- wall art (right)
   const al = L[C.art];
@@ -309,12 +353,35 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
   }
 
   // ---- theme decorations in the corners
-  th.deco.forEach((d, i) => emoji(ctx, d, x + 18 + i * 22, floorY + 18, 14));
+  if (ex >= 4) {
+    // The flagship's red carpet from the door.
+    ctx.fillStyle = '#9d0208';
+    ctx.beginPath();
+    ctx.moveTo(x + 30, y + h);
+    ctx.lineTo(x + 68, y + h);
+    ctx.lineTo(x + 62, floorY + 2);
+    ctx.lineTo(x + 36, floorY + 2);
+    ctx.fill();
+    ctx.fillStyle = '#d4a537';
+    ctx.fillRect(x + 36, floorY + 2, 26, 2);
+  }
+  [...th.deco, ...(o.keepsakes ?? []).slice(-6)].forEach((d, i) => emoji(ctx, d, x + 18 + i * 22, floorY + 18, 14));
 
   // ---- your chef (and the apprentice) behind the counter
   const chefX = x + w * 0.56;
   drawChef(ctx, o.chef, chefX, cy - 44, 0.5, 'happy', chefX + Math.sin(t) * 40, cy + 60, t);
   if (o.staff.apprentice) emoji(ctx, '👦', chefX + 48, cy - 18 + Math.abs(Math.sin(t * 3)) * -2, 22);
+  if (o.cooking) {
+    // Something's on the burners: steam rises behind the chef.
+    for (let i = 0; i < 3 + o.cooking; i++) {
+      const k = (t * 0.6 + i * 0.37) % 1;
+      ctx.fillStyle = `rgba(255,255,255,${0.35 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(chefX - 46 + (i % 3) * 8 + Math.sin(t * 2 + i) * 4, cy - 30 - k * 46, 4 + k * 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    emoji(ctx, '🍳', chefX - 40, cy - 14, 15);
+  }
   if (o.staff.dishwasher) {
     const dx = x + w - 74;
     emoji(ctx, '🧽', dx, cy - 14, 16);
@@ -379,8 +446,9 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
     ctx.fillStyle = vs === 2 ? '#e9eef6' : '#555';
     ctx.fillRect(x + 26, cy - 9, w - 52, 9);
     if (vs === 2) { ctx.fillStyle = '#3d6fb6'; ctx.fillRect(x + 26, cy - 5, w - 52, 2); }
-    const items = vs === 1 ? ['⛵', '🍣', '⛵'] : vs === 2 ? ['🚅'] : ['🍣', '🍤', '🍙'];
-    const n = vs === 2 ? 1 : vl * 2;
+    const plated = o.dishes ?? [];
+    const items = plated.length ? plated : vs === 1 ? ['⛵', '🍣', '⛵'] : vs === 2 ? ['🚅'] : ['🍣', '🍤', '🍙'];
+    const n = plated.length ? Math.min(8, plated.length) : vs === 2 ? 1 : vl * 2;
     for (let i = 0; i < n; i++) {
       const px = x + 26 + ((t * (vs === 2 ? 70 : 28) + i * ((w - 52) / n)) % (w - 52));
       if (vl >= 2 && vs === 0) {
@@ -389,7 +457,7 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
         ctx.ellipse(px, cy - 10, 11, 4, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      if (vl >= 3 || vs > 0) emoji(ctx, items[i % items.length], px, cy - 17, vs === 2 ? 18 : 12);
+      if (vl >= 3 || vs > 0 || plated.length) emoji(ctx, items[i % items.length], px, cy - 17, vs === 2 && !plated.length ? 18 : 12);
     }
   }
 
@@ -401,7 +469,30 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
       ctx.fillRect(sp.x - 9, cy + 44, 18, 6);
       ctx.fillRect(sp.x - 2, cy + 50, 4, 16);
       const bob = Math.sin(t * 3 + i * 1.7) * 2;
-      emoji(ctx, gst.emoji, sp.x, sp.y + bob, 26);
+      if (gst.golden) {
+        // The golden guest glows and sparkles.
+        const gg = ctx.createRadialGradient(sp.x, sp.y, 2, sp.x, sp.y, 30);
+        gg.addColorStop(0, 'rgba(255,220,90,0.75)');
+        gg.addColorStop(1, 'rgba(255,220,90,0)');
+        ctx.fillStyle = gg;
+        ctx.fillRect(sp.x - 30, sp.y - 30, 60, 60);
+        for (let k = 0; k < 4; k++) {
+          const a = t * 2 + k * 1.57;
+          label(ctx, '✦', sp.x + Math.cos(a) * 20, sp.y + Math.sin(a) * 18, 9, '#fff3b0');
+        }
+      }
+      if (gst.chef) {
+        // A rival chef you beat, eating at your counter, with their name badge.
+        drawChef(ctx, gst.chef, sp.x, sp.y - 6 + bob, 0.42, 'happy', sp.x, cy - 20, t);
+        const nm = gst.chef.name.split(' ').pop() ?? '';
+        ctx.font = `700 7.5px ${FONT}`;
+        const tw = ctx.measureText(nm).width + 10;
+        ctx.fillStyle = gst.chef.accent;
+        rr(ctx, sp.x - tw / 2, sp.y + 17, tw, 11, 5.5);
+        ctx.fill();
+        label(ctx, nm, sp.x, sp.y + 23, 7.5, '#fff');
+      }
+      else emoji(ctx, gst.emoji, sp.x, sp.y + bob, 26);
       if (gst.critic) {
         emoji(ctx, '📝', sp.x + 14, sp.y + 12, 12);
       }
@@ -416,7 +507,13 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
         ctx.lineTo(sp.x, by2 + 13);
         ctx.lineTo(sp.x + 4, by2 + 8);
         ctx.fill();
-        label(ctx, gst.critic ? '?' : '!', sp.x, by2, 13, '#4a2a00');
+        if (gst.want) {
+          // A guest with a request shows the dish they want.
+          ctx.fillStyle = '#ffffff';
+          rr(ctx, sp.x - 14, by2 - 13, 28, 24, 11);
+          ctx.fill();
+          emoji(ctx, gst.want, sp.x, by2 - 1, 15);
+        } else label(ctx, gst.critic ? '?' : gst.golden ? '★' : '!', sp.x, by2, 13, '#4a2a00');
       } else {
         const beat = (t * 0.5 + i * 0.37) % 3;
         if (beat < 0.9) {
@@ -476,6 +573,15 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
         ctx.restore();
       }
     }
+  }
+  if (o.rush) {
+    // Rush Hour: warm pulsing light and a banner.
+    ctx.fillStyle = `rgba(255,120,40,${0.08 + 0.05 * Math.sin(t * 4)})`;
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = 'rgba(200,40,20,0.9)';
+    rr(ctx, x + w / 2 - 50, y + 100, 100, 20, 10);
+    ctx.fill();
+    label(ctx, '🔥 RUSH HOUR 2×', x + w / 2, y + 110.5, 10, '#fff');
   }
   // Soft vignette.
   const vg = ctx.createRadialGradient(x + w / 2, y + h / 2, h * 0.4, x + w / 2, y + h / 2, h * 0.95);

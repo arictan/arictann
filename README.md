@@ -29,6 +29,7 @@ src/compete.ts   leagues, Streak Quest and nemesis rules (AI rivals)
 src/modes.ts     modifiers, rescue levels and the weekly Omakase Tower
 src/minigames.ts Knife Throw, Rice Rhythm and Fish Catch
 src/cuisine.ts   worlds after level 100, Recipe Lab secrets, food trucks
+src/diner.ts     restaurant economy: pantry, kitchen, guests, rush hour, street, collections, rival (AI)
 src/a11y.ts      screen-reader announcements + accessible button list
 src/widget.ts    bridge to the native home-screen widget and Live Activity
 native/          widget + Live Activity source to add in Xcode / Android Studio (see native/README.md)
@@ -128,7 +129,7 @@ The game sends a small snapshot (restaurant, tip jar, calendar day, level and ch
 Activity and the Android AppWidget, then test on a real device. Until then the bridge does nothing.
 
 ### Notifications
-The game schedules at most one local reminder a day, using `@capacitor/local-notifications`. No server is involved. On Android 13+ and on iOS, the permission prompt appears after the player claims their first daily gift.
+The game schedules local reminders with `@capacitor/local-notifications`: one daily reminder, the full tip jar, the next Rush Hour and a dish that's finished cooking (each replaces its previous one, so they never pile up). No server is involved. On Android 13+ and on iOS, the permission prompt appears after the player claims their first daily gift.
 
 ### Store listing copy (starter)
 **Subtitle:** Stack it. Slice it. Serve it.
