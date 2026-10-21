@@ -138,6 +138,21 @@ export class Progress {
   branches: Record<string, { lv: number; tipsAt: number }> = save.json('branches', {});
   tracks: string[] = save.json('tracks', ['classic']); // jukebox tracks owned
   diner: DinerState = { ...defaultDiner(), ...save.json('diner', {}) }; // pantry, kitchen, guests, street (see diner.ts)
+  // ---- standout update
+  combos: string[] = save.json('combos', []); // ingredient combos discovered
+  landmark = save.json('landmark', 0); // tallest run in metres, for the landmark collection
+  daily = save.json('daily', { day: '', done: false, height: 0, grid: '', streak: 0, last: '', best: 0, played: 0, hist: [] as number[] });
+  chefLog: Record<number, { f: number; w: number; l: number; combo: number; h: number; at: number }> = save.json('chefLog', {});
+  choices: Record<string, string> = save.json('choices', {}); // story choices
+  letters: number[] = save.json('letters', []); // grandma's letters unlocked
+  lettersRead: number[] = save.json('lettersRead', []);
+  trivia: number[] = save.json('trivia', []); // facts seen
+  customWins: string[] = save.json('customWins', []); // friends' boss chefs beaten
+  myBoss = save.json('myBoss', ''); // the boss chef you designed (as a code)
+  world = save.json('world', { day: '', today: 0, total: 0 }); // layers given to the Tower of the World
+  country = save.json('country', '');
+  countryWeek = save.json('countryWeek', { week: '', best: 0, runs: 0 });
+  relayBest = save.json('relayBest', 0);
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -223,6 +238,20 @@ export class Progress {
     save.setJson('branches', this.branches);
     save.setJson('tracks', this.tracks);
     save.setJson('diner', this.diner);
+    save.setJson('combos', this.combos);
+    save.setJson('landmark', this.landmark);
+    save.setJson('daily', this.daily);
+    save.setJson('chefLog', this.chefLog);
+    save.setJson('choices', this.choices);
+    save.setJson('letters', this.letters);
+    save.setJson('lettersRead', this.lettersRead);
+    save.setJson('trivia', this.trivia);
+    save.setJson('customWins', this.customWins);
+    save.setJson('myBoss', this.myBoss);
+    save.setJson('world', this.world);
+    save.setJson('country', this.country);
+    save.setJson('countryWeek', this.countryWeek);
+    save.setJson('relayBest', this.relayBest);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

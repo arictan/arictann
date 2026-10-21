@@ -41,8 +41,12 @@ If you add the widget, the game shares your restaurant name and popularity, tip-
 device (an iOS App Group or Android app preferences). The Lock Screen Live Activity shows the same tip-jar status.
 None of this leaves your device.
 
+## Camera (Table mode)
+If you turn on Table mode, the game shows your camera behind the tower. The camera image is only displayed on your
+screen. It is never recorded, saved or sent anywhere. Turn Table mode off and the camera stops.
+
 ## Sharing
-When you share a score or a photo, the image, challenge code and any emoji you picked go only where you choose to send them.
+When you share a score, photo, poster, highlight video, Daily Roll grid, song code or boss chef code, it goes only where you choose to send it. A boss chef code contains the chef's look, name and rules you designed.
 
 ## Children
 The game is not directed at children under 13, and ads are requested as general-audience ads.

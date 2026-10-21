@@ -1,6 +1,31 @@
 // Tiny synthesized sound effects: no audio files to license or ship.
+import { FEEL } from './feel';
+import type { Ingredient } from './shop';
+
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
+let master: GainNode | null = null; // everything plays through here, so it can also be recorded
+let recorder: MediaStreamAudioDestinationNode | null = null;
+let asmrOn = false;
+
+/** The shared output: sound effects, music and voices all go through it. */
+function out(): AudioNode {
+  if (!master && ctx) {
+    master = ctx.createGain();
+    master.connect(ctx.destination);
+  }
+  return master ?? ctx!.destination;
+}
+
+/** An audio stream of the game's sound, for recording highlight videos. */
+export function audioStream(): MediaStream | null {
+  if (!ctx) return null;
+  if (!recorder) {
+    recorder = ctx.createMediaStreamDestination();
+    out().connect(recorder);
+  }
+  return recorder.stream;
+}
 let muted = false;
 let musicOn = true;
 
@@ -32,7 +57,7 @@ function tone(freq: number, dur: number, type: OscillatorType, vol: number, slid
   if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
   gain.gain.setValueAtTime(vol, t);
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(out());
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
@@ -50,18 +75,37 @@ function hiss(dur: number, vol: number, freq: number, q = 1): void {
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(vol, t);
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.connect(filter).connect(gain).connect(out());
   src.start(t);
   src.stop(t + dur);
+}
+
+/** Noise through any filter, with an optional delay (for little sequences of foley). */
+function noiseHit(dur: number, vol: number, freq: number, q: number, type: BiquadFilterType, delay = 0): void {
+  if (!ctx || !noise || muted) return;
+  const t = ctx.currentTime + delay;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.value = freq;
+  filter.Q.value = q;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(vol, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(filter).connect(gain).connect(out());
+  src.start(t);
+  src.stop(t + dur + 0.02);
 }
 
 // C major pentatonic, so rising combos always sound pleasant.
 const SCALE = [523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760];
 
 export const sfx = {
-  drop: () => { hiss(0.08, 0.25, 400); tone(160, 0.08, 'sine', 0.2, 90); },
-  slice: () => { hiss(0.12, 0.35, 3200, 0.8); tone(1800, 0.05, 'triangle', 0.05, 900); },
+  drop: () => { if (asmrOn) return; hiss(0.08, 0.25, 400); tone(160, 0.08, 'sine', 0.2, 90); },
+  slice: () => { if (asmrOn) return asmr.slice(); hiss(0.12, 0.35, 3200, 0.8); tone(1800, 0.05, 'triangle', 0.05, 900); },
   perfect: (combo: number) => {
+    if (asmrOn) return asmr.perfect();
     tone(SCALE[Math.min(combo, SCALE.length - 1)], 0.18, 'sine', 0.2);
     hiss(0.05, 0.15, 5000, 2);
   },
@@ -76,7 +120,68 @@ export const sfx = {
   shutter: () => { for (let i = 0; i < 7; i++) setTimeout(() => hiss(0.05, 0.16, 500 + i * 60, 2), i * 70); },
   light: (i: number) => tone(880 + i * 110, 0.12, 'sine', 0.08, undefined, 0),
   sting: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.5 - i * 0.05, 'triangle', 0.12, undefined, i * 0.06)),
+  /** Each ingredient lands with its own sound: soft rice, crisp nori, a popping ikura… */
+  land: (kind: Ingredient) => {
+    if (asmrOn) return asmr.land(kind);
+    const f = FEEL[kind];
+    hiss(0.08, 0.22, f.hiss, f.q);
+    tone(f.thud, 0.08, 'sine', 0.2, f.thud * 0.6);
+    switch (f.extra) {
+      case 'pop': [1400, 1700, 1250].forEach((p, i) => tone(p, 0.04, 'sine', 0.06, p * 1.4, 0.03 + i * 0.045)); break;
+      case 'crisp': noiseHit(0.05, 0.12, 4200, 1.5, 'highpass', 0.02); break;
+      case 'slide': tone(420, 0.18, 'triangle', 0.05, 200); break;
+      case 'wobble': [0, 1, 2].forEach((i) => tone(180 + (i % 2) * 40, 0.06, 'sine', 0.07, undefined, i * 0.06)); break;
+      case 'sizzle': noiseHit(0.35, 0.06, 5000, 0.6, 'highpass', 0.03); break;
+      case 'squish': tone(260, 0.07, 'sine', 0.06, 140, 0.02); break;
+    }
+  },
+  /** A PERFECT that also lands on the music's beat. */
+  beat: () => { tone(1568, 0.12, 'triangle', 0.09); tone(2093, 0.18, 'sine', 0.06, undefined, 0.05); },
+  /** The tall tower creaks when it sways too much. */
+  creak: () => { if (asmrOn) return; tone(95, 0.5, 'sawtooth', 0.025, 70); noiseHit(0.4, 0.04, 300, 4, 'bandpass'); },
+  combo: () => [659, 880, 1175].forEach((f, i) => tone(f, 0.14, 'sine', 0.1, undefined, i * 0.05)),
+  landmark: () => [784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.22, 'triangle', 0.09, undefined, i * 0.08)),
 };
+
+// ------------------------------------------------------------------- ASMR mode
+// Close, soft kitchen foley instead of game sounds: rice patted into place, a knife's whisper.
+
+export const asmr = {
+  land: (kind: Ingredient) => {
+    const f = FEEL[kind];
+    noiseHit(0.09, 0.16, Math.min(900, f.hiss), 0.6, 'lowpass');
+    noiseHit(0.07, 0.1, Math.min(900, f.hiss), 0.6, 'lowpass', 0.11);
+    if (f.extra === 'crisp') noiseHit(0.06, 0.05, 6000, 0.8, 'highpass', 0.04);
+  },
+  slice: () => {
+    if (!ctx || !noise || muted) return;
+    // A knife drawn through: a rising whisper of filtered noise.
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noise;
+    const flt = ctx.createBiquadFilter();
+    flt.type = 'bandpass';
+    flt.Q.value = 3;
+    flt.frequency.setValueAtTime(2500, t);
+    flt.frequency.exponentialRampToValueAtTime(7000, t + 0.25);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    src.connect(flt).connect(g).connect(out());
+    src.start(t);
+    src.stop(t + 0.3);
+  },
+  perfect: () => tone(880, 0.09, 'sine', 0.05, 860),
+};
+
+export function setAsmr(on: boolean): void {
+  asmrOn = on;
+}
+
+export function isAsmr(): boolean {
+  return asmrOn;
+}
 
 // ------------------------------------------------------------------- music
 // A small generative tune on a pentatonic scale: plucked melody, soft bass and a light shaker.
@@ -122,6 +227,7 @@ export function babble(text: string, pitch: number): void {
   }
 }
 let musicTimer: number | null = null;
+const quarters: number[] = []; // times of recent and upcoming quarter-note beats
 let nextBeat = 0;
 let beat = 0;
 let tempo = 92;
@@ -185,7 +291,7 @@ function startMusic(): void {
   if (!ctx || musicTimer !== null) return;
   musicGain = ctx.createGain();
   musicGain.gain.value = musicOn && !muted ? 0.5 : 0;
-  musicGain.connect(ctx.destination);
+  musicGain.connect(out());
   nextBeat = ctx.currentTime + 0.1;
   // Schedule a little ahead of time so timing stays steady even if a frame is late.
   musicTimer = window.setInterval(() => {
@@ -195,6 +301,10 @@ function startMusic(): void {
       const bar = Math.floor(beat / 8);
       const pos = beat % 8;
       const { melody, bass } = track;
+      if (pos % 2 === 0) {
+        quarters.push(nextBeat);
+        if (quarters.length > 8) quarters.shift();
+      }
       if (pos % 4 === 0) pluck(bass[(bar + pos / 4) % bass.length], nextBeat, 0.09, 0.5);
       if (track.drum && pos % 4 === 0) kick(nextBeat);
       // A simple repeating phrase that changes every two bars.
@@ -207,3 +317,81 @@ function startMusic(): void {
     }
   }, 60);
 }
+
+/** Seconds from the nearest quarter-note beat of the music (null when the music is off). */
+export function beatOffset(): number | null {
+  if (!ctx || !musicOn || muted || !quarters.length) return null;
+  const now = ctx.currentTime;
+  return Math.min(...quarters.map((q) => Math.abs(q - now)));
+}
+
+// ------------------------------------------------------------------- your run's song
+// Every layer adds a note: the ingredient picks the note, a PERFECT adds a fifth, a beat adds sparkle.
+
+export function songNote(n: number, perfect: boolean, beat: boolean, delay = 0): void {
+  if (!ctx || muted) return;
+  const scale = track.melody;
+  const f = scale[n % scale.length] * (n % 14 >= 7 ? 2 : 1);
+  tone(f, 0.22, 'triangle', 0.05, undefined, delay);
+  if (perfect) tone(f * 1.5, 0.18, 'sine', 0.03, undefined, delay + 0.01);
+  if (beat) tone(f * 2, 0.12, 'sine', 0.025, undefined, delay + 0.03);
+}
+
+let songTimer = 0;
+
+/** Plays a recorded run back as a little tune. Returns its length in seconds. */
+export function playSong(notes: number[], onDone?: () => void): number {
+  stopSong();
+  const step = 0.16;
+  notes.slice(0, 400).forEach((v, i) => songNote(v >> 2, (v & 2) > 0, (v & 1) > 0, i * step));
+  const len = Math.min(400, notes.length) * step;
+  songTimer = window.setTimeout(() => onDone?.(), len * 1000 + 300);
+  return len;
+}
+
+export function stopSong(): void {
+  window.clearTimeout(songTimer);
+}
+
+// ------------------------------------------------------------------- audio-only guidance
+// For blind players: a steady tone panned to where the sliding layer is, rising in pitch as it
+// lines up with the stack, with a click on entering the PERFECT zone.
+
+let cueOsc: OscillatorNode | null = null;
+let cueGain: GainNode | null = null;
+let cuePan: StereoPannerNode | null = null;
+
+export const cue = {
+  start(): void {
+    if (!ctx || cueOsc) return;
+    cueOsc = ctx.createOscillator();
+    cueOsc.type = 'triangle';
+    cueGain = ctx.createGain();
+    cueGain.gain.value = 0;
+    cuePan = ctx.createStereoPanner();
+    cueOsc.connect(cueGain).connect(cuePan).connect(out());
+    cueOsc.start();
+  },
+  /** pan -1..1 (left..right of the stack), near 0..1 (1 = lined up). */
+  update(pan: number, near: number, active: boolean): void {
+    if (!ctx || !cueOsc || !cueGain || !cuePan) return;
+    const t = ctx.currentTime;
+    cuePan.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.03);
+    cueOsc.frequency.setTargetAtTime(220 + near * near * 660, t, 0.03);
+    cueGain.gain.setTargetAtTime(active && !muted ? 0.05 + near * 0.05 : 0, t, 0.05);
+  },
+  zone(): void {
+    tone(1760, 0.03, 'square', 0.05);
+  },
+  warn(): void {
+    [0, 0.12, 0.24].forEach((d) => tone(330, 0.08, 'square', 0.06, undefined, d));
+  },
+  stop(): void {
+    if (!cueOsc) return;
+    try { cueOsc.stop(); } catch { /* already stopped */ }
+    cueOsc.disconnect();
+    cueOsc = null;
+    cueGain = null;
+    cuePan = null;
+  },
+};

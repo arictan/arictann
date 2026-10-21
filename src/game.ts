@@ -1,7 +1,7 @@
 import { FONT } from './font';
 import { Capacitor } from '@capacitor/core';
-import { sfx, unlockAudio, setMuted } from './audio';
-import { askForReminders, haptic, save, scheduleAt, scheduleReminder, setHaptics } from './platform';
+import { audioStream, beatOffset, cue, isAsmr, playSong, setAsmr, sfx, songNote, stopSong, unlockAudio, setMuted } from './audio';
+import { askForReminders, haptic, hapticFeel, save, scheduleAt, scheduleReminder, setHaptics } from './platform';
 import { TRACKS, babble, setMusic, setMusicIntensity, setTrack, setVoices, type TrackId } from './audio';
 import { COMPANIONS, STICKER_SETS, SET_REWARD, ALBUM_REWARD, companionLevel, nekoBlocks, shardsForNext, rollSticker, stickerRarity, AREAS, AREA_MAX, RESTAURANTS, TIP_HOURS, areaCost, popularity, tipRate } from './collect';
 import { CITIES, CUP_SIZE, CREW_GOALS, CREW_MATES, HOLIDAY_GOAL, PASS_TIERS, PASS_XP, RACE_GOAL, RACE_POOL, TOUR_GOALS, crewMateOrders, crewWeek, cupReward, cupRivals, cupWeekend, currentHoliday, currentSeason, currentTour, passReward, raceEnd, raceFinishers, seeded, timeLeft, type Reward } from './live';
@@ -15,7 +15,7 @@ import { LANGS, t, t as tr } from './i18n';
 import { analyticsSummary, track } from './analytics';
 import { cfg, loadConfig } from './config';
 import { exportSave, importSave } from './transfer';
-import { ClipRecorder, clipsSupported } from './clips';
+import { ClipRecorder, clipType, clipsSupported } from './clips';
 import { GUEST_SERVES_PER_DAY, STAFF, STYLES, THEMES as REST_THEMES, criticToday, decodeRestaurant, encodeRestaurant, styleText, stylesArray, themeById, themeInSeason, type RestCode, type RestTheme, type StaffId } from './restaurant';
 import { drawRestaurantScene, seatPos, type SceneGuest } from './scene';
 import type { AreaId } from './collect';
@@ -24,6 +24,12 @@ import { FLOOR_ICON, MODS, MOD_LIST, RESCUES, TOWER_FLOORS, rescueStars, towerFl
 import { MINIS, makeMini, type MiniGame, type MiniId } from './minigames';
 import { BRANCH_EMOJI, BRANCH_MAX, LAB_KNOWN, LAB_TRIES, SECRETS, WORLDS, branchCost, branchRate, labHint, labMatch, worldFor, worldStarts, type WorldId } from './cuisine';
 import { announce, mirrorButtons } from './a11y';
+import { COMBOS, FEEL, LANDMARKS, METERS_PER_LAYER, comboFor, drawSky, landmarkFor, skyZone } from './feel';
+import { CHOICES, LETTERS, MONTHS, RECIPE_CARDS, TRIVIA, inSeason, letterHint, letterUnlocked, memoryLine, seasonNote, type LetterStats } from './book';
+import { SAKE_LINES, drawSake } from './mascot';
+import { DAILY_LEVEL, dailyBuckets, dailyNumber, dailySeed, dailyShare, decodeSong, encodeSong } from './daily';
+import { ALL_ATTACKS, DEFAULT_BOSS, LOOK_SIZES, PHRASES, SPEEDS, bossChef, decodeBoss, encodeBoss, type BossDesign } from './bossmaker';
+import { COUNTRIES, WORLD_MILESTONES, countryBoard, countryById, guessCountry, worldSimToday } from './world';
 import {
   CHEF_VISITS_PER_DAY, DISPLAY_BASE, DUPLICATE_COINS, EXPANSIONS, FEST_COMPLETE_COINS, FEST_COSTS, GOALS, GOAL_CHEST_COINS, GUESTBOOK_GOALS, GUEST_TYPES, LOTS,
   PANTRY_BASE, PANTRY_PER_FRIDGE, PIECE_KINDS, PIECE_SETS, RATING_STEPS, REQUESTS_MAX, REQUEST_EVERY, REVIEW_TEMPLATES, RIVALS, RIVAL_WIN_COINS, RUSH_CHESTS, SET_TIP_BONUS,
@@ -36,7 +42,7 @@ import { endLiveActivity, startLiveActivity, updateWidget } from './widget';
 import { LOGO_SHORT, LOGO_TIME, PANEL_TIME, caption, drawLogo, logoSparkles, logoText, panelClosed, panelReopen, panelRival } from './intro';
 import { ACHIEVEMENTS, ACH_REWARDS, ACH_TIER_NAMES, AVATAR_LABELS, AVATAR_LOCKS, AVATAR_OPTIONS, CHAPTERS, ENDLESS_CHAPTER, GALLERY_TILES, HEART_LEVELS, HEART_REWARDS, HEART_TITLES, NAMES, PERFECTS_PER_TILE, PICTURES, PICTURE_REWARD, REGULARS, achTier, avatarChef, chapterFor, heartLevel, type Avatar, type Chapter, type Picture, type StatId } from './meta';
 import { BOOSTERS, CATALOG, EFFECTS, SETS, TABS, drawFlag, drawPlate, drawShape, type BoosterId, type Cat, type Cosmetic, type Ingredient, type Item, type Shape } from './shop';
-import { CHEFS, chefFor, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
+import { CHEFS, FACES, HAIRS, HATS, chefFor, drawChef, drawKnife, type Attack, type Chef, type Help, type Holding, type Mood } from './chef';
 
 // The world is always 400 units wide; height follows the screen's aspect ratio.
 // World y grows downward; the plate sits at y = 0 and the stack grows toward negative y.
@@ -59,6 +65,7 @@ const SYMBOLS: Record<Ingredient, [string, string]> = {
   dough: ['○', '#6a4a10'], sauce: ['~', '#ffe0e0'], cheese: ['◦', '#6a4a00'], pepperoni: ['●', '#ffd0c0'], basil: ['♣', '#e0ffe0'],
   bun: ['○', '#4a2a10'], patty: ['■', '#ffd9b0'], lettuce: ['♣', '#1a3a0a'], tomato: ['●', '#ffe0e0'], cheddar: ['▲', '#5a3a00'],
   pancake: ['○', '#5a3a10'], butter: ['□', '#6a5a00'], syrup: ['~', '#ffd9b0'], berry: ['●', '#e0e0ff'], cream: ['◦', '#7a6a5a'],
+  lavash: ['○', '#6a4a20'], doner: ['≡', '#ffd9b0'], onion: ['◦', '#6a3a7a'], yufka: ['≈', '#6a4a10'], pistachio: ['♦', '#1a3a0a'], mince: ['■', '#ffd0c0'],
 };
 
 const COLORS: Record<Ingredient, string> = {
@@ -76,6 +83,7 @@ const COLORS: Record<Ingredient, string> = {
   dough: '#e9c46a', sauce: '#c1121f', cheese: '#ffd166', pepperoni: '#9d0208', basil: '#2a9d5c',
   bun: '#d4a056', patty: '#5a3a22', lettuce: '#80b918', tomato: '#e63946', cheddar: '#f4a300',
   pancake: '#e2b26c', butter: '#fff3b0', syrup: '#8b4513', berry: '#5e60ce', cream: '#fdf6ec',
+  lavash: '#ead7a8', doner: '#8b4a2b', onion: '#f1e4f3', yufka: '#f0d58c', pistachio: '#8fbf5a', mince: '#7a3b2e',
 };
 
 /**
@@ -116,6 +124,11 @@ const RECIPES: Recipe[] = [
   { name: 'Butter Stack', pattern: ['pancake', 'butter', 'pancake', 'syrup'], level: 201, world: 'pancake' },
   { name: 'Berry Cloud', pattern: ['pancake', 'cream', 'berry', 'pancake'], level: 201, world: 'pancake' },
   { name: 'Grand Brunch', pattern: ['pancake', 'butter', 'syrup', 'berry', 'cream', 'pancake'], level: 215, world: 'pancake' },
+  // Turkish world (from level 251).
+  { name: 'Döner Dürüm', pattern: ['lavash', 'doner', 'tomato', 'onion', 'lettuce'], level: 251, world: 'turkish' },
+  { name: 'Lahmacun', pattern: ['dough', 'mince', 'tomato', 'onion'], level: 251, world: 'turkish' },
+  { name: 'Baklava Tower', pattern: ['yufka', 'pistachio', 'yufka', 'syrup', 'yufka', 'pistachio'], level: 265, world: 'turkish' },
+  { name: 'İskender', pattern: ['lavash', 'doner', 'sauce', 'butter'], level: 275, world: 'turkish' },
   // Secret recipes from the Recipe Lab (in the order pool once discovered).
   ...SECRETS.map((sc) => ({ name: sc.name, pattern: ['rice', ...sc.combo.filter((c) => c !== 'rice')] as Ingredient[], secret: true })),
 ];
@@ -125,9 +138,10 @@ const DISH_EMOJI: Record<string, string> = {
   'Salmon Maki': '🍣', 'Tamago Tower': '🍳', 'Tuna Classic': '🐟', 'Green Roll': '🥒', 'Rainbow Roll': '🌈',
   'Ebi Tempura Roll': '🍤', 'Unagi Dragon Roll': '🐉', 'Inari Tofu Stack': '🍙', 'Ikura Gunkan': '🔴', 'Deluxe Omakase': '🍱',
   Margherita: '🍕', 'Pepperoni Tower': '🍕', 'Quattro Stack': '🧀', 'Classic Burger': '🍔', 'Double Cheese': '🍔', 'Garden Deluxe': '🥬',
-  'Butter Stack': '🥞', 'Berry Cloud': '🫐', 'Grand Brunch': '🥞', ...Object.fromEntries(SECRETS.map((sc) => [sc.name, sc.emoji])),
+  'Butter Stack': '🥞', 'Berry Cloud': '🫐', 'Grand Brunch': '🥞', 'Döner Dürüm': '🌯', Lahmacun: '🫓', 'Baklava Tower': '🍯', 'İskender': '🥙', ...Object.fromEntries(SECRETS.map((sc) => [sc.name, sc.emoji])),
 };
 const BASIC_RECIPES = RECIPES.filter((r) => !r.level); // always available (puzzles, missions)
+const FEEL_KINDS = Object.keys(FEEL) as Ingredient[]; // note order for the run's song
 
 type SpecialLayer = 'golden' | 'ice' | 'wasabi' | 'mystery';
 
@@ -145,7 +159,7 @@ interface Layer {
 /** Layers placed of one ingredient to master it (mastered ingredients turn gold and pay a little extra). */
 export const MASTERY = 100;
 
-type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet' | 'rescue' | 'tower' | 'modchal' | 'pnp';
+type RunMode = 'journey' | 'special' | 'zen' | 'time' | 'puzzle' | 'challenge' | 'critic' | 'gauntlet' | 'rescue' | 'tower' | 'modchal' | 'pnp' | 'daily' | 'relay' | 'asmr' | 'custom';
 
 const FEVER_TIME = 5; // seconds of Fever after every 10 PERFECTs in a row
 const TIME_ATTACK = 60; // seconds
@@ -219,7 +233,7 @@ const HELP_INFO: Record<Help, { label: string; line: string }> = {
   tip: { label: 'TIP!', line: 'For you!' },
 };
 
-type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab' | 'jukebox';
+type Mode = 'title' | 'playing' | 'dead' | 'shop' | 'map' | 'album' | 'modes' | 'events' | 'more' | 'restaurant' | 'pass' | 'pets' | 'boards' | 'avatar' | 'regulars' | 'story' | 'trophies' | 'gallery' | 'settings' | 'visit' | 'museum' | 'profile' | 'calendar' | 'league' | 'quest' | 'rescues' | 'towerview' | 'minis' | 'mini' | 'modchals' | 'lab' | 'jukebox' | 'daily' | 'bossmaker' | 'book' | 'promise' | 'world' | 'countries';
 type AlbumTab = 'chefs' | 'stickers' | 'recipes' | 'records';
 
 interface Button { x: number; y: number; w: number; h: number; onTap: () => void; label?: string }
@@ -331,7 +345,7 @@ export class Game {
   private doubled = false; // used the double-coins ad this run
   private bankedRunCoins = 0; // coins from this run already added to the bank (a revive can end a run twice)
   private milestonesHit = new Set<number>();
-  private resultKind: 'lost' | 'special' | 'gate' | 'zen' | 'time' | 'puzzle-won' | 'puzzle-lost' | 'challenge' | 'rescue-won' | 'rescue-lost' = 'lost';
+  private resultKind: 'lost' | 'special' | 'gate' | 'zen' | 'time' | 'puzzle-won' | 'puzzle-lost' | 'challenge' | 'rescue-won' | 'rescue-lost' | 'daily' | 'relay' = 'lost';
 
   // Companions active this run.
   private nekoLeft = 0;
@@ -363,8 +377,8 @@ export class Game {
   private picked: Set<BoosterId> | null = null; // boosters chosen for the current run
 
   // Personality update: story overlay, achievement check timer.
-  private story: { ch: Chapter; lines: string[]; end: boolean } | null = null;
-  private storyQueue: { ch: Chapter; lines: string[]; end: boolean }[] = [];
+  private story: { ch: Chapter; lines: string[]; end: boolean; choice?: string } | null = null;
+  private storyQueue: { ch: Chapter; lines: string[]; end: boolean; choice?: string }[] = [];
   private achT = 0;
 
   // Platform update: highlight clips, the last clip, save codes.
@@ -434,6 +448,11 @@ export class Game {
       if (this.scrolling) this.scrollPos += e.deltaY / this.scale;
     }, { passive: true });
     // Space or Enter also drops, for keyboard players on desktop.
+    // Tilting the phone nudges a tall tower's sway (where the browser allows it without asking).
+    window.addEventListener('deviceorientation', (e) => {
+      if (e.gamma === null) return;
+      this.tilt += (Math.max(-1, Math.min(1, e.gamma / 35)) - this.tilt) * 0.2;
+    });
     window.addEventListener('keydown', (e) => {
       if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !this.scrolling) {
         e.preventDefault();
@@ -504,7 +523,8 @@ export class Game {
 
   /** Story chefs for levels 1-50, then a newly generated chef for every level after that. */
   private get chef(): Chef {
-    return chefFor(this.level);
+    if (this.runMode === 'custom' && this.customChef) return this.customChef;
+    return this.journey ? this.chefWithChoices(this.level) : chefFor(this.level);
   }
 
   private react(mood: Mood, life: number, line?: string): void {
@@ -533,8 +553,14 @@ export class Game {
     this.banner = this.runMode === 'modchal' && this.modChal ? { title: `${MODS[this.modChal].icon} ${MODS[this.modChal].name.toUpperCase()}`, sub: MODS[this.modChal].desc, life: 2.4 }
       : this.runMode === 'rescue' ? { title: `🆘 ${RESCUES[this.rescueRun!.i].name.toUpperCase()}`, sub: RESCUES[this.rescueRun!.i].story, life: 3 }
       : this.runMode === 'tower' ? { title: `🗼 FLOOR ${this.towerStart + this.ordersServed}`, sub: this.mods.size ? [...this.mods].map((m) => `${MODS[m].icon} ${MODS[m].name}`).join(' · ') : this.weather ? (this.weather.kind === 'wind' ? '🌬️ Wind' : '🌧️ Rain') : 'No twist on this floor', life: 2.2 }
+      : this.runMode === 'custom' ? { title: `🧑‍🍳 ${c.name.toUpperCase()}`, sub: c.rule, life: 2.6 }
+      : this.runMode === 'daily' && this.ordersServed === 0 ? { title: `🟩 DAILY ROLL #${dailyNumber()}`, sub: this.dailyPractice ? 'Practice run · same layers as everyone' : 'Same layers for everyone today', life: 2.6 }
+      : this.runMode === 'relay' && this.ordersServed === 0 ? { title: '👥 RELAY', sub: 'Take turns: Player 1 first', life: 2.4 }
+      : this.runMode === 'asmr' ? { title: '🎧 ASMR', sub: 'Breathe in… and tap', life: 2 }
       : { title: this.runMode === 'critic' ? '🧐 FOOD CRITIC' : this.special ? 'DAILY SPECIAL' : nem ? `😈 NEMESIS · LV ${this.level}` : t('level', this.level), sub: this.runMode === 'critic' ? 'Small PERFECT zone · 2★ for a glowing review' : nem ? `Beat you ${this.progress.losses[this.level]} times · stronger now` : c.rule, life: 2.4 };
-    this.bubble = { text: nem ? NEMESIS_TAUNTS[this.level % NEMESIS_TAUNTS.length] : c.intro, life: 2.2 };
+    // Rival chefs remember you: your last fight, your best combo, how long you've been away.
+    const memo = this.journey && !nem ? this.progress.chefLog[this.level] : undefined;
+    this.bubble = { text: nem ? NEMESIS_TAUNTS[this.level % NEMESIS_TAUNTS.length] : memo && memo.f > 0 && Math.random() < 0.75 ? memoryLine(memo, this.level + memo.f) : c.intro, life: 2.6 };
     this.reaction = null;
     this.sinceEvent = 0; // give the player a few drops before the new boss acts
     this.switchSides();
@@ -572,7 +598,7 @@ export class Game {
   private reset(): void {
     const x = (WORLD_W - this.baseW) / 2;
     // The base layer matches the world: rice for sushi, dough, bun or a pancake elsewhere.
-    const base = ({ sushi: 'rice', pizza: 'dough', burger: 'bun', pancake: 'pancake' } as const)[worldFor(this.startLevel)];
+    const base = ({ sushi: 'rice', pizza: 'dough', burger: 'bun', pancake: 'pancake', turkish: 'lavash' } as const)[worldFor(this.startLevel)];
     this.stack = [{ x, y: -LAYER_H, w: this.baseW, kind: base, origin: x }];
     this.pieces = [];
     this.particles = [];
@@ -610,6 +636,10 @@ export class Game {
   private retry(): void {
     if (this.gated) this.openMap();
     else if (this.runMode === 'zen' || this.runMode === 'time') this.startRun(this.progress.playLevel, this.runMode);
+    else if (this.runMode === 'asmr') this.startAsmr();
+    else if (this.runMode === 'daily') this.startDaily();
+    else if (this.runMode === 'relay') this.startRelay();
+    else if (this.runMode === 'custom' && this.customBoss) this.startCustom(this.customBoss, this.customFromFriend);
     else if (this.runMode === 'gauntlet') this.startRun(this.startLevel, 'gauntlet');
     else if (this.runMode === 'pnp') this.startPnp(1);
     else if (this.runMode === 'rescue') this.startRescue(this.resultKind === 'rescue-won' ? Math.min(RESCUES.length - 1, this.rescueRun!.i + 1) : this.rescueRun!.i);
@@ -624,7 +654,7 @@ export class Game {
 
   /** Daily Special and Food Critic runs: one long set order that ends the run when served. */
   private get special(): boolean {
-    return this.runMode === 'special' || this.runMode === 'critic' || this.runMode === 'modchal';
+    return this.runMode === 'special' || this.runMode === 'critic' || this.runMode === 'modchal' || this.runMode === 'custom';
   }
 
   /** Runs that use journey progress: they unlock chefs, earn stars and respect star gates. */
@@ -634,14 +664,14 @@ export class Game {
 
   /** Zen, Time Attack and Puzzles have no chef attacks or help. */
   private get calmChefs(): boolean {
-    return this.runMode === 'zen' || this.runMode === 'time' || this.runMode === 'puzzle' || this.runMode === 'rescue';
+    return this.runMode === 'zen' || this.runMode === 'time' || this.runMode === 'puzzle' || this.runMode === 'rescue' || this.runMode === 'relay' || this.runMode === 'asmr';
   }
 
   /**
    * Starts a run. Journey runs start at a chef level (by default the furthest one open); other modes
    * pick their own setup. Every run is seeded so a challenge code can replay it.
    */
-  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge; picked?: Set<BoosterId>; rescue?: number; mods?: Mod[] } = {}): void {
+  private startRun(level = this.progress.playLevel, mode: RunMode = 'journey', opts: { puzzle?: number; challenge?: Challenge; picked?: Set<BoosterId>; rescue?: number; mods?: Mod[]; seed?: number } = {}): void {
     if (mode === 'journey' && !this.progress.canEnter(level)) {
       this.showToast(`Star gate: ${starsNeeded(level)}★ needed to enter level ${level} (you have ${this.progress.totalStars}★)`);
       return;
@@ -662,7 +692,7 @@ export class Game {
     this.runMode = mode;
     this.challenge = opts.challenge ?? null;
     this.puzzle = opts.puzzle ?? 0;
-    this.seed = this.challenge ? this.challenge.seed : Math.floor(Math.random() * 2 ** 31);
+    this.seed = this.challenge ? this.challenge.seed : opts.seed ?? Math.floor(Math.random() * 2 ** 31);
     this.rand = seeded(this.seed);
     this.startLevel = mode === 'puzzle' ? this.puzzle + 1 : level;
     this.specialWon = false;
@@ -693,6 +723,20 @@ export class Game {
     this.runReqs = 0;
     this.runXpAt = 0;
     this.cheer = null;
+    this.song = [];
+    this.marks = '';
+    this.runMaxCombo = 0;
+    if (mode !== 'custom') this.customChef = null;
+    if (mode !== 'relay') this.relay = null;
+    // ASMR: soft foley instead of game sounds, and no music.
+    setAsmr(mode === 'asmr');
+    setMusic(mode === 'asmr' ? false : this.musicOn);
+    if (this.tableMode) void this.startCamera();
+    this.lastBeat = false;
+    this.wobbleE = 0;
+    this.leanPx = 0;
+    this.comboShield = 0;
+    this.runCombos = 0;
     this.magnet = use('magnet');
     this.shield = use('shield');
     this.lucky = use('lucky');
@@ -759,7 +803,8 @@ export class Game {
   private addCoins(n: number, x: number, y: number, label: string): void {
     if (this.doubleCoins) n *= 2;
     if (this.fever > 0) n *= 3;
-    if (this.runMode === 'zen') n *= 0.3;
+    if (this.zenLike) n *= 0.3;
+    if (this.journey && this.level > 30 && this.level <= 40 && this.progress.choices.ch3 === 'solo') n *= 1.25;
     n *= cfg.coinBoost;
     // Chef Rank, the Kitsune companion and finished restaurants all add percentage bonuses.
     const restaurants = this.progress.restaurant.r + this.progress.restaurant.michelin;
@@ -868,6 +913,11 @@ export class Game {
       // Everyone gets the same Daily Special: one long order of a set recipe.
       // The critic orders the fanciest dish you can make; the Daily Special is the same for everyone.
       const critic = this.runMode === 'critic' ? this.recipePool(this.level).filter((r) => !r.secret).pop() : undefined;
+      if (this.runMode === 'custom' && this.customChef) {
+        // A friend's boss: one long order of a random classic.
+        this.order = { recipe: BASIC_RECIPES[Math.floor(this.rand() * BASIC_RECIPES.length)], length: 12 + this.customChef.extra, start: this.height, reward: 0 };
+        return;
+      }
       this.order = { recipe: critic ?? BASIC_RECIPES[daySeed() % BASIC_RECIPES.length], length: (critic ? 9 : 10) - (this.shortOrders ? 2 : 0), start: this.height, reward: 0 };
       return;
     }
@@ -920,6 +970,7 @@ export class Game {
     if (this.rage) v *= 1 + 0.12 * this.rage;
     if (this.progress.tutorial < 2 && this.height < 4) v *= cfg.tutorialSlowdown; // first run: gentle start
     if (settings.assist) v *= 0.82;
+    if (this.runMode === 'asmr') v *= 0.7;
     if (this.isNemesis()) v *= 1 + 0.05 * this.nemesisPower();
     if (this.flipT > 0) v *= 1.4;
     if (this.mods.has('double')) v *= 1.6;
@@ -1039,6 +1090,8 @@ export class Game {
   private drop(): void {
     const m = this.moving;
     if (!m || this.perkChoice) return;
+    const wasPerfect = this.lastPerfect;
+    const prevKind = this.top.kind;
     if (this.weather?.kind === 'rain' && this.rand() < 0.5) {
       // Rain: wet layers sometimes skid a little.
       m.x += 6 * this.moveDir;
@@ -1084,9 +1137,22 @@ export class Game {
         m.x -= grow / 2;
         m.w += grow;
       }
+      this.marks += 'P';
+      this.runMaxCombo = Math.max(this.runMaxCombo, this.combo);
       this.place(m);
+      this.relayLanded(true);
       const cx = m.x + m.w / 2;
       this.popup(cx, m.y - 18, this.combo > 1 ? `PERFECT x${this.combo}` : 'PERFECT', '#fff3b0', 18);
+      // In-season ingredients are worth a little more.
+      if (this.seasonal().includes(m.kind)) this.runCoins += 1;
+      // On the music's beat too? A Beat PERFECT sparkles and pays a little more.
+      if (this.lastBeat) {
+        this.addCoins(2, cx, m.y - 76, '♪ Beat PERFECT');
+        sfx.beat();
+      }
+      // Two PERFECTs in a row on a matching pair of ingredients set off a combo.
+      const cb = wasPerfect ? comboFor(prevKind, m.kind) : undefined;
+      if (cb) this.triggerCombo(cb, m);
       announce(this.combo > 1 ? `Perfect, ${this.combo} in a row` : 'Perfect');
       if (this.combo % 5 === 0) {
         this.staffCheer();
@@ -1111,7 +1177,6 @@ export class Game {
       this.mission('streak', this.combo);
       this.sparkle(m.x, m.y + LAYER_H / 2, m.w, 18 + this.combo * 2);
       sfx.perfect(this.combo);
-      haptic.medium();
       this.flash = 0.25;
       this.shake = 3;
     } else {
@@ -1119,7 +1184,7 @@ export class Game {
       const overlap = top.w - Math.abs(dx);
       if (overlap <= 0) {
         this.fall(m, dx > 0 ? 1 : -1);
-        if (this.runMode === 'zen') {
+        if (this.zenLike) {
           // Zen never ends on a miss: the layer is simply lost.
           this.combo = 0;
           this.popup(WORLD_W / 2, top.y - 50, 'Breathe... try again', '#bde0fe', 16);
@@ -1172,10 +1237,98 @@ export class Game {
         this.die();
         return;
       }
+      this.marks += 'C';
       this.place(m);
+      this.relayLanded(false);
       if (this.mode === 'playing' && !this.reaction) this.react('wince', 0.5);
       sfx.slice();
-      haptic.light();
+      this.wobbleE = Math.min(1.5, this.wobbleE + 0.35); // a sloppy drop makes the tower sway
+    }
+  }
+
+  // ---------------------------------------------------------------- signature feel
+
+  private song: number[] = []; // one note per layer: ingredient << 2 | perfect << 1 | beat
+  private lastBeat = false;
+  private wobbleE = 0; // sway energy from sloppy drops
+  private leanPx = 0; // how far the upper tower leans
+  private tilt = 0; // phone tilt, -1..1
+  private creakAt = 0;
+  private comboShield = 0;
+  private runCombos = 0;
+
+  /** How far a layer at height y is drawn sideways: the tower sways and leans, more near the top. */
+  private swayAt(y: number): number {
+    if (settings.reducedMotion || (this.mode !== 'playing' && this.mode !== 'dead') || this.height < 6) return 0;
+    const frac = Math.max(0, Math.min(1, -y / LAYER_H / (this.height + 1)));
+    const amp = this.swayAmp();
+    return (amp * Math.sin(this.time * 1.7) + this.leanPx + (settings.tilt ? this.tilt * 6 : 0)) * Math.pow(frac, 1.5);
+  }
+
+  private swayAmp(): number {
+    return Math.min(14, Math.max(0, this.height - 6) * 0.05 + this.wobbleE * 7);
+  }
+
+  /** Two PERFECTs in a row on a matching pair set off a combo effect. */
+  private triggerCombo(cb: (typeof COMBOS)[number], m: Layer): void {
+    const cx = m.x + m.w / 2;
+    this.runCombos++;
+    switch (cb.effect) {
+      case 'coins': this.addCoins(6, cx, m.y - 100, `${cb.emoji} ${cb.name}`); break;
+      case 'slow': this.steady = Math.max(this.steady, 2); break;
+      case 'shield': this.comboShield++; break;
+      case 'combo': this.combo += 2; break;
+      case 'regrow': {
+        const grow = Math.min(16, this.baseW - m.w);
+        if (grow > 0) {
+          m.x -= grow / 2;
+          m.w += grow;
+        }
+        break;
+      }
+    }
+    if (cb.effect !== 'coins') this.popup(cx, m.y - 100, `${cb.emoji} ${cb.name.toUpperCase()}!`, '#9fe3ff', 17, 1.6);
+    this.popup(cx, m.y - 120, cb.desc, '#ffffff', 11, 1.6);
+    sfx.combo();
+    const p = this.progress;
+    if (!p.combos.includes(cb.name)) {
+      p.combos.push(cb.name);
+      this.showToast(`🍱 New combo discovered: ${cb.emoji} ${cb.name} (${p.combos.length}/${COMBOS.length})`);
+    }
+    track('combo', { name: cb.name });
+  }
+
+  /** Passing a landmark (or a new part of the sky) gets a moment of its own. */
+  private checkLandmark(): void {
+    const m = this.height * METERS_PER_LAYER;
+    const prev = (this.height - 1) * METERS_PER_LAYER;
+    const passed = LANDMARKS.filter((l) => l.m >= prev && l.m < m).pop();
+    if (passed) {
+      this.popup(WORLD_W / 2, this.top.y - 150, `${passed.emoji} Taller than ${passed.name}!`, '#fff3b0', 15, 2);
+      sfx.landmark();
+      announce(`Taller than ${passed.name}`);
+    }
+    const zone = skyZone(this.height);
+    if (zone !== skyZone(this.height - 1) && this.height > 1) this.popup(WORLD_W / 2, this.top.y - 176, `☁️ ${zone.name.toUpperCase()}`, '#ffffff', 13, 2);
+    if (m > this.progress.landmark && this.runMode !== 'pnp' && this.runMode !== 'relay') this.progress.landmark = m;
+  }
+
+  /** A faint line at each landmark's height, labelled on the left. */
+  private drawLandmarks(minY: number, maxY: number): void {
+    for (const l of LANDMARKS) {
+      const layers = l.m / METERS_PER_LAYER;
+      const y = -LAYER_H * (layers + 1);
+      if (y < minY - 20 || y > maxY + 20) continue;
+      const { ctx } = this;
+      ctx.strokeStyle = 'rgba(159,227,255,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 7]);
+      ctx.beginPath();
+      ctx.moveTo(-this.offX, y);
+      ctx.lineTo(WORLD_W + this.offX, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      this.fitText(`${l.emoji} ${l.name.replace(/^(the|a) /, '')} · ${l.m} m`, 8, y - 9, 220, 10.5, 'rgba(159,227,255,0.85)', 'left', 700);
     }
   }
 
@@ -1191,6 +1344,12 @@ export class Game {
     this.stack.push(layer);
     this.orderStats.drops++;
     if (this.runMode !== 'pnp') this.stockPantry(layer.kind, this.lastPerfect);
+    // The upper tower leans the way its last layers drifted from the base.
+    const base = this.stack[0];
+    const recent = this.stack.slice(-10);
+    const drift = recent.reduce((a, l) => a + (l.x + l.w / 2), 0) / recent.length - (base.x + base.w / 2);
+    this.leanPx = Math.max(-10, Math.min(10, drift * 0.3));
+    if (this.lastPerfect) this.wobbleE *= 0.85;
     const mk = this.progress.mastery;
     mk[layer.kind] = (mk[layer.kind] ?? 0) + 1;
     if (mk[layer.kind] === MASTERY) {
@@ -1200,7 +1359,15 @@ export class Game {
     if (this.bonus) this.bonusDrop(layer);
     this.mission('height', this.height);
     this.order.reward += layer.w / BASE_W;
-    sfx.drop();
+    // Every ingredient sounds and feels different as it lands, and adds a note to the run's song.
+    sfx.land(layer.kind);
+    hapticFeel(FEEL[layer.kind].haptic);
+    const off = beatOffset();
+    this.lastBeat = this.lastPerfect && off !== null && off < 0.07;
+    const note = Math.max(0, FEEL_KINDS.indexOf(layer.kind));
+    this.song.push((note << 2) | (this.lastPerfect ? 2 : 0) | (this.lastBeat ? 1 : 0));
+    if (settings.songNotes && !isAsmr()) songNote(note, this.lastPerfect, this.lastBeat, 0.02);
+    this.checkLandmark();
     if (this.height % 25 === 0) this.addCoins(10, WORLD_W / 2, layer.y - 80, `${this.height} layers!`);
     if (this.steady > 0) this.steady--;
     this.sinceEvent++;
@@ -1546,11 +1713,19 @@ export class Game {
   }
 
   private startEvent(kind: Attack | Help, bad: boolean, windup: number, line: string): void {
+    if (bad && this.comboShield > 0) {
+      // A combo shield blocks the attack before it starts.
+      this.comboShield--;
+      this.sinceEvent = 0;
+      this.popup(WORLD_W / 2, this.top.y - 90, '🛡️ Combo shield blocked an attack!', '#9fe3ff', 15, 1.6);
+      return;
+    }
     this.event = { kind, bad, t: windup };
     this.sinceEvent = 0;
     this.reaction = null;
     this.bubble = { text: line, life: windup + 0.8 };
     if (bad) haptic.light();
+    if (bad && settings.audioOnly) cue.warn();
   }
 
   // The chef fills the space between the top bar and the top of the stack, which the camera keeps
@@ -1778,6 +1953,7 @@ export class Game {
     this.popup(WORLD_W / 2, top.y - 58, '★'.repeat(stars) + '☆'.repeat(3 - stars), '#ffd34d', 26, 1.6);
     this.react('happy', 1.2, beaten.beaten);
     if (this.runMode !== 'puzzle' && this.runMode !== 'pnp') this.dinerServe(recipe, beatLevel);
+    if (this.journey) this.recordChef(beatLevel, true);
     if (this.runMode === 'puzzle') {
       this.puzzleWon();
       return;
@@ -1922,7 +2098,8 @@ export class Game {
   }
 
   private die(): void {
-    this.resultKind = this.runMode === 'puzzle' ? 'puzzle-lost' : this.runMode === 'time' ? 'time' : this.runMode === 'challenge' ? 'challenge' : this.runMode === 'rescue' ? 'rescue-lost' : 'lost';
+    this.marks += 'M';
+    this.resultKind = this.runMode === 'puzzle' ? 'puzzle-lost' : this.runMode === 'time' ? 'time' : this.runMode === 'challenge' ? 'challenge' : this.runMode === 'rescue' ? 'rescue-lost' : this.runMode === 'daily' ? 'daily' : this.runMode === 'relay' ? 'relay' : 'lost';
     this.mode = 'dead';
     this.reaction = null;
     this.event = null;
@@ -1949,6 +2126,18 @@ export class Game {
     // A slice of every run's coins also drops into the piggy bank, up to 2,500.
     p.piggy = Math.min(2500, p.piggy + Math.floor(fresh * 0.15));
     this.dinerRunEnd(fresh);
+    this.recordDaily();
+    if (this.runMode === 'relay') p.relayBest = Math.max(p.relayBest, this.height);
+    if (this.journey && this.resultKind === 'lost' && !this.revived) this.recordChef(this.level, false);
+    // The Tower of the World and the Country Cup.
+    if (this.runMode !== 'pnp' && this.runMode !== 'relay' && this.runMode !== 'puzzle') {
+      this.addWorldLayers(Math.max(0, this.height - (this.revived ? this.runXpAt : 0)));
+      if (p.countryWeek.week !== weekKey()) p.countryWeek = { week: weekKey(), best: 0, runs: 0 };
+      p.countryWeek.best = Math.max(p.countryWeek.best, this.height);
+      p.countryWeek.runs++;
+    }
+    this.pickTrivia();
+    this.checkLetters();
     if (this.runMode === 'zen') p.zenBest = Math.max(p.zenBest, this.height);
     if (this.runMode === 'time') p.timeBest = Math.max(p.timeBest, this.height);
     if (this.runMode === 'gauntlet') {
@@ -2013,6 +2202,7 @@ export class Game {
 
   /** Daily Special cleared: pays once per day, then shows the results screen as a win. */
   private winSpecial(): void {
+    if (this.runMode === 'custom') this.customWon();
     if (this.runMode === 'modchal' && this.modChal) this.modChalWon(this.modChal);
     if (this.runMode === 'critic') {
       this.criticStars = Progress.starsFor(this.orderStats.perfects, this.orderStats.drops);
@@ -2127,6 +2317,15 @@ export class Game {
     for (const fx of this.restFx) fx.t += real;
     this.restFx = this.restFx.filter((fx) => fx.t < 1.2);
     if (this.cheer && (this.cheer.t -= real) <= 0) this.cheer = null;
+    if (this.sakeSay && (this.sakeSay.t -= real) <= 0) this.sakeSay = null;
+    if (this.mode !== 'playing' && this.mode !== 'dead') {
+      // Leaving a run: ASMR sounds and the camera switch off again.
+      if (isAsmr()) {
+        setAsmr(false);
+        setMusic(this.musicOn);
+      }
+      if (this.camStream) this.stopCamera();
+    }
     if (this.restSay && (this.restSay.t -= real) <= 0) this.restSay = null;
     if (this.burst) {
       const b = this.burst;
@@ -2167,6 +2366,21 @@ export class Game {
       if (m.x > max) { m.origin += max - m.x; m.x = max; this.moveDir = -1; }
     }
 
+    // The tower's sway: energy from sloppy drops fades, and a tall swaying tower creaks.
+    this.wobbleE *= Math.exp(-real * 0.35);
+    if (this.mode === 'playing' && this.swayAmp() > 8 && this.time - this.creakAt > 3.2 && !settings.reducedMotion) {
+      this.creakAt = this.time;
+      sfx.creak();
+    }
+    // Audio-only play: a tone panned to where the layer is, higher as it lines up.
+    if (settings.audioOnly && m && this.mode === 'playing' && !this.paused) {
+      cue.start();
+      const dx = m.x - this.top.x;
+      cue.update(dx / 120, Math.max(0, 1 - Math.abs(dx) / 140), !this.event || !this.event.bad);
+      const inZone = Math.abs(dx) <= PERFECT_TOL;
+      if (inZone && !this.cueZone) cue.zone();
+      this.cueZone = inZone;
+    } else cue.update(0, 0, false);
     // Drop-timing vibration: a tick each time the sliding layer lines up with the stack.
     if (settings.hapticAssist && m && this.mode === 'playing' && !m.twin) {
       const aligned = Math.abs(m.x - this.top.x) <= PERFECT_TOL;
@@ -2256,6 +2470,9 @@ export class Game {
     drawBackdrop(ctx, this.theme, this.specks, this.time, this.camY, -this.offX, bw, this.viewH, 1, this.prevTheme ? this.fade : 1);
     const hol = currentHoliday();
     if (hol) drawHolidayOverlay(ctx, hol.holiday.decor, this.specks, this.time, this.camY, -this.offX, bw, this.viewH);
+    // Table mode: your camera instead of the scene. Otherwise, the climb: rooftops, clouds, planes, then space.
+    const table = this.drawTable();
+    if (!table && !this.intro && (this.mode === 'playing' || this.mode === 'dead')) drawSky(ctx, this.height, this.time, -this.offX, bw, this.viewH, this.camY, settings.reducedMotion);
 
     this.buttons = [];
     if (this.intro) {
@@ -2297,6 +2514,12 @@ export class Game {
       else if (this.mode === 'modchals') this.drawModChals();
       else if (this.mode === 'lab') this.drawLab();
       else if (this.mode === 'jukebox') this.drawJukebox();
+      else if (this.mode === 'daily') this.drawDaily();
+      else if (this.mode === 'bossmaker') this.drawBossMaker();
+      else if (this.mode === 'book') this.drawBook();
+      else if (this.mode === 'promise') this.drawPromise();
+      else if (this.mode === 'world') this.drawWorld();
+      else if (this.mode === 'countries') this.drawCountries();
       this.drawTopBar();
       this.drawOverlays();
       this.drawToast();
@@ -2307,6 +2530,14 @@ export class Game {
     if (this.mode === 'playing') this.drawBossBody(this.chefX, this.bossY(), this.bossScale());
 
     ctx.save();
+    if (this.runMode === 'asmr' && this.mode === 'playing') {
+      // ASMR: a close-up of the counter.
+      const fx = WORLD_W / 2;
+      const fy = this.viewH * 0.55;
+      ctx.translate(fx, fy);
+      ctx.scale(1.18, 1.18);
+      ctx.translate(-fx, -fy);
+    }
     ctx.translate(0, -this.camY);
     this.drawCounter();
     // Only draw the layers that are on screen; tall stacks can have hundreds.
@@ -2319,8 +2550,19 @@ export class Game {
       ctx.translate(WORLD_W, 0);
       ctx.scale(-1, 1);
     }
-    for (const l of this.stack) if (l.y > minY && l.y < maxY) this.drawLayer(l);
-    for (const f of this.flags) if (f.y > minY - 40 && f.y < maxY + 40) drawFlag(ctx, this.equip.flag, f.x, f.y, f.hue);
+    for (const l of this.stack) {
+      if (l.y <= minY || l.y >= maxY) continue;
+      const sw = this.swayAt(l.y);
+      if (sw) ctx.translate(sw, 0);
+      this.drawLayer(l);
+      if (sw) ctx.translate(-sw, 0);
+    }
+    for (const f of this.flags) {
+      if (f.y <= minY - 40 || f.y >= maxY + 40) continue;
+      const sw = this.swayAt(f.y);
+      drawFlag(ctx, this.equip.flag, f.x + sw, f.y, f.hue);
+    }
+    if (this.mode === 'playing' && this.runMode !== 'asmr') this.drawLandmarks(minY, maxY);
     if (this.mode !== 'title') {
       // LAST only when it differs from BEST, so the two lines never sit on top of each other.
       if (this.progress.lastRun !== this.best) this.drawMarker(this.progress.lastRun, 'LAST', 'rgba(255,255,255,0.35)', minY, maxY);
@@ -2343,6 +2585,9 @@ export class Game {
     }
     if (this.moving && this.mode !== 'dead') {
       const mv = this.moving;
+      // The sliding layer sways with the top of the tower, so what lines up on screen lines up for real.
+      const msw = this.swayAt(this.top.y);
+      ctx.translate(msw, 0);
       if (mv.twin) {
         // Two halves, apart by twinSep on each side.
         const half = mv.w / 2;
@@ -2357,7 +2602,18 @@ export class Game {
         ctx.stroke();
         ctx.setLineDash([]);
       } else this.drawLayer(mv);
+      if (this.relay && this.runMode === 'relay' && this.mode === 'playing') {
+        // Relay: the sliding layer is outlined in the colour of the player whose turn it is.
+        ctx.strokeStyle = this.relayColor(this.relay.turn);
+        ctx.lineWidth = 3;
+        this.roundRect(mv.x - 2, mv.y - 2, mv.w + 4, LAYER_H + 4, 8);
+        ctx.stroke();
+      }
+      ctx.translate(-msw, 0);
       if (mirror) ctx.restore();
+      // A combo is one PERFECT away.
+      const cb = this.mode === 'playing' && this.lastPerfect ? comboFor(this.top.kind, mv.kind) : undefined;
+      if (cb && !mv.special) this.text(`${cb.emoji} ${cb.name} if PERFECT`, Math.max(80, Math.min(WORLD_W - 80, mv.x + mv.w / 2)), mv.y - 12, 11, '#9fe3ff', 900);
       if (this.moving.special && this.mode === 'playing') {
         const m = this.moving;
         this.text(this.specialLabel(m.special!), Math.max(80, Math.min(WORLD_W - 80, m.x + m.w / 2)), m.y - 12, 11, '#ffffff', 900);
@@ -2401,7 +2657,7 @@ export class Game {
     }
     ctx.globalAlpha = 1;
     this.qaSkip = true;
-    for (const pp of this.popups) {
+    for (const pp of this.runMode === 'asmr' ? [] : this.popups) {
       ctx.globalAlpha = Math.min(1, pp.life * 2);
       this.text(pp.text, pp.x, pp.y, pp.size, pp.color);
     }
@@ -2674,6 +2930,57 @@ export class Game {
           ctx.beginPath();
           ctx.arc(l.origin + i * 12 + 6, y + h / 2, 4, 0, Math.PI * 1.6);
           ctx.stroke();
+        }
+        break;
+      case 'lavash':
+      case 'yufka':
+        // Thin flatbread: toasted spots, and yufka shows its paper-thin sheets.
+        ctx.fillStyle = 'rgba(150,100,40,0.3)';
+        for (let i = start; i < end; i++) {
+          ctx.beginPath();
+          ctx.ellipse(l.origin + i * 12 + 5, y + 6 + ((i * 7) % 11), 2.6, 1.6, 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (l.kind === 'yufka') {
+          ctx.fillStyle = 'rgba(255,250,220,0.55)';
+          for (let k = 0; k < 4; k++) ctx.fillRect(x, y + 3 + k * 5, w, 1.2);
+        }
+        break;
+      case 'doner':
+      case 'mince':
+        // Shaved meat strips, browned edges.
+        ctx.fillStyle = l.kind === 'doner' ? 'rgba(60,25,10,0.45)' : 'rgba(40,15,10,0.4)';
+        for (let i = start; i < end; i++) {
+          const gx = l.origin + i * 12;
+          ctx.beginPath();
+          ctx.moveTo(gx, y + h);
+          ctx.lineTo(gx + 5, y + 2);
+          ctx.lineTo(gx + 8, y + 2);
+          ctx.lineTo(gx + 3, y + h);
+          ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(255,200,140,0.3)';
+        ctx.fillRect(x, y + 2, w, 2);
+        break;
+      case 'onion':
+        // Purple-rimmed rings.
+        ctx.strokeStyle = 'rgba(140,70,160,0.65)';
+        ctx.lineWidth = 1.6;
+        for (let i = start; i < end; i++) {
+          ctx.beginPath();
+          ctx.ellipse(l.origin + i * 12 + 6, y + h / 2, 5, 7, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      case 'pistachio':
+        // Crushed green nuts.
+        for (let i = start; i < end; i++) {
+          for (let row = 0; row < 3; row++) {
+            ctx.fillStyle = row % 2 ? '#4f772d' : '#b5d99c';
+            ctx.beginPath();
+            ctx.arc(l.origin + i * 12 + ((i * 5 + row * 7) % 11), y + 5 + row * 7, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
         break;
       case 'ikura':
@@ -3388,6 +3695,26 @@ export class Game {
       if (this.weather) this.text(this.weather.kind === 'wind' ? `🌬️ wind ${this.weather.dir > 0 ? '→' : '←'}` : '🌧️ rain', 16 + this.insets.left, top + 86, 12, '#bde0fe', 700, 'left');
       if (this.runMode === 'gauntlet') this.text(`⚔️ ${this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
       if (this.runMode === 'pnp' && this.pnp) this.text(`👥 P${this.pnp.turn}`, WORLD_W - 16 - this.insets.right, top + 64, 16, this.pnp.turn === 1 ? '#ff8a5b' : '#4cc9f0', 700, 'right');
+      if (this.runMode === 'relay' && this.relay) {
+        // Whose drop it is, big and in their colour.
+        const col = this.relayColor(this.relay.turn);
+        ctx.fillStyle = col;
+        this.roundRect(WORLD_W - 116 - this.insets.right, top + 50, 100, 30, 15);
+        ctx.fill();
+        this.text(`P${this.relay.turn + 1}’S DROP`, WORLD_W - 66 - this.insets.right, top + 65, 12, '#fff', 900);
+      }
+      if (this.runMode === 'daily') this.text(`🟩 #${dailyNumber()}`, WORLD_W - 16 - this.insets.right, top + 64, 14, '#8fdc93', 700, 'right');
+      // The next landmark to beat, under the height.
+      const nx = landmarkFor(this.height).next;
+      if (nx && this.fever <= 0 && this.height >= 3 && this.runMode !== 'asmr') {
+        const label = `${nx.emoji} ${Math.round(nx.m - this.height * METERS_PER_LAYER)} m to ${nx.name.replace(/^(the|a) /, '')}`;
+        ctx.font = `700 10.5px ${FONT}`;
+        const lw = Math.min(230, ctx.measureText(label).width + 18);
+        ctx.fillStyle = 'rgba(20,10,25,0.6)';
+        this.roundRect(cx - lw / 2, top + 82, lw, 17, 8.5);
+        ctx.fill();
+        this.fitText(label, cx, top + 90.5, lw - 10, 10.5, '#bde8ff', 'center', 700);
+      }
       if (this.runMode === 'tower') this.text(`🗼 ${this.towerStart + this.ordersServed}`, WORLD_W - 16 - this.insets.right, top + 64, 16, '#ffd34d', 700, 'right');
       if (this.rescueRun) {
         const rr = this.rescueRun;
@@ -3398,7 +3725,7 @@ export class Game {
     if (this.mode === 'playing' && this.runMode === 'time') {
       this.text(`⏱ ${Math.ceil(this.timeLeft)}s`, WORLD_W - 70, top + 64, 22, this.timeLeft < 10 ? '#ff6b6b' : '#ffffff', 900);
     }
-    if (this.mode === 'playing' && this.runMode === 'zen') {
+    if (this.mode === 'playing' && this.zenLike) {
       this.button(WORLD_W - 84, top + 50, 70, 32, 'END', () => this.endZen(), 'quiet');
     }
     if (this.mode === 'playing') {
@@ -3425,8 +3752,10 @@ export class Game {
   private resultTitle(): string {
     switch (this.resultKind) {
       case 'gate': return 'STAR GATE!';
-      case 'special': return this.runMode === 'tower' ? '🗼 TOWER CONQUERED!' : this.runMode === 'modchal' ? `${MODS[this.modChal ?? 'mirror'].icon} CHALLENGE CLEARED!` : this.runMode === 'critic' ? (this.criticStars >= 2 ? 'GLOWING REVIEW!' : 'REVIEW: MEH') : 'SPECIAL CLEARED!';
-      case 'zen': return 'ZEN COMPLETE';
+      case 'special': return this.runMode === 'custom' ? '🏆 BOSS DEFEATED!' : this.runMode === 'tower' ? '🗼 TOWER CONQUERED!' : this.runMode === 'modchal' ? `${MODS[this.modChal ?? 'mirror'].icon} CHALLENGE CLEARED!` : this.runMode === 'critic' ? (this.criticStars >= 2 ? 'GLOWING REVIEW!' : 'REVIEW: MEH') : 'SPECIAL CLEARED!';
+      case 'zen': return this.runMode === 'asmr' ? 'SO RELAXING' : 'ZEN COMPLETE';
+      case 'daily': return this.dailyPractice ? 'PRACTICE ROLL' : `DAILY ROLL #${dailyNumber()}`;
+      case 'relay': return `TEAM: ${this.height} LAYERS`;
       case 'rescue-won': return '🆘 RESCUED!';
       case 'rescue-lost': return this.rescueRun && RESCUES[this.rescueRun.i].kind === 'quake' && this.timeLeft <= 0 ? 'THE QUAKE HIT!' : this.rescueRun && this.rescueRun.margin <= 0 ? 'WASHED AWAY!' : 'DROPPED IT!';
       case 'time': return this.timeLeft <= 0 ? 'TIME’S UP!' : 'DROPPED IT!';
@@ -3445,15 +3774,21 @@ export class Game {
         const rs = RESCUES[this.rescueRun?.i ?? 0];
         return `${rs.name} · ${this.height}/${rs.target} layers · ${'★'.repeat(this.progress.rescueStars[this.rescueRun?.i ?? 0] || 0)}`;
       }
-      case 'zen': return `${layers} · Zen best ${this.progress.zenBest}`;
-      case 'lost': if (this.runMode === 'gauntlet') return `Gauntlet best ${this.progress.gauntletBest} chefs · ${layers}`; return `Level ${this.level} · ${layers} · Best ${this.best}`;
+      case 'zen': return this.runMode === 'asmr' ? `${layers} · ${this.runMaxCombo}-combo · breathe out` : `${layers} · Zen best ${this.progress.zenBest}`;
+      case 'daily': return this.dailyPractice ? `${layers} · not counted` : `${layers} · 🔥 ${this.progress.daily.streak} day streak`;
+      case 'relay': {
+        const st = this.relay?.stats ?? [{ p: 0, c: 0 }, { p: 0, c: 0 }];
+        const mvp = st[0].p === st[1].p ? 'a tie!' : `MVP Player ${st[0].p > st[1].p ? 1 : 2}`;
+        return `P1 ${st[0].p} PERFECT · P2 ${st[1].p} PERFECT · ${mvp}`;
+      }
+      case 'lost': if (this.runMode === 'gauntlet') return `Gauntlet best ${this.progress.gauntletBest} chefs · ${layers}`; if (this.runMode === 'custom') return `vs ${this.chef.name} · ${layers}`; return `Level ${this.level} · ${layers} · Best ${this.best}`;
       case 'time': return `${layers} in 60s · best ${this.progress.timeBest}`;
       case 'puzzle-won': case 'puzzle-lost': {
         const cfg = puzzleConfig(this.puzzle);
         return `${layers}/${cfg.layers} · ${this.orderStats.slices}/${cfg.maxSlices} slices · ${'★'.repeat(this.progress.puzzleStars[this.puzzle] || 0)}`;
       }
       case 'challenge': return `You ${this.height} · friend ${this.challenge?.score ?? 0}`;
-      case 'special': return this.runMode === 'critic' ? `Food Critic · ${'★'.repeat(this.criticStars)}${'☆'.repeat(3 - this.criticStars)} · ${layers}` : `Daily Special · ${layers}`;
+      case 'special': return this.runMode === 'custom' ? `${this.chef.name} · ${layers}` : this.runMode === 'critic' ? `Food Critic · ${'★'.repeat(this.criticStars)}${'☆'.repeat(3 - this.criticStars)} · ${layers}` : `Daily Special · ${layers}`;
       default: return `Level ${this.level} · ${layers} · Best ${this.best}`;
     }
   }
@@ -3483,9 +3818,11 @@ export class Game {
     const gap = this.best - this.height;
     const close = this.resultKind === 'lost' && !this.newBest && gap > 0 && gap <= 3;
     if (close) this.text(`So close! Only ${gap} more for a new best`, cx, cardTop + 130, 14, '#ffb4a2', 700);
-    else if (!this.gated && this.runStock > 0 && !this.lockedAt('restaurant')) {
-      // What this run did for the restaurant.
-      this.fitText(`🧺 +${this.runStock} to the pantry${this.runReqs ? ` · 📋 ${this.runReqs} request${this.runReqs > 1 ? 's' : ''} filled` : ''}${this.catBonus ? ` · 🐈 +${this.catBonus}` : ''}`, cx, cardTop + 130, WORLD_W - 70, 12, '#9fe3ff', 'center', 700);
+    else if (!this.gated) {
+      // How tall the roll stood, and what this run did for the restaurant.
+      const lm = landmarkFor(this.height).beat;
+      const bits = [lm ? `${lm.emoji} Taller than ${lm.name}` : '', this.runStock > 0 && !this.lockedAt('restaurant') ? `🧺 +${this.runStock}` : '', this.runReqs ? `📋 ${this.runReqs}` : '', this.runCombos ? `🍱 ${this.runCombos} combo${this.runCombos > 1 ? 's' : ''}` : ''].filter(Boolean);
+      if (bits.length) this.fitText(bits.join(' · '), cx, cardTop + 130, WORLD_W - 70, 12, '#9fe3ff', 'center', 700);
     }
     const ws = this.progress.winStreak;
     if (this.journey) this.text(ws ? `🔥 Win streak ${ws}${ws < 3 ? ' · 3 = hot start' : ws < 5 ? ' · 5 = steady hands' : ws < 8 ? ' · 8 = free Second Chance' : ''}` : 'Win streak lost · beat a chef to start a new one', cx, cardTop + 152, 12, '#ffb703', 700);
@@ -3512,10 +3849,11 @@ export class Game {
       const row1: [string, () => void, 'primary' | 'gold' | 'quiet'][] = [];
       if (canContinue) row1.push([this.progress.vip ? tr('cont') : `▶ ${tr('cont')}`, () => this.watchAd('Continue this run', () => this.revive()), 'gold']);
       if (!this.doubled && this.runCoins > 0) row1.push([`▶ +${this.runCoins}`, () => this.watchAd('Double your coins', () => { this.doubled = true; this.bankCoins(this.runCoins); this.showToast(`Coins doubled: +${this.runCoins}`); }), 'gold']);
-      row1.push([tr('share'), () => { this.reactPick = true; }, 'quiet']);
-      // Photo mode: a small camera button in the card's corner.
-      this.button(WORLD_W - 76, cardTop + 12, 44, 36, '📷', () => this.openPhoto(), 'quiet');
-      this.buttons[this.buttons.length - 1].label = 'Photo mode';
+      if (this.runMode === 'daily' && !this.dailyPractice) row1.push(['🟩 GRID', () => this.shareDaily(), 'gold']);
+      else row1.push([tr('share'), () => { this.reactPick = true; }, 'quiet']);
+      // The share studio (photo, poster, highlight video, the run's song): a button in the card's corner.
+      this.button(WORLD_W - 78, cardTop - 22, 50, 40, '📤', () => { this.studio = true; }, 'gold');
+      this.buttons[this.buttons.length - 1].label = 'Share studio: photo, poster, video, song';
       if (this.clip) row1.push(['🎬 CLIP', () => { track('clip_share'); void shareClip(this.clip!, this.height); }, 'quiet']);
       const w1 = (WORLD_W - 72 - (row1.length - 1) * 8) / row1.length;
       row1.forEach(([label, go, style], i) => this.button(36 + i * (w1 + 8), cardTop + 232, w1, 44, label, go, style));
@@ -3525,6 +3863,14 @@ export class Game {
       this.button(lh ? 268 : 36, cardTop + 290, 96, 46, tr('home'), () => { this.mode = 'title'; this.reset(); }, 'quiet');
       this.button(lh ? 152 : 140, cardTop + 290, 108, 46, second[0], second[1], 'quiet');
       this.button(lh ? 36 : 256, cardTop + 290, 108, 46, this.resultKind === 'puzzle-won' ? tr('next') : this.resultKind === 'gate' ? 'GET STARS' : tr('retry'), () => this.retry());
+      // A sushi fact under the card, collected in Grandma's Book.
+      if (this.triviaNow >= 0 && cardTop + 372 + 50 < this.viewH - this.insets.bottom) {
+        ctx.fillStyle = 'rgba(20,10,25,0.8)';
+        this.roundRect(20, cardTop + 370, WORLD_W - 40, 52, 14);
+        ctx.fill();
+        this.text('💡', 40, cardTop + 396, 16, '#fff', 400);
+        this.wrapLeft(TRIVIA[this.triviaNow], 60, cardTop + 386, WORLD_W - 96, 10.5, 'rgba(255,255,255,0.85)');
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -3539,6 +3885,20 @@ export class Game {
     if (this.best > 0) this.text(`BEST ${this.best}`, cx, top + 30, 15, 'rgba(255,255,255,0.75)', 700);
     logoText(ctx, 'SUSHI', cx, top + 80, 44, '#ffffff', '#ffe2c6');
     logoText(ctx, 'STACK', cx, top + 122, 44, '#ffb37a', '#ff5d3a');
+    // Sake-chan, the mascot, sits beside the logo. Tap for a (grumpy) word.
+    drawSake(ctx, cx + 128, top + 104, 0.5, this.sakeSay ? 'wink' : 'grumpy', this.time);
+    this.buttons.push({ x: cx + 100, y: top + 74, w: 56, h: 56, onTap: () => this.sakeTap(), label: 'Sake-chan' });
+    if (this.sakeSay) {
+      ctx.font = `700 11px ${FONT}`;
+      const bw = Math.min(250, ctx.measureText(this.sakeSay.text).width + 20);
+      const bx = Math.min(WORLD_W - 8 - bw, cx + 128 - bw + 30);
+      ctx.globalAlpha = Math.min(1, this.sakeSay.t * 3);
+      ctx.fillStyle = '#ffffff';
+      this.roundRect(bx, top + 42, bw, 24, 12);
+      ctx.fill();
+      this.fitText(this.sakeSay.text, bx + bw / 2, top + 54, bw - 12, 11, '#3a1d12', 'center', 700);
+      ctx.globalAlpha = 1;
+    }
 
     // Streak chips: win streak, daily streak (with freezes), Chef Rank.
     const chips = [`🔥 Win ${p.winStreak}`, `📅 Day ${save.giftDay() === Game.day() || save.giftDay() === Game.day(-1) ? save.giftStreak() : 0} ${'❄'.repeat(p.freezes)}`, `👑 Rank ${p.rank}`];
@@ -3608,7 +3968,13 @@ export class Game {
     } else {
       this.button(205, top + 250, 165, 42, t('modes'), () => this.openScreen('modes'));
       const specialDone = p.specialDay === dayKey();
-      this.button(30, top + 300, 340, 40, specialDone ? t('specialDone') : t('special'), () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
+      this.button(30, top + 300, 230, 40, '', () => this.startRun(this.specialLevel(), 'special'), specialDone ? 'quiet' : 'gold');
+      this.buttons[this.buttons.length - 1].label = specialDone ? t('specialDone') : t('special');
+      this.fitText(specialDone ? t('specialDone') : t('special'), 145, top + 320, 214, 13, specialDone ? '#ffffff' : '#4a2a00', 'center', 700);
+      // The Daily Roll: the same layers for everyone, with a grid to share.
+      const rolled = this.dailyDone();
+      this.button(268, top + 300, 102, 40, rolled ? '🟩 SHARE' : `🟩 #${dailyNumber()}`, () => this.openScreen('daily'), rolled ? 'quiet' : 'primary');
+      this.buttons[this.buttons.length - 1].label = rolled ? 'Daily Roll: share your grid' : `Daily Roll number ${dailyNumber()}`;
     }
     if (this.lockedAt('gift')) this.drawHowTo(top + 350);
     else this.drawMissions(top + 350);
@@ -3639,7 +4005,7 @@ export class Game {
     ctx.fillStyle = 'rgba(20,10,25,0.95)';
     ctx.fillRect(-this.offX, navY, WORLD_W + this.offX * 2, 62 + this.insets.bottom);
     const eventsBadge = (p.race.finished && !p.race.claimed) || (p.ads.chests < 3) || (this.quest.stage >= QUEST_STAGES && !this.quest.claimed);
-    const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0 || this.calendarReady();
+    const moreBadge = this.passClaimable() > 0 || this.achClaimable() > 0 || this.calendarReady() || this.lettersUnread() > 0;
     const nav: [string, string, () => void, boolean, string][] = [
       ['🗺️', t('map'), () => this.openMap(), false, 'map'],
       ['🎉', t('events'), () => this.openScreen('events'), eventsBadge, 'events'],
@@ -4194,6 +4560,9 @@ export class Game {
     ctx.fillStyle = 'rgba(20,10,25,0.6)';
     ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
     this.text('SHOP', cx, top + 31, 24, '#fff', 900);
+    // Sake-chan runs the shop, and points you to the fair-play promise.
+    drawSake(ctx, cx + 64, top + 30, 0.3, 'grumpy', this.time);
+    this.buttons.push({ x: cx + 44, y: top + 10, w: 40, h: 40, onTap: () => { this.showToast(`Sake-chan: “${SAKE_LINES.shop[Math.floor(Math.random() * SAKE_LINES.shop.length)]}” · see the No-Nonsense Promise in MORE`); }, label: 'Sake-chan the shopkeeper' });
 
     // Category tabs.
     const tabW = (WORLD_W - 32 - (TABS.length - 1) * 6) / TABS.length;
@@ -4513,7 +4882,12 @@ export class Game {
     let y = f.y0 + 4;
     const modes: [string, string, string, () => void][] = [
       ['🍣 Chef Journey', `Continue at level ${p.playLevel} · ${chefFor(p.playLevel).name}`, 'PLAY', () => this.startRun()],
+      ['🟩 Daily Roll', this.dailyDone() ? `#${dailyNumber()} done · ${p.daily.height} layers · share your grid` : `#${dailyNumber()} · the same layers for everyone today`, this.dailyDone() ? 'GRID' : 'PLAY', () => this.openScreen('daily', 'modes')],
       ['🧘 Zen', `No game over, no attacks, calm music · best ${p.zenBest}`, 'RELAX', () => this.startRun(p.playLevel, 'zen')],
+      ['🎧 ASMR Kitchen', 'Headphones on: soft knife sounds, slow layers', 'RELAX', () => this.startAsmr()],
+      ['🤝 Relay', `Two players, one tower, take turns · best ${p.relayBest}`, 'PLAY', () => this.startRelay()],
+      ['🧑‍🍳 Boss Maker', 'Design a boss chef and share the code', 'CREATE', () => { const d = decodeBoss(p.myBoss); if (d) this.bossDraft = d; this.openScreen('bossmaker', 'modes'); }],
+      ['📷 Table Mode', this.tableMode ? 'ON: runs play over your camera' : 'Play over your camera, on your real table', this.tableMode ? 'TURN OFF' : 'TURN ON', () => { this.tableMode = !this.tableMode; if (!this.tableMode) this.stopCamera(); this.showToast(this.tableMode ? '📷 Table mode on: start any run' : 'Table mode off'); }],
       ['⏱ Time Attack', `Stack as high as you can in 60 seconds · best ${p.timeBest}`, 'GO', () => this.startRun(p.playLevel, 'time')],
       ...(this.nemesisLevel() ? [['😈 Nemesis rematch', `${chefFor(this.nemesisLevel()).name} beat you ${p.losses[this.nemesisLevel()]} times · reward ${this.nemesisReward()} coins`, 'REMATCH', () => this.startRun(this.nemesisLevel())] as [string, string, string, () => void]] : []),
       ['🆘 Rescue', `Save grandma’s stall · ${this.progress.rescueStars.filter((x) => x > 0).length}/${RESCUES.length} saved`, 'OPEN', () => this.openScreen('rescues', 'modes')],
@@ -4720,6 +5094,10 @@ export class Game {
       ['🪪', 'Profile', p.prestige ? `Prestige ${p.prestige} · badges` : 'Stats, badges, prestige', () => this.openScreen('profile', 'more')],
       ['📅', 'Calendar', this.calendarReady() ? 'Today’s reward ready!' : `Day ${p.calendar.n}/28`, () => this.openScreen('calendar', 'more')],
       ['🎵', 'Jukebox', TRACKS[settings.track as TrackId]?.name ?? 'Music', () => this.openScreen('jukebox', 'more')],
+      ['📖', 'Grandma’s Book', this.lettersUnread() ? `${this.lettersUnread()} new letter${this.lettersUnread() > 1 ? 's' : ''} ready!` : `${p.letters.length}/${LETTERS.length} letters · recipes`, () => { this.checkLetters(); this.openScreen('book', 'more'); }],
+      ['🌍', 'Tower of the World', `${(worldSimToday(dayKey()) + (p.world.day === dayKey() ? p.world.today : 0)).toLocaleString('en-US')} layers today`, () => this.openScreen('world', 'more')],
+      ['🏁', 'Country Cup', `${countryById(settings.country || guessCountry()).flag} this week’s heights`, () => this.openScreen('countries', 'more')],
+      ['🤝', 'No-Nonsense Promise', 'Fair play and all the odds', () => this.openScreen('promise', 'more')],
       ['🧪', 'Recipe Lab', `${this.progress.secrets.length}/${SECRETS.length} secrets`, () => this.openScreen('lab', 'more')],
       ['🏛️', 'Museum', `${RECIPES.filter((r) => (p.recipeCounts[r.name] ?? 0) > 0).length}/${RECIPES.length} dishes · mastery`, () => this.openScreen('museum', 'more')],
       ['🧑‍🍳', 'My Chef', `Chef ${p.avatar.name}`, () => this.openScreen('avatar', 'more')],
@@ -6110,7 +6488,9 @@ export class Game {
   }
 
   private priceOf(r: Recipe): number {
-    return dishPrice(r.pattern, this.dishServes(r.name));
+    // Dishes made with in-season ingredients sell for 25% more.
+    const season = this.seasonal();
+    return Math.round(dishPrice(r.pattern, this.dishServes(r.name)) * (r.pattern.some((k) => season.includes(k)) ? 1.25 : 1));
   }
 
   private beatenLevels(): number[] {
@@ -6296,7 +6676,7 @@ export class Game {
     const d = this.diner;
     const exp = EXPANSIONS.slice(0, d.expansions).reduce((a, e) => a + e.tips, 0);
     const ranks = STAFF.reduce((a, s) => a + (this.staffLv(s.id) ? staffRank(d.staffXp[s.id] ?? 0) : 0), 0);
-    return exp + setsDone(d.pieces) * SET_TIP_BONUS + ranks * 0.02 + d.keepsakes.length * 0.02;
+    return exp + setsDone(d.pieces) * SET_TIP_BONUS + ranks * 0.02 + d.keepsakes.length * 0.02 + (this.progress.choices.ch2 === 'street' ? 0.1 : 0);
   }
 
   private lotTips(): number {
@@ -6794,6 +7174,7 @@ export class Game {
   private dinerVisit(): void {
     this.dinerRollover();
     this.fishDelivery();
+    this.checkLetters();
     this.refillRequests();
     this.checkRating();
     this.goalsToday();
@@ -7119,7 +7500,12 @@ export class Game {
     if (!chapter || this.progress.seen.includes(key)) return;
     this.progress.seen.push(key);
     this.progress.persist();
-    this.storyQueue.push({ ch: chapter, lines: end ? chapter.end : chapter.start, end });
+    // Earlier choices change how the next chapters begin.
+    const echo = end ? [] : CHOICES.filter((c) => c.afterChapter < ch && this.progress.choices[c.id]).slice(-1).map((c) => c.options.find((o) => o.id === this.progress.choices[c.id])!.line);
+    this.storyQueue.push({ ch: chapter, lines: end ? chapter.end : [...chapter.start, ...echo], end });
+    // The end of chapters 2 and 3 asks you to choose a side.
+    const pick = end ? CHOICES.find((c) => c.afterChapter === ch && !this.progress.choices[c.id]) : undefined;
+    if (pick) this.storyQueue.push({ ch: { title: pick.title, scene: ['🤔', '⚖️', '🍣'], start: [], end: [] }, lines: [pick.question], end: false, choice: pick.id });
   }
 
   /** Story panel: a little comic frame with the scene, the player's chef and the chapter text. */
@@ -7156,6 +7542,20 @@ export class Game {
     if (st.end) this.text('CHAPTER COMPLETE', cx, y + 234, 11, '#2a9d5c', 700);
     let ty = y + 262;
     for (const line of st.lines) ty = this.wrapText(line, cx, ty, WORLD_W - 90, 14, '#4a2618') + 6;
+    const choice = st.choice ? CHOICES.find((c) => c.id === st.choice) : undefined;
+    if (choice) {
+      // Two sides to choose from, each with what it changes.
+      choice.options.forEach((o, i) => {
+        const by = y + 300 + i * 56;
+        ctx.fillStyle = i ? '#4cc9f0' : '#ff8a5b';
+        this.roundRect(40, by, WORLD_W - 80, 50, 14);
+        ctx.fill();
+        this.fitText(o.label, cx, by + 18, WORLD_W - 100, 14, '#fff', 'center', 700);
+        this.fitText(o.effect, cx, by + 36, WORLD_W - 100, 10.5, 'rgba(255,255,255,0.92)', 'center', 600);
+        this.buttons.push({ x: 40, y: by, w: WORLD_W - 80, h: 50, onTap: () => this.choose(choice.id, o.id), label: `${o.label}: ${o.effect}` });
+      });
+      return;
+    }
     this.button(cx - 90, y + 356, 180, 46, st.end ? 'ONWARD!' : 'LET’S COOK!', () => { this.story = null; }, 'gold');
   }
 
@@ -7535,6 +7935,11 @@ export class Game {
       ctx.fillRect(L, 0, W, H);
       drawLogo(ctx, t, WORLD_W / 2, H * 0.42, t > 1.45 ? tr('introTag') : '');
       logoSparkles(ctx, t, WORLD_W / 2, H * 0.42);
+      // Sake-chan pops up beside the logo once it has landed, and winks.
+      if (t > 1.2) {
+        const pop = Math.min(1, (t - 1.2) / 0.25);
+        drawSake(ctx, WORLD_W / 2 + 118, H * 0.42 + 70, 0.75 * (pop < 1 ? 1.2 * pop : 1), t > 1.8 ? 'wink' : 'shock', t);
+      }
       // Fade out at the end.
       const end = it.full ? LOGO_TIME + 0.5 : LOGO_SHORT;
       if (!settings.reducedMotion && it.t > end - 0.3) {
@@ -8085,6 +8490,1067 @@ export class Game {
     this.screenEnd(f, y - f.y0);
   }
 
+  // ================================================================ standout features
+
+  private marks = ''; // one letter per drop this run: P = PERFECT, C = trimmed, M = the miss
+  private runMaxCombo = 0;
+  private dailyPractice = false;
+  private relay: { turn: 0 | 1; stats: { p: number; c: number }[] } | null = null;
+  private tableMode = false;
+  private video: HTMLVideoElement | null = null;
+  private camStream: MediaStream | null = null;
+  private studio = false;
+  private poster: { style: number; img: HTMLCanvasElement | null } | null = null;
+  private hl: { pct: number } | null = null;
+  private customChef: Chef | null = null;
+  private customBoss: BossDesign | null = null;
+  private customFromFriend = false;
+  private bossDraft: BossDesign = { ...DEFAULT_BOSS };
+  private bookTab: 'letters' | 'recipes' | 'seasons' | 'combos' | 'trivia' | 'story' = 'letters';
+  private letterOpen: number | null = null;
+  private recipeOpen: number | null = null;
+  private sakeSay: { text: string; t: number } | null = null;
+  private triviaNow = -1;
+  private chefMemo = new Map<string, Chef>();
+
+  // ---------------------------------------------------------------- daily roll
+
+  private dailyDone(): boolean {
+    return this.progress.daily.day === dayKey();
+  }
+
+  /** Same layers for everyone today: one counted try, then practice. */
+  private startDaily(): void {
+    this.dailyPractice = this.dailyDone();
+    this.startRun(DAILY_LEVEL, 'daily', { picked: new Set(), seed: dailySeed(dayKey()) });
+    this.coach(`🟩 DAILY ROLL #${dailyNumber()}`, this.dailyPractice ? 'Practice run: your counted roll for today is already in. Same layers as everyone!' : 'The same layers for everyone today. One counted try. Make it a good grid!', 4);
+  }
+
+  private recordDaily(): void {
+    if (this.runMode !== 'daily' || this.dailyPractice || this.revived) return;
+    const d = this.progress.daily;
+    if (d.day === dayKey()) return;
+    const streak = d.last === dayKey(-1) ? d.streak + 1 : 1;
+    this.progress.daily = { day: dayKey(), done: true, height: this.height, grid: this.marks, streak, last: dayKey(), best: Math.max(d.best, this.height), played: d.played + 1, hist: [...d.hist, this.height].slice(-90) };
+    track('daily_roll', { n: dailyNumber(), height: this.height });
+  }
+
+  private dailyText(): string {
+    const d = this.progress.daily;
+    const lm = landmarkFor(d.height).beat;
+    return dailyShare(dailyNumber(), d.height, d.grid, d.streak, lm ? `${lm.emoji} > ${lm.name.replace(/^(the|a) /, '')}` : '');
+  }
+
+  private shareDaily(): void {
+    if (!this.dailyDone()) return this.showToast('Play today’s Daily Roll first!');
+    const text = this.dailyText();
+    track('daily_share');
+    if (navigator.share) void navigator.share({ text }).catch(() => this.copy(text, 'Grid copied! Paste it anywhere.'));
+    else this.copy(text, 'Grid copied! Paste it anywhere.');
+  }
+
+  private drawDaily(): void {
+    const { ctx } = this;
+    const d = this.progress.daily;
+    const done = this.dailyDone();
+    const f = this.screenBegin(`DAILY ROLL #${dailyNumber()}`, 'The same layers for everyone today · one counted try');
+    let y = f.y0 + 4;
+    this.card(16, y, WORLD_W - 32, done ? 240 : 150, 'rgba(30,58,48,0.96)');
+    if (done) {
+      this.text(`${d.height} layers`, WORLD_W / 2, y + 30, 26, '#fff', 900);
+      const lm = landmarkFor(d.height).beat;
+      if (lm) this.fitText(`${lm.emoji} Taller than ${lm.name}`, WORLD_W / 2, y + 56, WORLD_W - 60, 12, '#9fe3ff', 'center', 700);
+      // The grid itself.
+      const rows = Math.min(5, Math.ceil(d.grid.length / 10));
+      for (let r = 0; r < rows; r++) {
+        for (let k = 0; k < 10; k++) {
+          const ch = d.grid[r * 10 + k];
+          if (!ch) break;
+          ctx.fillStyle = ch === 'P' ? '#2a9d5c' : ch === 'C' ? '#e9c46a' : '#e63946';
+          this.roundRect(WORLD_W / 2 - 125 + k * 25, y + 72 + r * 25, 21, 21, 4);
+          ctx.fill();
+        }
+      }
+      if (d.grid.length > 50) this.text(`+${d.grid.length - 50} more`, WORLD_W / 2, y + 206, 10.5, 'rgba(255,255,255,0.7)', 700);
+      this.text(`Next roll in ${this.dur(new Date(new Date().setHours(24, 0, 0, 0)).getTime() - Date.now())}`, WORLD_W / 2, y + 224, 10.5, 'rgba(255,255,255,0.7)', 600);
+      y += 250;
+      this.pill(16, y, WORLD_W - 32, '🟩 SHARE MY GRID', f, () => this.shareDaily(), 'gold');
+      y += 42;
+      this.pill(16, y, WORLD_W - 32, 'PRACTICE (NOT COUNTED)', f, () => this.startDaily(), 'quiet');
+      y += 50;
+    } else {
+      this.text('🟩🟨🟩🟩🟥', WORLD_W / 2, y + 36, 24, '#fff', 400);
+      this.wrapText('Everyone gets the same layers today. 🟩 PERFECT, 🟨 trimmed, 🟥 the drop that ended it. Share your grid when you’re done!', WORLD_W / 2, y + 68, WORLD_W - 70, 11.5, 'rgba(255,255,255,0.85)');
+      y += 160;
+      this.pill(16, y, WORLD_W - 32, `▶ PLAY DAILY ROLL #${dailyNumber()}`, f, () => this.startDaily(), 'gold');
+      y += 50;
+    }
+    // Stats.
+    this.card(16, y, WORLD_W - 32, 150);
+    const stats: [string, string][] = [['Played', String(d.played)], ['Streak', `🔥${d.day === dayKey() || d.last === dayKey(-1) ? d.streak : 0}`], ['Best', String(d.best)], ['Average', d.hist.length ? String(Math.round(d.hist.reduce((a, b) => a + b, 0) / d.hist.length)) : '–']];
+    stats.forEach(([k, v], i) => {
+      const x = 16 + (WORLD_W - 32) * ((i + 0.5) / 4);
+      this.text(v, x, y + 26, 18, '#fff', 900);
+      this.text(k, x, y + 46, 10, 'rgba(255,255,255,0.6)', 700);
+    });
+    const buckets = dailyBuckets(d.hist);
+    const max = Math.max(1, ...buckets);
+    buckets.forEach((n, i) => {
+      const by = y + 66 + i * 13;
+      this.text(i === 5 ? '50+' : `${i * 10}+`, 40, by + 5, 9, 'rgba(255,255,255,0.6)', 700, 'right');
+      ctx.fillStyle = done && Math.min(5, Math.floor(d.height / 10)) === i ? '#2a9d5c' : 'rgba(255,255,255,0.25)';
+      this.roundRect(46, by, Math.max(4, ((WORLD_W - 110) * n) / max), 10, 3);
+      ctx.fill();
+      if (n) this.text(String(n), 52 + ((WORLD_W - 110) * n) / max, by + 5.5, 9, '#fff', 700, 'left');
+    });
+    y += 158;
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ---------------------------------------------------------------- relay co-op
+
+  private startRelay(): void {
+    this.relay = { turn: 0, stats: [{ p: 0, c: 0 }, { p: 0, c: 0 }] };
+    this.startRun(Math.max(3, Math.min(this.progress.playLevel, 25)), 'relay', { picked: new Set() });
+    this.coach('👥 RELAY', 'Two players, one tower. Take turns: Player 1 drops, then Player 2, then Player 1… Don’t be the one who drops it!', 5);
+  }
+
+  /** After each drop in relay, credit the player and pass the phone. */
+  private relayLanded(perfect: boolean): void {
+    const r = this.relay;
+    if (!r || this.runMode !== 'relay') return;
+    if (perfect) r.stats[r.turn].p++;
+    else r.stats[r.turn].c++;
+    r.turn = r.turn === 0 ? 1 : 0;
+    announce(`Player ${r.turn + 1}’s turn`);
+  }
+
+  private relayColor(turn: number): string {
+    return turn === 0 ? '#ff8a5b' : '#4cc9f0';
+  }
+
+  // ---------------------------------------------------------------- ASMR and table mode
+
+  private get zenLike(): boolean {
+    return this.runMode === 'zen' || this.runMode === 'asmr';
+  }
+
+  private startAsmr(): void {
+    this.startRun(this.progress.playLevel, 'asmr', { picked: new Set() });
+    this.coach('🎧 ASMR KITCHEN', 'Headphones on. No music, no game over: just soft knife sounds and slow layers. Tap END when you’re relaxed.', 5);
+  }
+
+  private async startCamera(): Promise<void> {
+    if (this.camStream || !navigator.mediaDevices?.getUserMedia) {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        this.tableMode = false;
+        this.showToast('This device can’t share its camera with the game');
+      }
+      return;
+    }
+    try {
+      this.camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.srcObject = this.camStream;
+      await v.play();
+      this.video = v;
+    } catch {
+      this.tableMode = false;
+      this.stopCamera();
+      this.showToast('Camera not available. Table mode is off.');
+    }
+  }
+
+  private stopCamera(): void {
+    this.camStream?.getTracks().forEach((t) => t.stop());
+    this.camStream = null;
+    this.video = null;
+  }
+
+  /** Table mode: the camera feed replaces the backdrop, so the tower stands on your real table. */
+  private drawTable(): boolean {
+    const v = this.video;
+    if (!this.tableMode || !v || v.readyState < 2 || (this.mode !== 'playing' && this.mode !== 'dead')) return false;
+    const { ctx } = this;
+    const bw = WORLD_W + this.offX * 2;
+    const k = Math.max(bw / v.videoWidth, this.viewH / v.videoHeight);
+    const w = v.videoWidth * k;
+    const h = v.videoHeight * k;
+    ctx.drawImage(v, -this.offX + (bw - w) / 2, (this.viewH - h) / 2, w, h);
+    ctx.fillStyle = 'rgba(20,10,25,0.18)';
+    ctx.fillRect(-this.offX, 0, bw, this.viewH);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- custom boss chefs
+
+  private startCustom(b: BossDesign, friend: boolean): void {
+    this.customBoss = b;
+    this.customChef = bossChef(b);
+    this.customFromFriend = friend;
+    this.startRun(15, 'custom', { picked: new Set() });
+  }
+
+  private customWon(): void {
+    const b = this.customBoss;
+    if (!b) return;
+    const p = this.progress;
+    if (this.customFromFriend && !p.customWins.includes(b.name)) {
+      p.customWins.push(b.name);
+      this.bankCoins(100);
+      this.showToast(`🏆 You beat ${b.name}! +100 coins (${p.customWins.length} friends’ bosses beaten)`);
+    }
+    track('custom_boss_win', { friend: this.customFromFriend });
+  }
+
+  private saveDraft(): void {
+    this.progress.myBoss = encodeBoss(this.bossDraft);
+    this.progress.persist();
+  }
+
+  private shareBoss(): void {
+    const code = encodeBoss(this.bossDraft);
+    this.saveDraft();
+    const text = `I made a boss chef in Sushi Stack: ${this.bossDraft.name}! Beat them: open Friend Code and enter ${code}`;
+    track('boss_share');
+    if (navigator.share) void navigator.share({ text }).catch(() => this.copy(code, 'Boss code copied!'));
+    else this.copy(code, 'Boss code copied!');
+  }
+
+  private drawBossMaker(): void {
+    const b = this.bossDraft;
+    const f = this.screenBegin('BOSS CHEF MAKER', 'Design a boss, then dare your friends to beat them');
+    let y = f.y0 + 4;
+    const chef = bossChef(b);
+    // Preview.
+    this.card(16, y, WORLD_W - 32, 190, 'rgba(70,30,60,0.96)');
+    drawChef(this.ctx, chef, WORLD_W / 2, y + 64, 0.95, 'focused', WORLD_W / 2 + Math.sin(this.time) * 60, y + 260, this.time);
+    this.fitText(b.name, WORLD_W / 2, y + 150, WORLD_W - 60, 18, '#fff', 'center', 900);
+    this.fitText(`“${PHRASES[b.phrase].intro}”`, WORLD_W / 2, y + 172, WORLD_W - 60, 11, '#ffd34d', 'center', 700);
+    y += 198;
+    this.pill(16, y, WORLD_W - 32, '✎ RENAME', f, () => {
+      const n = window.prompt('Boss chef name (up to 14 letters)', b.name);
+      if (n && n.trim()) {
+        b.name = n.trim().slice(0, 14);
+        this.saveDraft();
+      }
+    }, 'quiet');
+    y += 44;
+    const row = (label: string, value: string, step: (d: number) => void) => {
+      this.card(16, y, WORLD_W - 32, 42);
+      this.text(label, 30, y + 21, 12, 'rgba(255,255,255,0.8)', 700, 'left');
+      this.fitText(value, 262, y + 21, 120, 12, '#fff', 'center', 700);
+      this.pill(150, y + 5, 30, '◀', f, () => { step(-1); this.saveDraft(); }, 'quiet');
+      this.pill(WORLD_W - 46, y + 5, 30, '▶', f, () => { step(1); this.saveDraft(); }, 'quiet');
+      y += 48;
+    };
+    const cyc = (v: number, d: number, n: number) => (v + d + n) % n;
+    row('Skin', `Tone ${b.skin + 1}`, (d) => { b.skin = cyc(b.skin, d, LOOK_SIZES.skin); });
+    row('Hair', HAIRS[b.hair], (d) => { b.hair = cyc(b.hair, d, LOOK_SIZES.hair); });
+    row('Hair colour', `Colour ${b.hairColor + 1}`, (d) => { b.hairColor = cyc(b.hairColor, d, LOOK_SIZES.hairColor); });
+    row('Hat', HATS[b.hat], (d) => { b.hat = cyc(b.hat, d, LOOK_SIZES.hat); });
+    row('Outfit', `Style ${b.outfit + 1}`, (d) => { b.outfit = cyc(b.outfit, d, LOOK_SIZES.outfit); });
+    row('Face', FACES[b.face], (d) => { b.face = cyc(b.face, d, LOOK_SIZES.face); });
+    row('Catchphrase', PHRASES[b.phrase].intro, (d) => { b.phrase = cyc(b.phrase, d, PHRASES.length); });
+    this.text('RULES', 20, y + 10, 12, '#ffd34d', 700, 'left');
+    y += 24;
+    row('Speed', SPEEDS[b.speed].name, (d) => { b.speed = cyc(b.speed, d, SPEEDS.length); });
+    row('Extra layers', `+${b.extra}`, (d) => { b.extra = cyc(b.extra, d, 5); });
+    row('Attack often', ['Rarely', 'Sometimes', 'A lot'][b.mean], (d) => { b.mean = cyc(b.mean, d, 3); });
+    const tw = (WORLD_W - 42) / 2;
+    this.pill(16, y, tw, b.wobble ? '✓ SURGES' : 'SURGES: OFF', f, () => { b.wobble = !b.wobble; this.saveDraft(); }, b.wobble ? 'primary' : 'quiet');
+    this.pill(26 + tw, y, tw, b.tight ? '✓ SMALL PERFECT' : 'SMALL PERFECT: OFF', f, () => { b.tight = !b.tight; this.saveDraft(); }, b.tight ? 'primary' : 'quiet');
+    y += 44;
+    this.text('ATTACKS', 20, y + 10, 12, '#ffd34d', 700, 'left');
+    y += 24;
+    const aw = (WORLD_W - 32 - 12) / 3;
+    ALL_ATTACKS.forEach((a, i) => {
+      const on = b.attacks.includes(a.id);
+      this.pill(16 + (i % 3) * (aw + 6), y + Math.floor(i / 3) * 40, aw, `${a.icon} ${a.name}`, f, () => {
+        b.attacks = on ? b.attacks.filter((x) => x !== a.id) : [...b.attacks, a.id];
+        this.saveDraft();
+      }, on ? 'primary' : 'quiet');
+    });
+    y += Math.ceil(ALL_ATTACKS.length / 3) * 40 + 8;
+    this.pill(16, y, WORLD_W - 32, '⚔️ TEST FIGHT', f, () => this.startCustom({ ...b }, false), 'gold');
+    y += 44;
+    this.pill(16, y, (WORLD_W - 42) / 2, '📤 SHARE CODE', f, () => this.shareBoss(), 'quiet');
+    this.pill(26 + (WORLD_W - 42) / 2, y, (WORLD_W - 42) / 2, '🤝 FIGHT A FRIEND’S', f, () => this.openCodeInput('friend'), 'quiet');
+    y += 44;
+    if (this.progress.customWins.length) {
+      this.fitText(`Friends’ bosses beaten: ${this.progress.customWins.slice(-5).join(', ')}`, WORLD_W / 2, y + 10, WORLD_W - 40, 10.5, 'rgba(255,255,255,0.7)', 'center', 600);
+      y += 26;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  // ---------------------------------------------------------------- share studio
+
+  /** Everything a run can be shared as: photo, poster, highlight video, its song, the Daily grid. */
+  private drawStudio(blocker: () => void): void {
+    const { ctx } = this;
+    blocker();
+    ctx.fillStyle = 'rgba(10,5,15,0.86)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    const opts: [string, string, () => void][] = [
+      ['📸 PHOTO', 'Your tower with filters and frames', () => { this.studio = false; this.openPhoto(); }],
+      ['🖼️ POSTER', 'A tall print with your height and landmark', () => { this.studio = false; this.poster = { style: 0, img: null }; }],
+      ['🎬 HIGHLIGHT VIDEO', clipsSupported() ? '10-second vertical video for TikTok, Reels and Shorts' : 'Not supported on this device', () => { this.studio = false; void this.makeHighlight(); }],
+      ['🎵 PLAY YOUR SONG', `${this.song.length} notes: your run as a tune`, () => this.playRunSong()],
+      ['🔗 SHARE SONG CODE', 'Friends paste it under Friend Code to hear it', () => this.shareSong()],
+    ];
+    if (this.runMode === 'daily' && this.dailyDone()) opts.unshift(['🟩 DAILY GRID', 'Copy your Wordle-style grid', () => this.shareDaily()]);
+    const h = 54;
+    const top = this.viewH / 2 - (opts.length * (h + 8) + 120) / 2;
+    this.text('SHARE STUDIO', WORLD_W / 2, top + 20, 22, '#fff', 900);
+    this.fitText(`${this.height} layers · ${landmarkFor(this.height).beat ? `taller than ${landmarkFor(this.height).beat!.name}` : 'a fine roll'}`, WORLD_W / 2, top + 46, WORLD_W - 60, 12, '#ffd34d', 'center', 700);
+    opts.forEach(([label, sub, go], i) => {
+      const y = top + 66 + i * (h + 8);
+      this.card(30, y, WORLD_W - 60, h, 'rgba(48,30,52,0.98)');
+      this.text(label, 48, y + 20, 14, '#fff', 900, 'left');
+      this.fitText(sub, 48, y + 39, WORLD_W - 110, 10.5, 'rgba(255,255,255,0.7)', 'left', 600);
+      this.buttons.push({ x: 30, y, w: WORLD_W - 60, h, onTap: go, label });
+    });
+    this.button(30, top + 74 + opts.length * (h + 8), WORLD_W - 60, 44, t('back'), () => { this.studio = false; stopSong(); }, 'quiet');
+  }
+
+  private playRunSong(): void {
+    if (!this.song.length) return this.showToast('Stack a few layers first!');
+    const len = playSong(this.song);
+    this.showToast(`🎵 Playing your ${this.song.length}-note song (${Math.ceil(len)}s)`);
+  }
+
+  private shareSong(): void {
+    if (!this.song.length) return this.showToast('Stack a few layers first!');
+    const code = encodeSong(this.song);
+    const text = `Listen to my Sushi Stack run (${this.height} layers)! Open Friend Code and enter: ${code}`;
+    if (navigator.share) void navigator.share({ text }).catch(() => this.copy(code, 'Song code copied!'));
+    else this.copy(code, 'Song code copied!');
+  }
+
+  private static POSTERS = [
+    { name: 'Night', bg: ['#1b1035', '#3a1d5c'], ink: '#ffffff', accent: '#ffd34d' },
+    { name: 'Sakura', bg: ['#ffe5ec', '#ff8fab'], ink: '#4a2618', accent: '#c1121f' },
+    { name: 'Gold', bg: ['#2a1a0a', '#6a4a14'], ink: '#fff3b0', accent: '#ffd34d' },
+  ];
+
+  /** A tall 1080×1920 poster of this run's tower, next to the landmark it beat. */
+  private renderPoster(style: number): HTMLCanvasElement {
+    const P = Game.POSTERS[style];
+    const c = document.createElement('canvas');
+    c.width = 1080;
+    c.height = 1920;
+    const x = c.getContext('2d')!;
+    const g = x.createLinearGradient(0, 0, 0, 1920);
+    g.addColorStop(0, P.bg[0]);
+    g.addColorStop(1, P.bg[1]);
+    x.fillStyle = g;
+    x.fillRect(0, 0, 1080, 1920);
+    if (style === 0) {
+      x.fillStyle = '#fff';
+      for (let i = 0; i < 90; i++) x.fillRect((i * 97) % 1080, (i * 211) % 900, i % 7 ? 2 : 4, i % 7 ? 2 : 4);
+    } else if (style === 1) {
+      x.fillStyle = 'rgba(255,255,255,0.6)';
+      for (let i = 0; i < 40; i++) {
+        x.beginPath();
+        x.ellipse((i * 131) % 1080, (i * 173) % 1920, 10, 5, i, 0, Math.PI * 2);
+        x.fill();
+      }
+    } else {
+      x.strokeStyle = 'rgba(255,211,77,0.35)';
+      x.lineWidth = 6;
+      x.strokeRect(40, 40, 1000, 1840);
+      x.strokeRect(60, 60, 960, 1800);
+    }
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillStyle = P.ink;
+    x.font = `700 96px ${FONT}`;
+    x.fillText('SUSHI STACK', 540, 150);
+    x.font = `600 36px ${FONT}`;
+    x.fillText(new Date().toLocaleDateString(), 540, 220);
+    // The tower, scaled to fit.
+    const layers = this.stack;
+    const towerH = layers.length * LAYER_H;
+    const k = Math.min(3, 1100 / Math.max(towerH, 1));
+    const floor = 1450;
+    const lm = landmarkFor(this.height).beat;
+    if (lm) {
+      // The landmark beaten, as a column of its true height beside the tower, with its name on top.
+      const ch = Math.min(1150, (lm.m / METERS_PER_LAYER) * LAYER_H * k);
+      x.fillStyle = style === 1 ? 'rgba(74,38,24,0.18)' : 'rgba(255,255,255,0.16)';
+      x.fillRect(150, floor - ch, 130, ch);
+      x.strokeStyle = P.accent;
+      x.lineWidth = 4;
+      x.setLineDash([14, 10]);
+      x.strokeRect(150, floor - ch, 130, ch);
+      x.setLineDash([]);
+      x.font = '84px sans-serif';
+      x.fillText(lm.emoji, 215, floor - ch - 70);
+      x.fillStyle = P.ink;
+      x.font = `600 30px ${FONT}`;
+      x.fillText(`${lm.m} m`, 215, floor - ch - 18);
+    }
+    const saved = this.ctx;
+    this.ctx = x;
+    x.save();
+    x.translate(640 - (WORLD_W / 2) * k, floor);
+    x.scale(k, k);
+    for (const l of layers) this.drawLayer(l);
+    x.restore();
+    this.ctx = saved;
+    x.fillStyle = P.accent;
+    x.fillRect(340, floor + 4, 600, 12);
+    drawSake(x, 900, 1720, 2.2, 'proud', 0.4);
+    drawChef(x, avatarChef(this.progress.avatar), 170, 1650, 2, 'happy', 540, 1400, 0);
+    x.fillStyle = P.ink;
+    x.font = `700 130px ${FONT}`;
+    x.fillText(`${this.height * METERS_PER_LAYER} m`, 560, 1560);
+    x.font = `600 44px ${FONT}`;
+    x.fillStyle = P.accent;
+    x.fillText(lm ? `taller than ${lm.name}` : 'and still growing', 560, 1650);
+    x.fillStyle = P.ink;
+    x.font = `600 36px ${FONT}`;
+    x.fillText(`Chef ${this.progress.avatar.name} · ${this.ordersServed} chef${this.ordersServed === 1 ? '' : 's'} beaten`, 560, 1720);
+    if (this.runMode === 'daily') x.fillText(`Daily Roll #${dailyNumber()}`, 560, 1780);
+    return c;
+  }
+
+  private drawPoster(blocker: () => void): void {
+    const pv = this.poster!;
+    const { ctx } = this;
+    blocker();
+    ctx.fillStyle = '#0d0810';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    if (!pv.img) pv.img = this.renderPoster(pv.style);
+    const top = this.insets.top + 16;
+    const ph = this.viewH - this.insets.bottom - 130 - top;
+    const pw = ph * (1080 / 1920);
+    ctx.drawImage(pv.img, WORLD_W / 2 - pw / 2, top, pw, ph);
+    const by = top + ph + 12;
+    this.button(20, by, WORLD_W - 40, 38, `🎨 Style: ${Game.POSTERS[pv.style].name}`, () => { pv.style = (pv.style + 1) % Game.POSTERS.length; pv.img = null; }, 'quiet');
+    this.button(20, by + 46, (WORLD_W - 48) / 2, 44, t('back'), () => { this.poster = null; }, 'quiet');
+    this.button(28 + (WORLD_W - 48) / 2, by + 46, (WORLD_W - 48) / 2, 44, '📤 SAVE / SHARE', () => { void sharePhoto(pv.img ?? this.renderPoster(pv.style)); track('poster_share', { style: pv.style }); }, 'gold');
+  }
+
+  /**
+   * Renders a 10-second vertical highlight: title card, the tower building up with its song,
+   * a zoom-out to the whole tower next to the landmark it beat, then an end card.
+   */
+  private async makeHighlight(): Promise<void> {
+    if (!clipsSupported()) return this.showToast('Video recording isn’t supported on this device');
+    if (this.hl) return;
+    const c = document.createElement('canvas');
+    c.width = 720;
+    c.height = 1280;
+    const x = c.getContext('2d')!;
+    const stream = c.captureStream(30);
+    audioStream()?.getAudioTracks().forEach((tr) => stream.addTrack(tr));
+    const type = clipType();
+    const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 3_000_000 });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    const stopped = new Promise<void>((r) => { rec.onstop = () => r(); });
+    const layers = this.stack.slice();
+    const marks = this.marks;
+    const song = this.song.slice();
+    const height = this.height;
+    const beaten = this.ordersServed;
+    const chefName = this.chef.name;
+    this.hl = { pct: 0 };
+    rec.start();
+    const DUR = 10;
+    const start = performance.now();
+    let played = -1;
+    await new Promise<void>((resolve) => {
+      const frame = () => {
+        const t = (performance.now() - start) / 1000;
+        this.highlightFrame(x, t, layers, marks, height, beaten, chefName, (i) => {
+          // Play the song as the tower builds (thinned out so tall towers don't become noise).
+          const every = Math.max(1, Math.ceil(layers.length / 40));
+          for (let k = played + 1; k <= i; k++) if (k % every === 0 && song[k] !== undefined) songNote(song[k] >> 2, (song[k] & 2) > 0, (song[k] & 1) > 0);
+          played = Math.max(played, i);
+        });
+        if (this.hl) this.hl.pct = Math.min(1, t / DUR);
+        if (t < DUR) requestAnimationFrame(frame);
+        else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+    rec.stop();
+    await stopped;
+    this.hl = null;
+    if (!chunks.length) return this.showToast('The video couldn’t be made. Try again?');
+    const file = new File(chunks, `sushi-stack-highlight.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type: type.split(';')[0] });
+    track('highlight', { height });
+    await shareClip(file, height);
+  }
+
+  private highlightFrame(x: CanvasRenderingContext2D, t: number, layers: Layer[], marks: string, height: number, beaten: number, chefName: string, onReveal: (i: number) => void): void {
+    const W = 720;
+    const H = 1280;
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, this.theme.sky[0]);
+    g.addColorStop(1, this.theme.sky[1]);
+    x.fillStyle = g;
+    x.fillRect(0, 0, W, H);
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    const ink = (s: string, y: number, size: number, color = '#fff', weight = 700) => {
+      x.font = `${weight} ${size}px ${FONT}`;
+      x.lineWidth = size / 6;
+      x.strokeStyle = 'rgba(30,15,30,0.75)';
+      x.strokeText(s, W / 2, y);
+      x.fillStyle = color;
+      x.fillText(s, W / 2, y);
+    };
+    if (t < 1.5) {
+      ink('SUSHI STACK', 300, 84, '#ffd34d');
+      ink(`Chef ${this.progress.avatar.name}`, 520, 56);
+      ink('vs', 610, 40, '#ffb4a2');
+      ink(chefName, 700, 56);
+      drawSake(x, W / 2, 1000, 2.4 * Math.min(1, t * 2), 'grumpy', t);
+      return;
+    }
+    const n = layers.length;
+    const saved = this.ctx;
+    this.ctx = x;
+    let k = 1.8;
+    let revealed = n - 1;
+    if (t < 7) revealed = Math.min(n - 1, Math.floor(Math.pow((t - 1.5) / 5.5, 0.85) * n));
+    else {
+      const z = Math.min(1, (t - 7) / 1.4);
+      const fit = Math.min(1.8, 1050 / Math.max(1, n * LAYER_H));
+      k = 1.8 + (fit - 1.8) * (1 - Math.pow(1 - z, 3));
+    }
+    onReveal(revealed);
+    const topY = layers[revealed]?.y ?? 0;
+    // Follow the top while building; settle the whole tower on the floor when zoomed out.
+    const follow = t < 7 ? 640 - topY * k : 1180;
+    x.save();
+    x.translate(W / 2 - (WORLD_W / 2) * k, Math.max(1180, follow));
+    x.scale(k, k);
+    for (let i = 0; i <= revealed; i++) {
+      this.drawLayer(layers[i]);
+      if (marks[i - 1] === 'P' && t < 7 && i > revealed - 3) {
+        x.fillStyle = 'rgba(255,243,176,0.55)';
+        x.fillRect(layers[i].x - 4, layers[i].y - 3, layers[i].w + 8, LAYER_H + 6);
+      }
+    }
+    x.restore();
+    this.ctx = saved;
+    const m = Math.round(((revealed + 1) / Math.max(1, n)) * height) * METERS_PER_LAYER;
+    if (t < 9) ink(`${m} m`, 140, 96);
+    if (t >= 7 && t < 9) {
+      const lm = landmarkFor(height).beat;
+      ink(lm ? `${lm.emoji} Taller than ${lm.name.replace(/^the /, 'the ')}!` : `${beaten} chefs beaten!`, 240, 38, '#ffd34d');
+    }
+    if (t >= 9) {
+      x.fillStyle = `rgba(20,10,25,${Math.min(0.85, (t - 9) * 2)})`;
+      x.fillRect(0, 0, W, H);
+      ink('SUSHI STACK', 360, 84, '#ffd34d');
+      ink(`Can you beat ${height} m?`, 470, 48);
+      drawSake(x, W / 2, 800, 2.6, 'wink', t);
+    }
+  }
+
+  private drawHighlightProgress(blocker: () => void): void {
+    const { ctx } = this;
+    blocker();
+    ctx.fillStyle = 'rgba(10,5,15,0.9)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    const midY = this.viewH / 2;
+    drawSake(ctx, WORLD_W / 2, midY - 70, 1.2, 'grumpy', this.time);
+    this.text('MAKING YOUR HIGHLIGHT…', WORLD_W / 2, midY + 10, 16, '#fff', 900);
+    this.bar(60, midY + 34, WORLD_W - 120, this.hl!.pct, '#ffd34d', 10);
+    this.text('Keep the app open for 10 seconds', WORLD_W / 2, midY + 66, 11, 'rgba(255,255,255,0.7)', 600);
+  }
+
+  // ---------------------------------------------------------------- characters
+
+  /** Rival chefs remember your history with them. */
+  private recordChef(level: number, won: boolean): void {
+    if (!this.journey) return;
+    const log = this.progress.chefLog;
+    const e = log[level] ?? { f: 0, w: 0, l: 0, combo: 0, h: 0, at: 0 };
+    e.f++;
+    if (won) e.w++;
+    else e.l++;
+    e.combo = Math.max(e.combo, this.runMaxCombo);
+    e.h = this.height;
+    e.at = Date.now();
+    log[level] = e;
+  }
+
+  /** Story choices nudge later chefs: more help, fewer attacks, or faster and richer. */
+  private chefWithChoices(level: number): Chef {
+    const ch = this.progress.choices;
+    const key = `${level}|${ch.ch2 ?? ''}|${ch.ch3 ?? ''}`;
+    const hit = this.chefMemo.get(key);
+    if (hit) return hit;
+    const base = chefFor(level);
+    let c = base;
+    if (level > 20 && level <= 40 && ch.ch2 === 'market') c = { ...c, kind: Math.min(0.9, c.kind * 1.6) };
+    if (level > 30 && level <= 40 && ch.ch3 === 'mentor') c = { ...c, mean: c.mean * 0.75 };
+    if (level > 30 && level <= 40 && ch.ch3 === 'solo') c = { ...c, speed: c.speed * 1.06 };
+    if (this.chefMemo.size > 200) this.chefMemo.clear();
+    this.chefMemo.set(key, c);
+    return c;
+  }
+
+  private choose(id: string, opt: string): void {
+    const c = CHOICES.find((x) => x.id === id);
+    const o = c?.options.find((x) => x.id === opt);
+    if (!c || !o) return;
+    this.progress.choices[id] = opt;
+    this.progress.persist();
+    this.chefMemo.clear();
+    this.story = null;
+    this.celebrate(o.label.toUpperCase(), o.effect, 2.4);
+    track('story_choice', { id, opt });
+  }
+
+  /** A choice you can still make (you passed its chapter but haven't chosen). */
+  private pendingChoice(): (typeof CHOICES)[number] | undefined {
+    return CHOICES.find((c) => !this.progress.choices[c.id] && this.progress.unlocked > (c.afterChapter + 1) * 10);
+  }
+
+  private letterStats(): LetterStats {
+    const p = this.progress;
+    return {
+      level: p.unlocked, served: p.stats.served ?? 0, perfects: p.stats.perfects ?? 0, restaurant: p.restaurant.levels[0] > 0,
+      expansions: this.diner.expansions, dailyPlayed: p.daily.played, combos: p.combos.length, landmark: p.landmark,
+      worlds: p.seen.filter((k) => k.startsWith('world:')).map((k) => k.slice(6)),
+    };
+  }
+
+  /** Grandma's letters arrive as you reach milestones. */
+  private checkLetters(): void {
+    const p = this.progress;
+    const s = this.letterStats();
+    for (const l of LETTERS) {
+      if (p.letters.includes(l.id) || !letterUnlocked(l, s)) continue;
+      p.letters.push(l.id);
+      p.persist();
+      this.showToast(`💌 A letter from Grandma: “${l.title}”. Read it in Grandma’s Book!`);
+      track('letter', { id: l.id });
+    }
+  }
+
+  private lettersUnread(): number {
+    return this.progress.letters.filter((id) => !this.progress.lettersRead.includes(id)).length;
+  }
+
+  private drawLetter(blocker: () => void): void {
+    const l = LETTERS.find((x) => x.id === this.letterOpen);
+    if (!l) {
+      this.letterOpen = null;
+      return;
+    }
+    const { ctx } = this;
+    blocker();
+    ctx.fillStyle = 'rgba(10,5,15,0.82)';
+    ctx.fillRect(-this.offX, 0, WORLD_W + this.offX * 2, this.viewH);
+    this.qaCover();
+    const top = this.viewH / 2 - 250;
+    // Paper with ruled lines.
+    ctx.save();
+    ctx.translate(WORLD_W / 2, top + 230);
+    ctx.rotate(-0.012);
+    ctx.fillStyle = '#fbf3e1';
+    this.roundRect(-170, -230, 340, 440, 10);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120,150,200,0.25)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 18; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-150, -150 + i * 22);
+      ctx.lineTo(150, -150 + i * 22);
+      ctx.stroke();
+    }
+    ctx.restore();
+    this.text('💌', WORLD_W / 2, top + 26, 26, '#fff', 400);
+    this.fitText(l.title, WORLD_W / 2, top + 58, 300, 17, '#7a3b2e', 'center', 700);
+    let y = top + 96;
+    ctx.font = `italic 600 13px ${FONT}`;
+    for (const para of l.body) {
+      y = this.wrapText(para, WORLD_W / 2, y, 290, 13, '#3a2418') + 8;
+    }
+    this.button(WORLD_W / 2 - 80, top + 420, 160, 44, 'CLOSE', () => { this.letterOpen = null; }, 'quiet');
+  }
+
+  private sakeTap(): void {
+    const lines = SAKE_LINES.home;
+    this.sakeSay = { text: lines[Math.floor(Math.random() * lines.length)], t: 3 };
+    sfx.tap();
+    babble(this.sakeSay.text, 330);
+  }
+
+  // ---------------------------------------------------------------- culture
+
+  private seasonal(): Ingredient[] {
+    return inSeason(new Date().getMonth());
+  }
+
+  private pickTrivia(): void {
+    const p = this.progress;
+    const unseen = TRIVIA.map((_, i) => i).filter((i) => !p.trivia.includes(i));
+    const pool = unseen.length ? unseen : TRIVIA.map((_, i) => i);
+    this.triviaNow = pool[Math.floor(Math.random() * pool.length)];
+    if (!p.trivia.includes(this.triviaNow)) p.trivia.push(this.triviaNow);
+  }
+
+  private drawBook(): void {
+    const p = this.progress;
+    const f = this.screenBegin('GRANDMA’S BOOK', `${p.letters.length}/${LETTERS.length} letters · ${this.unlockedRecipeCards().length}/${RECIPE_CARDS.length} recipes · ${p.trivia.length}/${TRIVIA.length} facts`);
+    let y = f.y0 + 4;
+    const tabs: [typeof this.bookTab, string][] = [['letters', 'LETTERS'], ['recipes', 'RECIPES'], ['seasons', 'SEASONS'], ['combos', 'COMBOS'], ['trivia', 'FACTS'], ['story', 'STORY']];
+    const tw = (WORLD_W - 32 - 10) / 3;
+    tabs.forEach(([id, label], i) => {
+      const tx = 16 + (i % 3) * (tw + 5);
+      const ty = y + Math.floor(i / 3) * 38;
+      this.pill(tx, ty, tw, label, f, () => { this.bookTab = id; this.recipeOpen = null; }, this.bookTab === id ? 'primary' : 'quiet');
+      if (id === 'letters' && this.lettersUnread()) this.dot(tx + tw - 5, ty + 4, 4.5, '#ff4d6d');
+      if (id === 'story' && this.pendingChoice()) this.dot(tx + tw - 5, ty + 4, 4.5, '#ff4d6d');
+    });
+    y += 84;
+    if (this.recipeOpen === null) drawSake(this.ctx, WORLD_W - 46, y + 10, 0.42, 'happy', this.time);
+    switch (this.bookTab) {
+      case 'letters': {
+        this.wrapLeft('Grandma left letters around the old bar. They turn up as you reach milestones.', 16, y + 2, WORLD_W - 90, 10.5, 'rgba(255,255,255,0.75)');
+        y += 34;
+        for (const l of LETTERS) {
+          const have = p.letters.includes(l.id);
+          const unread = have && !p.lettersRead.includes(l.id);
+          this.card(16, y, WORLD_W - 32, 50, have ? 'rgba(251,243,225,0.95)' : 'rgba(40,28,44,0.9)');
+          this.text(have ? (unread ? '💌' : '✉️') : '🔒', 40, y + 25, 18, '#fff', 400);
+          this.fitText(have ? l.title : '???', 62, y + 18, WORLD_W - 150, 13, have ? '#4a2618' : 'rgba(255,255,255,0.6)', 'left', 700);
+          this.fitText(have ? (unread ? 'New! Tap to read' : 'Read again') : letterHint(l), 62, y + 35, WORLD_W - 150, 10, have ? '#c4501f' : 'rgba(255,255,255,0.5)', 'left', 600);
+          if (have) this.listTap(16, y, WORLD_W - 32, 50, f, () => {
+            this.letterOpen = l.id;
+            if (!p.lettersRead.includes(l.id)) p.lettersRead.push(l.id);
+            p.persist();
+          });
+          y += 56;
+        }
+        break;
+      }
+      case 'recipes': {
+        const open = this.unlockedRecipeCards();
+        if (this.recipeOpen !== null) {
+          const r = RECIPE_CARDS[this.recipeOpen];
+          this.card(16, y, WORLD_W - 32, 34, 'rgba(251,243,225,0.95)');
+          this.fitText(`${DISH_EMOJI[r.dish] ?? '🍚'} ${r.dish} · serves ${r.serves} · ${r.time}`, WORLD_W / 2, y + 17, WORLD_W - 50, 13, '#4a2618', 'center', 700);
+          y += 42;
+          this.text('INGREDIENTS', 20, y + 8, 11, '#ffd34d', 700, 'left');
+          y += 20;
+          for (const ing of r.ingredients) y = this.wrapLeftH(`• ${ing}`, 24, y, WORLD_W - 48, 11.5, '#fff') + 4;
+          y += 8;
+          this.text('METHOD', 20, y + 8, 11, '#ffd34d', 700, 'left');
+          y += 20;
+          r.steps.forEach((st, i) => { y = this.wrapLeftH(`${i + 1}. ${st}`, 24, y, WORLD_W - 48, 11.5, '#fff') + 6; });
+          y += 4;
+          this.card(16, y, WORLD_W - 32, 54, 'rgba(42,90,60,0.95)');
+          this.wrapLeft(`💡 ${r.tip}`, 28, y + 16, WORLD_W - 56, 10.5, '#fff');
+          y += 62;
+          this.pill(16, y, WORLD_W - 32, '← ALL RECIPES', f, () => { this.recipeOpen = null; }, 'quiet');
+          y += 44;
+          break;
+        }
+        this.wrapLeft('Real recipes to make at home. A dish’s card unlocks when it reaches level 3 (15 serves in runs and your restaurant).', 16, y + 2, WORLD_W - 90, 10.5, 'rgba(255,255,255,0.75)');
+        y += 36;
+        RECIPE_CARDS.forEach((r, i) => {
+          const have = open.includes(i);
+          const rec = RECIPES.find((x) => x.name === r.dish);
+          this.card(16, y, WORLD_W - 32, 48, have ? 'rgba(251,243,225,0.95)' : 'rgba(40,28,44,0.9)');
+          this.text(have ? DISH_EMOJI[r.dish] ?? '🍚' : '🔒', 40, y + 24, 18, '#fff', 400);
+          this.fitText(r.dish, 62, y + 17, WORLD_W - 150, 13, have ? '#4a2618' : 'rgba(255,255,255,0.65)', 'left', 700);
+          this.fitText(have ? `${r.time} · tap for the recipe` : rec ? `${this.dishServes(rec.name)}/15 serves` : 'Always open', 62, y + 34, WORLD_W - 150, 10, have ? '#c4501f' : 'rgba(255,255,255,0.5)', 'left', 600);
+          if (have) this.listTap(16, y, WORLD_W - 32, 48, f, () => { this.recipeOpen = i; this.pageScroll = 0; });
+          y += 54;
+        });
+        break;
+      }
+      case 'seasons': {
+        const month = new Date().getMonth();
+        const now = this.seasonal();
+        this.card(16, y, WORLD_W - 32, 96, 'rgba(42,70,60,0.95)');
+        this.text(`IN SEASON NOW (${MONTHS[month].toUpperCase()})`, 30, y + 18, 12, '#ffd34d', 700, 'left');
+        this.fitText(now.length ? now.join(', ') : 'Nothing special this month', 30, y + 40, WORLD_W - 60, 15, '#fff', 'left', 700);
+        this.wrapLeft(seasonNote(month) || 'Every month something is at its best.', 30, y + 62, WORLD_W - 60, 10, 'rgba(255,255,255,0.8)');
+        y += 104;
+        this.wrapLeft('In-season ingredients pay +1 coin per PERFECT in runs, and dishes made with them sell for 25% more in your restaurant.', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.75)');
+        y += 34;
+        const cw = (WORLD_W - 32 - 15) / 4;
+        MONTHS.forEach((mn, i) => {
+          const x = 16 + (i % 4) * (cw + 5);
+          const yy = y + Math.floor(i / 4) * 62;
+          const items = inSeason(i);
+          this.card(x, yy, cw, 56, i === month ? 'rgba(255,211,77,0.3)' : 'rgba(48,30,52,0.95)');
+          this.text(mn, x + cw / 2, yy + 14, 11, i === month ? '#ffd34d' : '#fff', 700);
+          this.fitText(items.join(' · ') || '–', x + cw / 2, yy + 36, cw - 8, 9.5, 'rgba(255,255,255,0.8)', 'center', 600);
+        });
+        y += 3 * 62 + 6;
+        break;
+      }
+      case 'combos': {
+        this.wrapLeft('Two PERFECTs in a row on these pairs set off a combo. Watch for the hint above the sliding layer!', 16, y + 2, WORLD_W - 90, 10.5, 'rgba(255,255,255,0.75)');
+        y += 36;
+        for (const cb of COMBOS) {
+          const have = p.combos.includes(cb.name);
+          this.card(16, y, WORLD_W - 32, 50, have ? 'rgba(48,30,52,0.95)' : 'rgba(30,20,35,0.8)');
+          this.text(have ? cb.emoji : '❔', 40, y + 25, 18, '#fff', 400);
+          this.fitText(have ? cb.name : 'Undiscovered combo', 62, y + 17, 170, 13, have ? '#fff' : 'rgba(255,255,255,0.55)', 'left', 700);
+          this.fitText(have ? `${cb.a} → ${cb.b} · ${cb.desc}` : `${cb.a} → ?`, 62, y + 35, WORLD_W - 100, 10, have ? '#9fe3ff' : 'rgba(255,255,255,0.45)', 'left', 600);
+          y += 56;
+        }
+        break;
+      }
+      case 'trivia': {
+        if (!p.trivia.length) {
+          this.wrapLeft('Facts appear on the results screen after each run. Collect them all!', 16, y + 2, WORLD_W - 32, 11, 'rgba(255,255,255,0.8)');
+          y += 30;
+        }
+        for (const i of [...p.trivia].reverse()) {
+          this.card(16, y, WORLD_W - 32, 58);
+          this.text('💡', 36, y + 29, 16, '#fff', 400);
+          this.wrapLeft(TRIVIA[i], 56, y + 18, WORLD_W - 84, 10.5, '#fff');
+          y += 64;
+        }
+        break;
+      }
+      case 'story': {
+        for (const c of CHOICES) {
+          const chosen = p.choices[c.id];
+          const open = p.unlocked > (c.afterChapter + 1) * 10;
+          this.card(16, y, WORLD_W - 32, chosen ? 76 : open ? 150 : 60, 'rgba(48,30,52,0.95)');
+          this.fitText(`${c.title}${open ? '' : ' 🔒'}`, 30, y + 18, WORLD_W - 60, 13, '#fff', 'left', 700);
+          if (!open) this.fitText(`Opens after chapter ${c.afterChapter + 1}`, 30, y + 40, WORLD_W - 60, 10.5, 'rgba(255,255,255,0.55)', 'left', 600);
+          else if (chosen) {
+            const o = c.options.find((x) => x.id === chosen)!;
+            this.fitText(`You chose: ${o.label}`, 30, y + 40, WORLD_W - 60, 11, '#ffd34d', 'left', 700);
+            this.fitText(o.effect, 30, y + 58, WORLD_W - 60, 10, '#8fdc93', 'left', 600);
+          } else {
+            this.wrapLeft(c.question, 30, y + 38, WORLD_W - 60, 10.5, 'rgba(255,255,255,0.8)');
+            c.options.forEach((o, k) => this.pill(26, y + 70 + k * 38, WORLD_W - 52, `${o.label} · ${o.effect}`, f, () => this.choose(c.id, o.id), 'gold'));
+          }
+          y += (chosen ? 76 : open ? 150 : 60) + 8;
+        }
+        break;
+      }
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  /** Like wrapLeft but with no line limit, returning the y after the text. */
+  private wrapLeftH(str: string, x: number, y: number, maxW: number, size: number, color: string): number {
+    const { ctx } = this;
+    ctx.font = `600 ${size}px ${FONT}`;
+    let line = '';
+    for (const w of str.split(' ')) {
+      const test = line ? `${line} ${w}` : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        this.text(line, x, y + size * 0.6, size, color, 600, 'left');
+        y += size * 1.35;
+        line = w;
+      } else line = test;
+    }
+    if (line) {
+      this.text(line, x, y + size * 0.6, size, color, 600, 'left');
+      y += size * 1.35;
+    }
+    return y;
+  }
+
+  private unlockedRecipeCards(): number[] {
+    return RECIPE_CARDS.map((r, i) => ({ r, i })).filter(({ r }) => {
+      const rec = RECIPES.find((x) => x.name === r.dish);
+      return !rec || dishLevel(this.dishServes(rec.name)) >= 3;
+    }).map(({ i }) => i);
+  }
+
+  // ---------------------------------------------------------------- fair play
+
+  private drawPromise(): void {
+    const f = this.screenBegin('THE NO-NONSENSE PROMISE', 'How Sushi Stack treats you');
+    let y = f.y0 + 4;
+    this.card(16, y, WORLD_W - 32, 96, 'rgba(255,248,235,0.96)');
+    drawSake(this.ctx, 64, y + 52, 0.8, 'proud', this.time);
+    this.wrapText('“Fair is the best seasoning.” Here is everything we promise, and every chance in the game.', 238, y + 34, 250, 12, '#4a2618');
+    y += 104;
+    const promises: [string, string][] = [
+      ['⏳', 'No energy, no lives, no waiting. Play as much as you like.'],
+      ['🎲', 'Nothing random is sold for real money. Chests, sticker packs and prizes are earned by playing.'],
+      ['🏆', 'Every level can be beaten without paying. Star gates use stars you earn.'],
+      ['📺', 'Ads only when you choose to watch one for a bonus. Never between runs.'],
+      ['🤖', 'Computer players are always labelled (AI) or “simulated”.'],
+      ['📱', 'Your progress stays on your device. The game sends nothing; ads you choose to watch come from Google AdMob.'],
+      ['📊', 'All odds are shown below.'],
+    ];
+    for (const [icon, line] of promises) {
+      this.card(16, y, WORLD_W - 32, 50);
+      this.text(icon, 38, y + 25, 18, '#fff', 400);
+      this.wrapLeft(line, 60, y + 18, WORLD_W - 90, 10.5, '#fff');
+      y += 56;
+    }
+    y += 6;
+    this.text('THE ODDS', 20, y + 10, 13, '#ffd34d', 700, 'left');
+    y += 26;
+    const stickerOdds = (() => {
+      const w = [0, 50, 28, 15, 6, 1];
+      const by = [0, 0, 0, 0, 0, 0];
+      STICKER_SETS.forEach((s, i) => s.stickers.forEach((_, k) => { by[stickerRarity(i, k)] += w[stickerRarity(i, k)]; }));
+      const tot = by.reduce((a, b) => a + b, 0);
+      return by.slice(1).map((v, i) => `${'★'.repeat(i + 1)} ${((v / tot) * 100).toFixed(1)}%`).join(' · ');
+    })();
+    const setTot = PIECE_SETS.reduce((a, s) => a + s.weight, 0);
+    const odds: [string, string][] = [
+      ['Boss chest', '10–34 coins + the level (×2 for legend bosses) · 30% a booster · always a piece toward the Dragon Plate · a sticker pack'],
+      ['Sticker rarity', stickerOdds],
+      ['Music track from a chest', '8% when you still have tracks to find'],
+      ['Tableware from chefs', '25% from a boss (every 10th level), 6% from other chefs'],
+      ['Tableware sets', PIECE_SETS.map((s) => `${s.name} ${Math.round((s.weight / setTot) * 100)}%`).join(' · ')],
+      ['Golden guest', 'coins 40% · tableware 25% · music track 15% · boosters 12% · decor style 8%'],
+    ];
+    for (const [k, v] of odds) {
+      this.card(16, y, WORLD_W - 32, 62);
+      this.text(k, 30, y + 16, 12, '#fff', 700, 'left');
+      this.wrapLeft(v, 30, y + 34, WORLD_W - 60, 10, 'rgba(255,255,255,0.8)');
+      y += 68;
+    }
+    y += 6;
+    this.text('WHAT YOU CAN BUY (ALL OPTIONAL)', 20, y + 10, 13, '#ffd34d', 700, 'left');
+    y += 26;
+    for (const pr of Object.values(PRODUCTS)) {
+      this.card(16, y, WORLD_W - 32, 56);
+      this.fitText(`${pr.name} · ${pr.price}`, 30, y + 17, WORLD_W - 60, 12, '#fff', 'left', 700);
+      this.wrapLeft(pr.desc, 30, y + 34, WORLD_W - 60, 10, 'rgba(255,255,255,0.75)');
+      y += 62;
+    }
+    if (monetize.testMode) {
+      this.fitText('Purchases are in TEST MODE in this build: nothing is charged.', WORLD_W / 2, y + 8, WORLD_W - 40, 10.5, '#9fe3ff', 'center', 700);
+      y += 24;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  /** Your layers today and all time, toward the community tower. */
+  private addWorldLayers(n: number): void {
+    const w = this.progress.world as { day: string; today: number; total: number; claimed?: number[] };
+    if (w.day !== dayKey()) {
+      w.day = dayKey();
+      w.today = 0;
+      w.claimed = [];
+    }
+    w.today += n;
+    w.total += n;
+  }
+
+  private drawWorld(): void {
+    const { ctx } = this;
+    const w = this.progress.world as { day: string; today: number; total: number; claimed?: number[] };
+    if (w.day !== dayKey()) this.addWorldLayers(0);
+    const sim = worldSimToday(dayKey());
+    const total = sim + w.today;
+    const f = this.screenBegin('TOWER OF THE WORLD', 'Everyone’s layers today, stacked into one tower');
+    let y = f.y0 + 4;
+    // The tower: a tall bar climbing past the milestones.
+    const top = WORLD_MILESTONES[WORLD_MILESTONES.length - 1].layers;
+    const h = 300;
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, '#05061a');
+    g.addColorStop(0.5, '#3a2f6e');
+    g.addColorStop(1, '#7fc8ff');
+    ctx.fillStyle = g;
+    this.roundRect(16, y, WORLD_W - 32, h, 14);
+    ctx.fill();
+    const frac = Math.min(1, total / top);
+    const tx = 70;
+    for (let i = 0; i < 40; i++) {
+      const ly = y + h - 10 - i * 7;
+      if (ly < y + h - 10 - frac * (h - 20)) break;
+      ctx.fillStyle = ['#f6f1e4', '#24321f', '#ff8a5b', '#d7263d', '#9bc53d'][i % 5];
+      this.roundRect(tx - 22, ly - 6, 44, 6, 2);
+      ctx.fill();
+    }
+    for (const m of WORLD_MILESTONES) {
+      const my = y + h - 10 - (m.layers / top) * (h - 20);
+      const done = total >= m.layers;
+      ctx.strokeStyle = done ? '#ffd34d' : 'rgba(255,255,255,0.35)';
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(tx + 30, my);
+      ctx.lineTo(WORLD_W - 28, my);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      this.fitText(`${m.emoji} ${m.name}`, tx + 36, my - 8, WORLD_W - 150, 10, done ? '#ffd34d' : 'rgba(255,255,255,0.7)', 'left', 700);
+      this.text(`${(m.layers / 1e6).toFixed(m.layers < 1e6 ? 1 : 1)}M`, WORLD_W - 30, my - 8, 9.5, 'rgba(255,255,255,0.6)', 700, 'right');
+    }
+    y += h + 8;
+    this.card(16, y, WORLD_W - 32, 96);
+    this.text(`${total.toLocaleString('en-US')} layers today`, WORLD_W / 2, y + 22, 18, '#fff', 900);
+    this.fitText(`You: ${w.today.toLocaleString('en-US')} today · ${w.total.toLocaleString('en-US')} all time`, WORLD_W / 2, y + 46, WORLD_W - 60, 12, '#ffd34d', 'center', 700);
+    this.wrapText('Other players are simulated until online play is switched on (it needs a server). Your own layers count for real.', WORLD_W / 2, y + 64, WORLD_W - 70, 9.5, 'rgba(255,255,255,0.6)');
+    y += 104;
+    const claimed = w.claimed ?? [];
+    for (const m of WORLD_MILESTONES) {
+      const done = total >= m.layers;
+      const got = claimed.includes(m.layers);
+      this.card(16, y, WORLD_W - 32, 48, done ? 'rgba(42,70,60,0.95)' : 'rgba(40,28,44,0.9)');
+      this.text(m.emoji, 40, y + 24, 18, '#fff', 400);
+      this.fitText(m.name, 62, y + 24, WORLD_W - 190, 12, '#fff', 'left', 700);
+      if (got) this.text('✓', WORLD_W - 34, y + 24, 14, '#8fdc93', 700, 'right');
+      else this.pill(WORLD_W - 112, y + 8, 82, done ? `+${m.reward} 🪙` : 'not yet', f, () => {
+        if (!done || w.claimed?.includes(m.layers)) return;
+        w.claimed = [...(w.claimed ?? []), m.layers];
+        this.bankCoins(m.reward);
+        this.progress.persist();
+        this.celebrate(`${m.emoji} ${m.name.toUpperCase()}`, `The world got there together · +${m.reward} coins`, 2);
+      }, done ? 'gold' : 'quiet');
+      y += 54;
+    }
+    this.screenEnd(f, y - f.y0);
+  }
+
+  private drawCountries(): void {
+    const p = this.progress;
+    if (!settings.country) {
+      settings.country = guessCountry();
+      saveSettings();
+    }
+    const mine = countryById(settings.country);
+    const cw = p.countryWeek.week === weekKey() ? p.countryWeek : { week: weekKey(), best: 0, runs: 0 };
+    const board = countryBoard({ id: mine.id, best: cw.best });
+    const f = this.screenBegin('COUNTRY CUP', 'Average best height per country this week');
+    let y = f.y0 + 4;
+    this.card(16, y, WORLD_W - 32, 72, 'rgba(70,40,90,0.96)');
+    this.text(mine.flag, 46, y + 36, 30, '#fff', 400);
+    this.fitText(`You play for ${mine.name}`, 76, y + 24, 190, 14, '#fff', 'left', 700);
+    this.fitText(`Your best this week: ${cw.best} · rank #${board.findIndex((r) => r.you) + 1}`, 76, y + 46, 200, 11, '#ffd34d', 'left', 700);
+    const idx = COUNTRIES.findIndex((c) => c.id === mine.id);
+    this.pill(WORLD_W - 110, y + 20, 80, 'CHANGE', f, () => {
+      settings.country = COUNTRIES[(idx + 1) % COUNTRIES.length].id;
+      saveSettings();
+    }, 'quiet');
+    y += 80;
+    this.wrapLeft('Other countries are simulated (AI) until online leaderboards are connected. Your best run this week counts toward your country.', 16, y + 2, WORLD_W - 32, 10, 'rgba(255,255,255,0.65)');
+    y += 32;
+    board.forEach((r, i) => {
+      this.card(16, y, WORLD_W - 32, 36, r.you ? 'rgba(255,211,77,0.3)' : i < 3 ? 'rgba(70,50,20,0.9)' : 'rgba(48,30,52,0.9)');
+      this.text(`${i + 1}`, 34, y + 18, 12, '#fff', 700, 'center');
+      this.text(r.c.flag, 60, y + 18, 16, '#fff', 400);
+      this.fitText(`${r.c.name}${r.you ? ' (you)' : ' (AI)'}`, 80, y + 18, 200, 12, '#fff', 'left', 700);
+      this.text(`${r.score} m`, WORLD_W - 30, y + 18, 12, '#ffd34d', 700, 'right');
+      y += 40;
+    });
+    this.screenEnd(f, y - f.y0);
+  }
+
   // ------------------------------------------------------------ cuisine worlds
 
   /** A story card the first time you reach the pizza, burger or pancake world. */
@@ -8094,7 +9560,7 @@ export class Game {
     if (w === 'sushi' || this.progress.seen.includes(key)) return;
     this.progress.seen.push(key);
     this.progress.persist();
-    const scene = w === 'pizza' ? ['🍕', '🇮🇹', '🧀'] : w === 'burger' ? ['🍔', '🌭', '🥤'] : ['🥞', '🫐', '☕'];
+    const scene = w === 'pizza' ? ['🍕', '🇮🇹', '🧀'] : w === 'burger' ? ['🍔', '🌭', '🥤'] : w === 'turkish' ? ['🥙', '🇹🇷', '🕌'] : ['🥞', '🫐', '☕'];
     this.storyQueue.push({ ch: { title: `New world · ${W.name}`, scene, start: W.intro, end: [] }, lines: W.intro, end: false });
     track('world', { id: w });
   }
@@ -8511,6 +9977,7 @@ export class Game {
   private lastSaid = '';
   private lastScreenTitle = '';
   private wasAligned = false;
+  private cueZone = false;
   private a11yT = 0;
   private a11yRec = false;
 
@@ -8924,7 +10391,7 @@ export class Game {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,15,0.7);z-index:10;padding:16px;';
     const title = kind === 'save' ? 'Paste a save code' : 'Friend’s code';
-    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge (K3F9Q-7-42), ghost (G-…), invite (INV-…) or restaurant code (R-…)';
+    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge (K3F9Q-7-42), ghost (G-…), boss chef (B-…), song (SONG-…), invite (INV-…) or restaurant code (R-…)';
     wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px Fredoka,system-ui,sans-serif;color:#fff;display:grid;gap:12px">
       <label for="code-box" style="font-weight:700;font-size:18px">${title}</label>
       <p style="margin:0;font-size:13px;opacity:.75">${hint}</p>
@@ -8959,6 +10426,22 @@ export class Game {
         track('ghost_race');
         return;
       }
+      if (/^B-/i.test(value)) {
+        const bd = decodeBoss(value);
+        if (!bd) return error('That boss code is damaged. Ask your friend to share it again.');
+        close();
+        this.coach(`🧑‍🍳 ${bd.name.toUpperCase()}`, 'A friend built this boss chef. One long order: beat it!', 4);
+        this.startCustom(bd, true);
+        return;
+      }
+      if (/^SONG-/i.test(value)) {
+        const notes = decodeSong(value);
+        if (!notes) return error('That song code is damaged.');
+        close();
+        playSong(notes);
+        this.showToast(`🎵 Playing a friend’s ${notes.length}-note run`);
+        return;
+      }
       if (/^R-/i.test(value)) {
         const rc = decodeRestaurant(value);
         if (!rc) return error('That restaurant code is damaged. Ask your friend to share it again.');
@@ -8989,7 +10472,7 @@ export class Game {
 
   // ------------------------------------------------------------- settings
 
-  private setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips' | 'voices' | 'leftHanded' | 'hapticAssist'): void {
+  private setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips' | 'voices' | 'leftHanded' | 'hapticAssist' | 'songNotes' | 'audioOnly' | 'tilt'): void {
     settings[key] = !settings[key];
     saveSettings();
     if (key === 'haptics') setHaptics(settings.haptics);
@@ -9022,13 +10505,16 @@ export class Game {
     toggle('🎵', t('music'), 'Calm generated music', this.musicOn, () => this.toggleMusic());
     toggle('🔊', t('sound'), 'Chops, coins and cheers', !this.muted, () => { this.muted = !this.muted; setMuted(this.muted); save.setMuted(this.muted); });
     toggle('🗣️', 'Chef voices', 'Little babble voices when chefs talk', settings.voices, () => { this.setting('voices'); setVoices(settings.voices); });
-    toggle('📳', t('haptics'), 'Taps you feel on PERFECTs and hits', settings.haptics, () => this.setting('haptics'));
+    toggle('📳', t('haptics'), 'Every ingredient has its own feel', settings.haptics, () => this.setting('haptics'));
+    toggle('🎵', 'Run song notes', 'Each layer plays a note of your run’s tune', settings.songNotes, () => this.setting('songNotes'));
+    toggle('📱', 'Tilt the tower', 'Tilting the phone nudges a tall tower’s sway', settings.tilt, () => this.setting('tilt'));
     header(t('secAccess'));
     toggle('🌙', t('reducedMotion'), 'No screen shake, flashes or confetti', settings.reducedMotion, () => this.setting('reducedMotion'));
     toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
     toggle('🤝', t('assist'), 'Slower layers, bigger PERFECT zone', settings.assist, () => this.setting('assist'));
     toggle('🫲', 'Left-handed', 'Corner buttons and results flipped', settings.leftHanded, () => this.setting('leftHanded'));
     toggle('📳', 'Drop-timing tick', 'A vibration and tick when the layer lines up', settings.hapticAssist, () => this.setting('hapticAssist'));
+    toggle('🔊', 'Play by ear', 'A tone guides each drop: left/right pan, higher when lined up', settings.audioOnly, () => { this.setting('audioOnly'); if (!settings.audioOnly) cue.stop(); else this.showToast('Play by ear: the tone moves left and right with the layer and rises as it lines up. A click means PERFECT.'); });
     toggle('🎬', t('clips'), clipsSupported() ? 'Save the last seconds of a run as a video' : 'Not supported on this device', settings.clips && clipsSupported(), () => { if (clipsSupported()) this.setting('clips'); else this.showToast('Video recording isn’t supported here'); });
     // Language picker.
     this.card(16, y, WORLD_W - 32, 56);
@@ -9182,6 +10668,10 @@ export class Game {
     if (this.pnp && this.runMode === 'pnp') this.drawPnp(blocker);
     if (this.reactPick) this.drawReactPick(blocker);
     if (this.photo) this.drawPhoto(blocker);
+    if (this.studio && !this.photo) this.drawStudio(blocker);
+    if (this.poster) this.drawPoster(blocker);
+    if (this.hl) this.drawHighlightProgress(blocker);
+    if (this.letterOpen !== null) this.drawLetter(blocker);
     if (this.cheer && this.mode === 'playing') this.drawCheer();
     if (this.reportOpen && this.mode === 'restaurant' && !this.story) this.drawReport(blocker);
     if (this.burst) this.drawBurst();

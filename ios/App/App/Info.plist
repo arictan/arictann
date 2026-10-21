@@ -73,6 +73,8 @@
 			<string>cstr6suwn9.skadnetwork</string>
 		</dict>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Table mode shows your camera behind the sushi tower, so it stands on your real table. Nothing is recorded or sent.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

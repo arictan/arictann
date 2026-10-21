@@ -382,12 +382,100 @@ Every run now feeds the restaurant, and the restaurant feeds every run:
 19. **Weekly report:** on the first visit of a new week you see a card with a daily income chart, guests, dishes sold, best dish, requests, chef guests, the rating change and the rival result. It pays a reward and a piece of tableware, and can be shared.
 20. **Dream restaurant:** the top card shows a painting of the finished flagship. It fills with colour as you progress, with a percentage and the next step.
 
+## Standing out: 25 signature features
+
+**A signature feel**
+1. **A wobbly, living tower:** tall stacks sway, lean the way your sloppy drops drifted, and creak when the sway gets big. Tilting the phone nudges the sway (it can be turned off in Settings).
+   - The sliding layer sways with the top of the tower, so what lines up on screen lines up for real.
+   - Reduced motion turns the sway off.
+2. **The climb into the sky:** the backdrop changes as the tower grows: rooftops (25+ layers), clouds (60+), a plane and birds in the jet stream (100+), the darkening edge of space (160+), the Moon (230+) and finally the Earth's curve.
+3. **Landmark meter:** one layer counts as one metre. Faint lines mark real landmarks at their true heights, from a giraffe and the Great Torii of Miyajima to the Galata Tower, the Statue of Liberty, Tokyo Tower and Mount Fuji.
+   - Passing one gets a moment of its own.
+   - The HUD shows the next landmark ("🗽 6 m to the Statue of Liberty").
+   - The results card says what you beat.
+4. **Your run makes a song:** every layer plays a note, chosen by the ingredient, with an extra note for a PERFECT and a sparkle on the beat.
+   - A PERFECT dropped on the music's beat is a **Beat PERFECT** (+2 coins).
+   - The song can be replayed or shared as a SONG-… code.
+5. **Ingredient combos:** 14 pairs (for example tuna then avocado, or egg then nori). Two PERFECTs in a row on a pair set off an effect: coins, slow layers, a shield that blocks the next attack, regrow, or +2 combo.
+   - A hint shows above the sliding layer when a combo is one PERFECT away.
+   - Combos you find are collected in Grandma's Book.
+6. **Every ingredient feels different:** each has its own landing sound (crisp nori, popping ikura, sizzling patty, slippery eel) and its own haptic pattern, using phone haptics or an Android browser vibration pattern.
+
+**Share-worthy**
+
+7. **Daily Roll:** the same layers for everyone each day (#1 was 1 January 2026), with one counted try; replays are practice.
+   - It makes a Wordle-style grid (🟩 PERFECT, 🟨 trimmed, 🟥 the miss) to copy or share, with the number, height and landmark.
+   - Stats track games played, streak, best, average and a height distribution.
+8. **Highlight video:** a 10-second vertical video, made on the device, with the run's song as its sound. It goes title card → the tower building up with PERFECT flashes → a zoom-out with the landmark → an end card with Sake-chan.
+9. **Boss Chef Maker:** design a boss's look, name, catchphrase, speed, extra layers, surges, PERFECT zone, attack rate and which of 7 attacks they use.
+   - The design is shared as a short B-… code that survives phone keyboards.
+   - A friend fights it as one long order; beating a friend's boss pays 100 coins.
+10. **Tower poster:** a 1080×1920 print in 3 styles. It shows your tower beside a dashed column at the true height of the landmark you beat, plus the height in metres, your chef and Sake-chan.
+
+All of these sit in the **Share Studio** (📤 on the results card), along with the photo mode.
+
+**Characters**
+
+11. **Sake-chan, the mascot:** a grumpy salmon nigiri drawn in code. Sake-chan:
+    - pops up in the intro;
+    - sits beside the logo and says something when tapped;
+    - runs the shop;
+    - appears on posters, videos and the Promise screen.
+    - An app icon made from Sake-chan is in `store/mascot-icon.png` (see the README).
+12. **Chefs who remember you:** journey chefs remember your wins, losses, best combo, last height and how long you've been away ("You again? I've been practising since you beat me.").
+13. **Story choices:** at the end of chapters 2 and 3 you pick a side:
+    - **Street stall chefs:** +10% tips.
+    - **Night market:** chapter 3–4 chefs help more often.
+    - **Train with Kaito:** chapter 4 bosses attack 25% less.
+    - **Go it alone:** chapter 4 bosses are faster, but coins are +25%.
+    - Your choice is echoed when later chapters begin. If you've already passed a choice, you can make it in the book.
+14. **Grandma's letters:** 13 handwritten-style letters unlock at milestones (levels, serves, PERFECTs, the restaurant, an expansion, 7 Daily Rolls, combos, 93 m, the Turkish world, level 50).
+
+**Culture**
+
+15. **Seasonal ingredients (shun):** a 12-month calendar of real seasons:
+    - winter bluefin and new nori;
+    - spring sakura shrimp;
+    - summer eel for the Day of the Ox;
+    - Gaziantep pistachios;
+    - autumn salmon and ikura.
+
+    In-season ingredients pay +1 coin per PERFECT, and dishes made with them sell for +25%.
+16. **Real recipe cards:** 16 simple home recipes, from sushi rice to baklava, with safety notes (sushi-grade fish, cook mince through, never fry unattended). A dish's card unlocks when that dish reaches level 3.
+17. **The Turkish world:** levels 251–300 bring six new ingredients (lavash, döner, onion, yufka, pistachio, mince) with their own textures, sounds and touch.
+    - Four recipes: Döner Dürüm, Lahmacun, Baklava Tower and İskender.
+    - Chefs named "… Usta", a story card and a letter from Grandma.
+    - The world cycle is now pizza → burger → pancake → Turkish → sushi.
+18. **Sushi trivia:** 40 checked facts. One appears under the results card after each run and is collected in the book.
+
+**Ways to play**
+
+19. **Relay:** two players take turns on the same tower, with each player's colour shown on the layer and in the HUD. The results show each player's PERFECTs and the MVP.
+20. **Play by ear (accessibility):** a tone panned left or right with the sliding layer rises in pitch as it lines up, clicks in the PERFECT zone and warns before attacks. Together with the screen-reader support, the game can be played without seeing it.
+21. **ASMR Kitchen:** no music, soft foley sounds (patted rice, a whispering knife, a wooden "tok"), slower layers, a close-up camera and no popups or game over.
+22. **Table mode:** the camera feed replaces the backdrop, so the tower stands on your real table. This isn't world-tracked AR: the camera image is only shown, never recorded or sent.
+
+**Fair play**
+
+23. **The No-Nonsense Promise:** a screen that states:
+    - no energy or waiting;
+    - nothing random is sold for real money;
+    - every level can be beaten without paying;
+    - ads only when you choose them;
+    - AI players are always labelled.
+
+    It also lists every drop chance, computed from the game's own tables, and every paid product with its price.
+24. **Tower of the World:** everyone's layers stacked into one daily tower, with community milestones and rewards. Other players are **simulated and labelled so** until a server is added; your own layers count for real.
+25. **Country Cup:** a weekly average best height per country, with your country guessed from the device language. Other countries are **simulated (AI)** until online leaderboards exist; your best run counts toward your country.
+
 ## Not done yet (needs accounts or a server)
 - **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
 - **Inviter rewards, live duels and crews with real players:** these need player accounts and a server. Today, duels and ghost races replay a shared seed against the score and shape inside the code, and crew mates and cup rivals are labelled AI.
 - **Rewards for the friend whose restaurant you visit:** these also need accounts.
 - **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
 - **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
+- **A real Tower of the World and Country Cup:** both need a server. Replace `worldSimToday()` and `countryBoard()` in `src/world.ts` with calls to it.
+- **World-tracked AR:** Table mode only shows the camera behind the tower. True AR (ARKit/ARCore) needs native work.
 - **A real rival restaurant run by a friend:** this needs accounts. The weekly rival is AI and labelled so.
 - **Real league and quest opponents:** these need a server. Today they are seeded AI, labelled "(AI)".
 - **Widget and Live Activity in the native projects:** the code in `native/` hasn't been compiled here. Add it in Xcode and Android Studio (see `native/README.md`) and test it on a device.

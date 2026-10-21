@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { StatusBar } from '@capacitor/status-bar';
 import { App } from '@capacitor/app';
+import type { Haptic } from './feel';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 const native = Capacitor.isNativePlatform();
@@ -23,6 +24,43 @@ export const haptic = {
     else navigator.vibrate?.(80);
   },
 };
+
+/**
+ * A touch pattern for each kind of ingredient: soft rice, a crisp nori tick, ikura popping three
+ * times, slippery eel... Phones use Core Haptics / the vibrator; Android browsers get a short pattern.
+ */
+export function hapticFeel(kind: Haptic): void {
+  if (!hapticsOn) return;
+  const table: Record<Haptic, [ImpactStyle | 'tick', number][]> = {
+    soft: [[ImpactStyle.Light, 0]],
+    firm: [[ImpactStyle.Heavy, 0]],
+    crisp: [['tick', 0], ['tick', 35]],
+    pop: [[ImpactStyle.Light, 0], [ImpactStyle.Light, 45], [ImpactStyle.Light, 90]],
+    slide: [[ImpactStyle.Medium, 0], [ImpactStyle.Light, 70]],
+    wobble: [[ImpactStyle.Light, 0], [ImpactStyle.Light, 80], [ImpactStyle.Light, 160]],
+    crunch: [[ImpactStyle.Medium, 0], ['tick', 30], ['tick', 60]],
+    squish: [[ImpactStyle.Medium, 0]],
+  };
+  const seq = table[kind];
+  if (!native) {
+    // Android browsers: a vibration pattern of the same rhythm.
+    const pat: number[] = [];
+    let at = 0;
+    for (const [style, t] of seq) {
+      if (pat.length) pat.push(Math.max(10, t - at));
+      pat.push(style === ImpactStyle.Heavy ? 28 : style === 'tick' ? 6 : 12);
+      at = t;
+    }
+    navigator.vibrate?.(pat);
+    return;
+  }
+  for (const [style, t] of seq) {
+    window.setTimeout(() => {
+      // A "tick" is the lightest, shortest tap.
+      void Haptics.impact({ style: style === 'tick' ? ImpactStyle.Light : style });
+    }, t);
+  }
+}
 
 export function initPlatform(onPause: () => void): void {
   document.addEventListener('visibilitychange', () => { if (document.hidden) onPause(); });

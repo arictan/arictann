@@ -78,7 +78,8 @@ export const FLAGS: Item[] = [
 export type Ingredient = 'rice' | 'nori' | 'salmon' | 'tuna' | 'avocado' | 'cucumber' | 'egg' | 'ebi' | 'unagi' | 'tofu' | 'ikura'
   | 'dough' | 'sauce' | 'cheese' | 'pepperoni' | 'basil' // pizza world
   | 'bun' | 'patty' | 'lettuce' | 'tomato' | 'cheddar' // burger world
-  | 'pancake' | 'butter' | 'syrup' | 'berry' | 'cream'; // pancake world
+  | 'pancake' | 'butter' | 'syrup' | 'berry' | 'cream' // pancake world
+  | 'lavash' | 'doner' | 'onion' | 'yufka' | 'pistachio' | 'mince'; // Turkish world
 
 // Cosmetic: recolours every layer.
 export const SETS: (Item & { colors: Partial<Record<Ingredient, string>> })[] = [

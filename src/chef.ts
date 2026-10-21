@@ -703,13 +703,13 @@ const TITLES = ['Chef', 'Chef', 'Chef', 'Sensei', 'Master', 'Captain', 'Iron Che
 const INTROS = ['Show me what you’ve got!', 'This kitchen is mine!', 'Ready for a real challenge?', 'Don’t blink!', 'Let’s see your knife work.', 'Only the best survive here.', 'I’ve been waiting for you.', 'Roll with me, if you can!'];
 const BEATENS = ['Impressive!', 'You earned this one.', 'My kitchen salutes you!', 'Incredible hands!', 'I bow to your skill.', 'That was delicious!', 'Well played, chef!'];
 const GLOATS = ['Back to the start!', 'Not today!', 'Too sloppy!', 'My kitchen, my rules!', 'Try again, rookie!', 'You call that sushi?', 'Ha! Keep practising!'];
-const SKINS = ['#f1c9a5', '#e8b98f', '#f5d0b0', '#d9a77c', '#efc29a', '#f6d5bd', '#e6b48c', '#c98e64', '#a8714a'];
-const HAIR_COLORS = ['#111', '#1d1a1a', '#2b1b17', '#3a2418', '#6b3e26', '#8b1e1e', '#d8d8d8', '#231c3a', '#1d3557', '#7f4f24'];
-const OUTFITS: [string, string][] = [['#ffffff', '#d7263d'], ['#1f1f1f', '#f2b705'], ['#a8dadc', '#1d3557'], ['#ffd6e5', '#ff5d8f'], ['#2b2d42', '#ef233c'], ['#fefae0', '#bc4749'],
+export const SKINS = ['#f1c9a5', '#e8b98f', '#f5d0b0', '#d9a77c', '#efc29a', '#f6d5bd', '#e6b48c', '#c98e64', '#a8714a'];
+export const HAIR_COLORS = ['#111', '#1d1a1a', '#2b1b17', '#3a2418', '#6b3e26', '#8b1e1e', '#d8d8d8', '#231c3a', '#1d3557', '#7f4f24'];
+export const OUTFITS: [string, string][] = [['#ffffff', '#d7263d'], ['#1f1f1f', '#f2b705'], ['#a8dadc', '#1d3557'], ['#ffd6e5', '#ff5d8f'], ['#2b2d42', '#ef233c'], ['#fefae0', '#bc4749'],
   ['#caf0f8', '#0077b6'], ['#3c096c', '#e0aaff'], ['#ffbe0b', '#fb5607'], ['#344e41', '#a3b18a'], ['#540b0e', '#e09f3e'], ['#e9f5ee', '#2a9d5c']];
-const HAIRS: Hair[] = ['short', 'bun', 'bob', 'bald', 'spiky', 'ponytail', 'twinbuns', 'gray', 'curly', 'long', 'mohawk'];
-const HATS: Hat[] = ['hachimaki', 'cap', 'toque', 'bandana', 'none', 'shades', 'beanie', 'visor', 'flower'];
-const FACES: Face[] = ['none', 'none', 'mustache', 'beard', 'glasses', 'goatee', 'freckles'];
+export const HAIRS: Hair[] = ['short', 'bun', 'bob', 'bald', 'spiky', 'ponytail', 'twinbuns', 'gray', 'curly', 'long', 'mohawk'];
+export const HATS: Hat[] = ['hachimaki', 'cap', 'toque', 'bandana', 'none', 'shades', 'beanie', 'visor', 'flower'];
+export const FACES: Face[] = ['none', 'none', 'mustache', 'beard', 'glasses', 'goatee', 'freckles'];
 const ATTACKS: Attack[] = ['knife', 'slam', 'splat'];
 
 /** Small seeded random generator, so a given level always produces the same chef. */
@@ -751,7 +751,8 @@ export function chefFor(level: number): Chef {
   const world = worldFor(level);
   const W = WORLDS[world];
   const first = world === 'sushi' ? FIRST_NAMES[(level * 13) % FIRST_NAMES.length] : W.names[(level * 7) % W.names.length];
-  const name = legend ? `Legend ${first}` : `${world === 'sushi' ? pick(TITLES) : pick(['Chef', 'Chef', 'Master', 'Captain'])} ${first}`;
+  // Turkish masters are called usta, after the name.
+  const name = legend ? `Legend ${first}` : world === 'turkish' ? `${first} Usta` : `${world === 'sushi' ? pick(TITLES) : pick(['Chef', 'Chef', 'Master', 'Captain'])} ${first}`;
   const themed = world !== 'sushi' ? W.outfits[level % W.outfits.length] : null;
   const chef: Chef = {
     name,

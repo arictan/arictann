@@ -30,6 +30,12 @@ src/modes.ts     modifiers, rescue levels and the weekly Omakase Tower
 src/minigames.ts Knife Throw, Rice Rhythm and Fish Catch
 src/cuisine.ts   worlds after level 100, Recipe Lab secrets, food trucks
 src/diner.ts     restaurant economy: pantry, kitchen, guests, rush hour, street, collections, rival (AI)
+src/feel.ts      landmarks, the climb into the sky, ingredient combos, per-ingredient sound and touch
+src/book.ts      Grandma's letters, real recipe cards, seasonal calendar, trivia, story choices, chef memory
+src/mascot.ts    Sake-chan, the mascot (drawn in code)
+src/daily.ts     Daily Roll grid + short case-insensitive codes (songs)
+src/bossmaker.ts Boss Chef Maker designs and B-… codes
+src/world.ts     Tower of the World and Country Cup (simulated until a server exists)
 src/a11y.ts      screen-reader announcements + accessible button list
 src/widget.ts    bridge to the native home-screen widget and Live Activity
 native/          widget + Live Activity source to add in Xcode / Android Studio (see native/README.md)
@@ -122,6 +128,15 @@ forms before turning analytics on.**
 ### Cloud save
 Players can move progress with a save-transfer code (Settings → Save transfer). For automatic cloud save, add
 Game Center / Google Play Games saved games (or your own backend with accounts) once the store accounts exist.
+
+### App icon with the mascot
+`store/mascot-icon.png` is a 1024×1024 icon of Sake-chan. To use it, copy it over `assets/icon-only.png` (and use it
+as `assets/icon-foreground.png` on a plain background) and run `npm run assets`.
+
+### Camera (Table mode)
+Table mode asks for the camera only when the player turns it on. The Android `CAMERA` permission (camera optional) and the
+iOS `NSCameraUsageDescription` text are already set. The image is shown, never recorded or uploaded; say so in the store
+privacy forms ("camera: not collected").
 
 ### Home-screen widget and Live Activity
 The game sends a small snapshot (restaurant, tip jar, calendar day, level and chef) through `src/widget.ts`. The native side isn't in

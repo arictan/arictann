@@ -1,8 +1,8 @@
-// New worlds after level 100: Pizza, Burger and Pancake stacks, each with five ingredients,
-// recipes and their own chefs, then back to sushi with the cycle repeating every 200 levels.
+// New worlds after level 100: Pizza, Burger, Pancake and Turkish stacks, each with five ingredients,
+// recipes and their own chefs, then Turkish, then back to sushi, the cycle repeating every 250 levels.
 // Also the Recipe Lab's secret recipes and the food truck branches.
 
-export type WorldId = 'sushi' | 'pizza' | 'burger' | 'pancake';
+export type WorldId = 'sushi' | 'pizza' | 'burger' | 'pancake' | 'turkish';
 
 export interface World { id: WorldId; name: string; icon: string; intro: string[]; names: string[]; outfits: [string, string][] }
 
@@ -26,15 +26,21 @@ export const WORLDS: Record<WorldId, World> = {
     names: ['Amélie', 'Pierre', 'Camille', 'Hugo', 'Margot', 'Louis', 'Inès', 'Jules', 'Élise', 'Théo', 'Chloé', 'Gaston'],
     outfits: [['#fdf6ec', '#5e60ce'], ['#ffd6e5', '#8b4513'], ['#ffffff', '#3d6fb6']],
   },
+  turkish: {
+    id: 'turkish', name: 'Kebab & Baklava Stack', icon: '🥙',
+    intro: ['A postcard from Istanbul: “The döner masters of the Bosphorus challenge you!”', 'Lavash, döner, onion, thin yufka and pistachio. Stack it like an usta. Afiyet olsun!'],
+    names: ['Mehmet', 'Ayşe', 'Emre', 'Zeynep', 'Mustafa', 'Elif', 'Kerem', 'Defne', 'Hakan', 'Selin', 'Burak', 'Nur'],
+    outfits: [['#ffffff', '#c1121f'], ['#c1121f', '#ffffff'], ['#1d3557', '#e9c46a']],
+  },
 };
 
 export const WORLD_START = 101; // the first non-sushi level
 export const WORLD_LEN = 50;
 
-/** Levels 1-100 are sushi; then 50 levels each of pizza, burger, pancake, sushi, repeating. */
+/** Levels 1-100 are sushi; then 50 levels each of pizza, burger, pancake, Turkish, sushi, repeating. */
 export function worldFor(level: number): WorldId {
   if (level < WORLD_START) return 'sushi';
-  return (['pizza', 'burger', 'pancake', 'sushi'] as WorldId[])[Math.floor((level - WORLD_START) / WORLD_LEN) % 4];
+  return (['pizza', 'burger', 'pancake', 'turkish', 'sushi'] as WorldId[])[Math.floor((level - WORLD_START) / WORLD_LEN) % 5];
 }
 
 export function worldStarts(level: number): boolean {

@@ -6,13 +6,13 @@ const OVERLAP = 6_000; // a new recorder starts this often; two overlap, so a cl
 
 interface Seg { rec: MediaRecorder; chunks: Blob[] }
 
-function pickType(): string {
+export function clipType(): string {
   const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
   return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
 }
 
 export function clipsSupported(): boolean {
-  return typeof MediaRecorder === 'function' && typeof HTMLCanvasElement.prototype.captureStream === 'function' && pickType() !== '';
+  return typeof MediaRecorder === 'function' && typeof HTMLCanvasElement.prototype.captureStream === 'function' && clipType() !== '';
 }
 
 export class ClipRecorder {
@@ -26,7 +26,7 @@ export class ClipRecorder {
   start(): void {
     if (!clipsSupported()) return;
     this.stop();
-    this.type = pickType();
+    this.type = clipType();
     this.stream = this.canvas.captureStream(30);
     this.startSeg();
     this.timer = window.setInterval(() => {

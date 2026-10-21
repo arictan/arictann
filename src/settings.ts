@@ -13,6 +13,10 @@ export interface Settings {
   voices: boolean; // chef babble voices
   leftHanded: boolean; // mirror the corner buttons and result buttons
   hapticAssist: boolean; // a tick on the phone when the layer is lined up
+  songNotes: boolean; // every layer plays a note of the run's song
+  audioOnly: boolean; // play by ear: a panned tone guides each drop
+  tilt: boolean; // tilting the phone nudges the tall tower's sway
+  country: string; // for the country leaderboard
   track: string; // jukebox track
   lang: Lang;
 }
@@ -31,6 +35,10 @@ export const settings: Settings = {
   voices: true,
   leftHanded: false,
   hapticAssist: false,
+  songNotes: true,
+  audioOnly: false,
+  tilt: true,
+  country: '',
   track: 'classic',
   lang: defaultLang(),
   ...save.json('settings', {}),
