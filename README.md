@@ -71,7 +71,26 @@ After changing anything in `src/`, run `npm run sync`. To change the icon or spl
    ```
 3. In Android Studio, go to **Build → Generate Signed App Bundle → Android App Bundle (.aab)** and use that key.
 4. In the Play Console, create the app, then fill in the store listing (icon 512×512, feature graphic 1024×500, phone
-   screenshots), the content rating questionnaire, the target audience, and **Data safety**. For Data safety, answer "no data collected".
+   screenshots), the content rating questionnaire, the target audience, and **Data safety**. The Data safety answer depends on
+   whether real ads and purchases are switched on (see [Ads](#ads-admob--test-mode-until-you-set-it-up) and
+   [In-app purchases](#in-app-purchases-revenuecat--test-mode-until-you-set-it-up)). Game progress always stays on the device
+   (see [PRIVACY.md](PRIVACY.md)), so it is never declared.
+   - **Test mode only** (`ADS_TESTING = true` and an empty `REVENUECAT_API_KEY`): answer "no data collected".
+   - **Real AdMob ads** (`ADS_TESTING = false` and real IDs in `src/monetize.ts` and `AndroidManifest.xml`): answer **Yes**,
+     the app collects data. Following [Google's AdMob Data safety guidance](https://developers.google.com/admob/android/privacy/play-data-disclosure),
+     declare these as **collected** and **shared** (with Google):
+     - **Device or other IDs**: the advertising ID (plus the app set ID).
+     - **Location → Approximate location**: estimated from the IP address.
+     - **App activity → App interactions**: app launches, taps, ad video views.
+     - **App info and performance → Diagnostics**: app and SDK performance, such as launch time.
+
+     For each one, set the purposes to **Advertising or marketing**, **Analytics**, and **Fraud prevention, security, and
+     compliance**. Answer **Yes** to "encrypted in transit".
+   - **RevenueCat purchases** (`REVENUECAT_API_KEY` set): also declare **Financial info → Purchase history** and the
+     anonymous RevenueCat **app user ID** (under **Device or other IDs**) as collected for **App functionality**.
+     See [RevenueCat's Data safety guide](https://www.revenuecat.com/docs/platform-resources/google-platform-resources/google-plays-data-safety).
+
+   Re-check the form against Google's page whenever you upgrade the ads SDK.
 5. Upload the `.aab` and choose **Play App Signing**. New *personal* accounts must first run a **closed test with
    at least 12 testers for 14 days** before they can release to production, so plan for that.
 
@@ -81,8 +100,17 @@ Apple builds require a Mac with Xcode.
 2. In [App Store Connect](https://appstoreconnect.apple.com), create the app with the same bundle ID.
 3. In Xcode, select your team under *Signing & Capabilities*, choose **Any iOS Device**, and run **Product → Archive**, then **Distribute App → App Store Connect**.
 4. Fill in the listing: screenshots for the 6.9" iPhone (1320×2868) and for the 13" iPad, since iPad is supported. To skip the iPad screenshots,
-   set *Supported Destinations* to iPhone only. Also set the age rating, the privacy policy URL, and
-   **App Privacy → "Data Not Collected"**. Encryption export compliance is already answered: `ITSAppUsesNonExemptEncryption = NO`.
+   set *Supported Destinations* to iPhone only. Also set the age rating, the privacy policy URL, and **App Privacy**.
+   Encryption export compliance is already answered: `ITSAppUsesNonExemptEncryption = NO`. For App Privacy, game progress
+   stays on the device (see [PRIVACY.md](PRIVACY.md)), so the answer depends only on ads and purchases:
+   - **Test mode only** (test ads and no RevenueCat key): answer **"Data Not Collected"**.
+   - **Real AdMob ads:** following [Google's App Store data disclosure for AdMob](https://developers.google.com/admob/ios/privacy/data-disclosure),
+     declare **Identifiers → Device ID** (advertising identifier), **Location → Coarse Location** (from the IP address),
+     **Usage Data → Product Interaction** and **Advertising Data**, and **Diagnostics → Crash Data** and **Performance Data**.
+     Set the purposes to **Third-Party Advertising** and **Analytics**. Whether the data counts as linked to the user or used
+     for tracking depends on whether you show personalized ads with App Tracking Transparency (see Ads below).
+   - **RevenueCat purchases:** also declare **Purchases → Purchase History** and **Identifiers → User ID** (the anonymous
+     RevenueCat app user ID), used for **App Functionality**.
 5. Test the build through TestFlight, then submit it for review.
 
 ### Ads (AdMob) — test mode until you set it up

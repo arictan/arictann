@@ -1,6 +1,6 @@
 # Privacy Policy — Sushi Stack
 
-_Last updated: 2026-10-18_
+_Last updated: 2026-10-21_
 
 > **Developer note (delete before publishing):** this policy reflects the game with rewarded ads (Google AdMob)
 > and in-app purchases (RevenueCat) switched on. Review it with your real setup, add your contact details,
@@ -24,13 +24,16 @@ If you turn on highlight clips, the game records only its own screen while you p
 unless you choose to share one.
 
 ## Ads (Google AdMob)
-Ads only play when you choose to watch one for a reward. Google AdMob may collect device identifiers,
-approximate location (from your IP address), and ad interaction data to show and measure ads. On iOS you can
-limit ad tracking in Settings. See Google's policy: https://policies.google.com/technologies/ads
+Ads only play when you choose to watch one for a reward. To show and measure ads and to prevent fraud, the Google
+Mobile Ads SDK collects your device's advertising ID, your approximate location (estimated from your IP address),
+app interactions (such as app launches, taps and ad views) and diagnostic data (such as app performance), and shares
+them with Google. This data is encrypted in transit. You can reset or delete your advertising ID in Android settings,
+and limit ad tracking in iOS Settings. See Google's policy: https://policies.google.com/technologies/ads
 
 ## Purchases (Apple / Google, via RevenueCat)
 Payments are handled entirely by the App Store or Google Play. We never see your payment details.
-RevenueCat receives an anonymous app user ID and your purchase receipts to confirm what you bought.
+RevenueCat receives an anonymous app user ID and your purchase history (store receipts) to confirm what you bought.
+This data is encrypted in transit.
 See https://www.revenuecat.com/privacy
 
 ## Notifications
