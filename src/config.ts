@@ -15,15 +15,15 @@ export const DEFAULTS = {
   heartRequestChance: 0.2, // how often a friend makes a special request
   inviteReward: 200, // coins for entering a friend's invite code
   message: '', // optional announcement shown once on the home screen
-  // Restaurant balance (see ECONOMY.md before changing these).
+  // Restaurant balance (see docs/ECONOMY.md before changing these).
   dishPrice: 10, // coins per layer of a dish's recipe, before its level bonus
   cookTime: 1, // multiplies every cooking time
-  tipsMult: 1, // multiplies tips per hour
+  tipsMult: 0.75, // multiplies tips per hour (see docs/ECONOMY.md for why it isn't 1)
   rushMult: 2, // tips multiplier for guests served in Rush Hour
   guestSnacks: 40, // quick snacks served per day when nothing is plated
   pieceBoss: 0.25, // chance of tableware from a boss chef (every 10th level)
   pieceChef: 0.06, // chance of tableware from other chefs
-  costScale: 1, // multiplies kitchen upgrade and Sakura Street prices
+  costScale: 1.25, // multiplies kitchen upgrade and Sakura Street prices
   festCost: 1, // multiplies festival stall prices
   dailyLevel: 12, // difficulty of the Daily Roll
   serverUrl: '', // the online backend (see server/README.md); empty = offline with simulated players
