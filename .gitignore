@@ -10,3 +10,5 @@ ios/App/Pods/
 ios/App/build/
 *.keystore
 *.jks
+server/data.json
+server/data.json.tmp

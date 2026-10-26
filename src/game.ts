@@ -13,6 +13,7 @@ import { THEMES, drawBackdrop, drawHolidayOverlay, makeSpecks, type Theme } from
 import { settings } from './settings';
 import { t, t as tr } from './i18n';
 import { track, trackRetention } from './analytics';
+import { postCountry } from './online';
 import { cfg, loadConfig } from './config';
 import { ClipRecorder } from './clips';
 import { type RestCode } from './restaurant';
@@ -463,6 +464,8 @@ export class Game {
       this.tilt += (Math.max(-1, Math.min(1, e.gamma / 35)) - this.tilt) * 0.2;
     });
     window.addEventListener('keydown', (e) => {
+      // Typing in a code box: Enter submits the form, not a drop.
+      if (this.codeInput || (e.target instanceof HTMLElement && e.target.closest('input, textarea, button'))) return;
       if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !this.scrolling) {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
@@ -2147,6 +2150,7 @@ export class Game {
       if (p.countryWeek.week !== weekKey()) p.countryWeek = { week: weekKey(), best: 0, runs: 0 };
       p.countryWeek.best = Math.max(p.countryWeek.best, this.height);
       p.countryWeek.runs++;
+      postCountry(weekKey(), this.playerId(), settings.country || 'US', p.countryWeek.best);
     }
     this.pickTrivia();
     this.checkLetters();

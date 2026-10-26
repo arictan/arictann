@@ -25,6 +25,7 @@ import { CHOICES, LETTERS, MONTHS, RECIPE_CARDS, TRIVIA, inSeason, letterHint, l
 import { SAKE_LINES, drawSake } from '../mascot';
 import { DAILY_LEVEL, dailyBuckets, dailyNumber, dailySeed, dailyShare, decodeSong, encodeSong } from '../daily';
 import { ALL_ATTACKS, LOOK_SIZES, PHRASES, SPEEDS, bossChef, decodeBoss, encodeBoss, type BossDesign } from '../bossmaker';
+import { addFriend, beatShare, forgetMe, cloudBackup, cloudBackupInfo, cloudRestore, lastError as onlineErrorText, countryRows, dailyBoard, friendList, friendScores, isOnline, postDaily, postWorld, worldTotal } from '../online';
 import { COUNTRIES, WORLD_MILESTONES, countryBoard, countryById, guessCountry, worldSimToday } from '../world';
 import { PIECE_SETS, dishLevel } from '../diner';
 import { ACHIEVEMENTS, avatarChef } from '../meta';
@@ -40,6 +41,8 @@ declare module '../game' {
     dailyText(): string;
     shareDaily(): void;
     drawDaily(): void;
+    drawDailyOnline(f: { areaTop: number; areaH: number }, y: number, mine: number | null): number;
+    playerId(): string;
     startRelay(): void;
     relayLanded(perfect: boolean): void;
     relayColor(turn: number): string;
@@ -110,7 +113,7 @@ declare module '../game' {
     drawConfirm(blocker: () => void): void;
     drawBoards(): void;
     recordDuel(): void;
-    openCodeInput(kind?: 'friend' | 'save'): void;
+    openCodeInput(kind?: 'friend' | 'save' | 'cloud'): void;
     setting(key: 'haptics' | 'reducedMotion' | 'colorblind' | 'assist' | 'clips' | 'voices' | 'leftHanded' | 'hapticAssist' | 'songNotes' | 'audioOnly' | 'tilt' | 'batterySaver' | 'analytics'): void;
     drawSettings(): void;
     copy(text: string, ok: string): void;
@@ -144,6 +147,12 @@ export const standoutMethods = {
     const streak = d.last === dayKey(-1) ? d.streak + 1 : 1;
     this.progress.daily = { day: dayKey(), done: true, height: this.height, grid: this.marks, streak, last: dayKey(), best: Math.max(d.best, this.height), played: d.played + 1, hist: [...d.hist, this.height].slice(-90) };
     track('daily_roll', { n: dailyNumber(), height: this.height });
+    void postDaily(dayKey(), this.playerId(), this.progress.avatar.name, this.height, this.marks);
+  },
+
+  /** This device's player id: the six letters of its invite code. */
+  playerId(this: Game): string {
+    return this.progress.inviteCode.slice(4);
   },
 
   dailyText(this: Game): string {
@@ -215,7 +224,49 @@ export const standoutMethods = {
       if (n) this.text(String(n), 52 + ((WORLD_W - 110) * n) / max, by + 5.5, 9, '#fff', 700, 'left');
     });
     y += 158;
+    y = this.drawDailyOnline(f, y, done ? d.height : null);
     this.screenEnd(f, y - f.y0);
+  },
+
+  /** Today's players worldwide and your friends' rolls (needs the online server). */
+  drawDailyOnline(this: Game, f: { areaTop: number; areaH: number }, y: number, mine: number | null): number {
+    const board = isOnline() ? dailyBoard(dayKey(), this.playerId()) : null;
+    if (board && board.players) {
+      const rows = board.top.slice(0, 5);
+      this.card(16, y, WORLD_W - 32, 44 + rows.length * 20);
+      this.fitText(mine !== null ? `🌍 You beat ${beatShare(board, mine)}% of ${board.players.toLocaleString('en-US')} players${board.rank ? ` · #${board.rank}` : ''}` : `🌍 ${board.players.toLocaleString('en-US')} players rolled today`, WORLD_W / 2, y + 22, WORLD_W - 60, 12.5, '#fff', 'center', 700);
+      rows.forEach((r, i) => {
+        this.fitText(`${i + 1}. ${r.name}`, 34, y + 46 + i * 20, 220, 11, 'rgba(255,255,255,0.85)', 'left', 600);
+        this.text(String(r.score), WORLD_W - 34, y + 46 + i * 20, 11, '#ffd34d', 700, 'right');
+      });
+      y += 52 + rows.length * 20;
+    }
+    // Friends.
+    const fl = friendList();
+    const scores = friendScores(dayKey());
+    this.text('FRIENDS TODAY', 20, y + 12, 12, '#ffd34d', 700, 'left');
+    y += 24;
+    if (!fl.length) {
+      this.wrapLeft('Add friends with their invite code (INV-…) to compare Daily Rolls. Send them yours from the button below.', 16, y + 4, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.7)');
+      y += 34;
+    } else {
+      const me = { id: '', name: `${this.progress.avatar.name} (you)`, score: mine };
+      const list = [me, ...fl.map((fr) => ({ id: fr.id, name: fr.name, score: scores?.[fr.id]?.score ?? null }))].sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+      for (const r of list) {
+        this.card(16, y, WORLD_W - 32, 34, r.id ? undefined : 'rgba(255,211,77,0.25)');
+        this.fitText(r.name, 30, y + 17, 200, 12, '#fff', 'left', 700);
+        this.fitText(r.score !== null ? `${r.score} layers` : isOnline() ? 'not yet today' : '–', WORLD_W - 30, y + 17, 120, 11.5, r.score !== null ? '#ffd34d' : 'rgba(255,255,255,0.5)', 'right', 700);
+        y += 38;
+      }
+      if (!isOnline()) {
+        this.wrapLeft('Friends’ scores appear once online play is switched on (it needs the game’s server).', 16, y + 4, WORLD_W - 32, 10, 'rgba(255,255,255,0.6)');
+        y += 28;
+      }
+    }
+    const half = (WORLD_W - 42) / 2;
+    this.pill(16, y, half, '➕ ADD FRIEND', f, () => this.openCodeInput('friend'), 'quiet');
+    this.pill(26 + half, y, half, '📋 MY CODE', f, () => this.copy(this.progress.inviteCode, `Your code ${this.progress.inviteCode} is copied. Send it to friends!`), 'quiet');
+    return y + 50;
   },
 
   startRelay(this: Game): void {
@@ -1040,14 +1091,16 @@ export const standoutMethods = {
     }
     w.today += n;
     w.total += n;
+    if (n > 0) postWorld(dayKey(), this.playerId(), n);
   },
 
   drawWorld(this: Game): void {
     const { ctx } = this;
     const w = this.progress.world as { day: string; today: number; total: number; claimed?: number[] };
     if (w.day !== dayKey()) this.addWorldLayers(0);
-    const sim = worldSimToday(dayKey());
-    const total = sim + w.today;
+    // Live from the server when it's switched on; simulated (and labelled so) otherwise.
+    const live = worldTotal(dayKey());
+    const total = live ? Math.max(live.total, w.today) : worldSimToday(dayKey()) + w.today;
     const f = this.screenBegin('TOWER OF THE WORLD', 'Everyone’s layers today, stacked into one tower');
     let y = f.y0 + 4;
     // The tower: a tall bar climbing past the milestones.
@@ -1086,7 +1139,7 @@ export const standoutMethods = {
     this.card(16, y, WORLD_W - 32, 96);
     this.text(`${total.toLocaleString('en-US')} layers today`, WORLD_W / 2, y + 22, 18, '#fff', 900);
     this.fitText(`You: ${w.today.toLocaleString('en-US')} today · ${w.total.toLocaleString('en-US')} all time`, WORLD_W / 2, y + 46, WORLD_W - 60, 12, '#ffd34d', 'center', 700);
-    this.wrapText('Other players are simulated until online play is switched on (it needs a server). Your own layers count for real.', WORLD_W / 2, y + 64, WORLD_W - 70, 9.5, 'rgba(255,255,255,0.6)');
+    this.wrapText(live ? `Live: ${live.players.toLocaleString('en-US')} players stacking today. Every layer counts.` : 'Other players are simulated until online play is switched on (it needs a server). Your own layers count for real.', WORLD_W / 2, y + 64, WORLD_W - 70, 9.5, 'rgba(255,255,255,0.6)');
     y += 104;
     const claimed = w.claimed ?? [];
     for (const m of WORLD_MILESTONES) {
@@ -1116,7 +1169,12 @@ export const standoutMethods = {
     }
     const mine = countryById(settings.country);
     const cw = p.countryWeek.week === weekKey() ? p.countryWeek : { week: weekKey(), best: 0, runs: 0 };
-    const board = countryBoard({ id: mine.id, best: cw.best });
+    const rows = countryRows(weekKey());
+    const live = !!rows?.length;
+    const board = live
+      ? rows!.map((r) => ({ c: countryById(r.id), score: r.score, you: r.id === mine.id, players: r.players })).filter((r) => COUNTRIES.some((c) => c.id === r.c.id))
+      : countryBoard({ id: mine.id, best: cw.best }).map((r) => ({ ...r, players: 0 }));
+    if (live && !board.some((r) => r.you)) board.push({ c: mine, score: cw.best, you: true, players: cw.best ? 1 : 0 });
     const f = this.screenBegin('COUNTRY CUP', 'Average best height per country this week');
     let y = f.y0 + 4;
     this.card(16, y, WORLD_W - 32, 72, 'rgba(70,40,90,0.96)');
@@ -1129,13 +1187,13 @@ export const standoutMethods = {
       saveSettings();
     }, 'quiet');
     y += 80;
-    this.wrapLeft('Other countries are simulated (AI) until online leaderboards are connected. Your best run this week counts toward your country.', 16, y + 2, WORLD_W - 32, 10, 'rgba(255,255,255,0.65)');
+    this.wrapLeft(live ? 'Live: real players’ best runs this week, averaged per country.' : 'Other countries are simulated (AI) until online leaderboards are connected. Your best run this week counts toward your country.', 16, y + 2, WORLD_W - 32, 10, 'rgba(255,255,255,0.65)');
     y += 32;
     board.forEach((r, i) => {
       this.card(16, y, WORLD_W - 32, 36, r.you ? 'rgba(255,211,77,0.3)' : i < 3 ? 'rgba(70,50,20,0.9)' : 'rgba(48,30,52,0.9)');
       this.text(`${i + 1}`, 34, y + 18, 12, '#fff', 700, 'center');
       this.text(r.c.flag, 60, y + 18, 16, '#fff', 400);
-      this.fitText(`${r.c.name}${r.you ? ' (you)' : ' (AI)'}`, 80, y + 18, 200, 12, '#fff', 'left', 700);
+      this.fitText(`${r.c.name}${r.you ? ' (you)' : live ? ` · ${r.players}` : ' (AI)'}`, 80, y + 18, 200, 12, '#fff', 'left', 700);
       this.text(`${r.score} m`, WORLD_W - 30, y + 18, 12, '#ffd34d', 700, 'right');
       y += 40;
     });
@@ -1932,18 +1990,18 @@ export const standoutMethods = {
    * Text box for codes (a real input, so phone keyboards work): a friend's challenge code or invite
    * code, or a save-transfer code from another device.
    */
-  openCodeInput(this: Game, kind: 'friend' | 'save' = 'friend'): void {
+  openCodeInput(this: Game, kind: 'friend' | 'save' | 'cloud' = 'friend'): void {
     if (this.codeInput) return;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,15,0.7);z-index:10;padding:16px;';
-    const title = kind === 'save' ? 'Paste a save code' : 'Friend’s code';
-    const hint = kind === 'save' ? 'This replaces the progress on this device.' : 'A challenge (K3F9Q-7-42), ghost (G-…), boss chef (B-…), song (SONG-…), invite (INV-…) or restaurant code (R-…)';
+    const title = kind === 'save' ? 'Paste a save code' : kind === 'cloud' ? 'Restore from cloud' : 'Friend’s code';
+    const hint = kind === 'save' ? 'This replaces the progress on this device.' : kind === 'cloud' ? 'Your backup ID and PIN, e.g. ABCD2345 1234. This replaces the progress on this device.' : 'A challenge (K3F9Q-7-42), ghost (G-…), boss chef (B-…), song (SONG-…), invite (INV-…) or restaurant code (R-…)';
     wrap.innerHTML = `<form style="background:#2a1a33;border-radius:18px;padding:20px;width:100%;max-width:340px;font:600 15px Fredoka,system-ui,sans-serif;color:#fff;display:grid;gap:12px">
       <label for="code-box" style="font-weight:700;font-size:18px">${title}</label>
       <p style="margin:0;font-size:13px;opacity:.75">${hint}</p>
-      <input id="code-box" autocomplete="off" ${kind === 'save' ? '' : 'autocapitalize="characters"'} placeholder="${kind === 'save' ? 'SS1.…' : 'e.g. K3F9Q-7-42'}" style="font:700 18px Fredoka,system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;${kind === 'save' ? '' : 'text-transform:uppercase'}">
+      <input id="code-box" autocomplete="off" ${kind === 'save' ? '' : 'autocapitalize="characters"'} placeholder="${kind === 'save' ? 'SS1.…' : kind === 'cloud' ? 'ABCD2345 1234' : 'e.g. K3F9Q-7-42'}" style="font:700 18px Fredoka,system-ui;padding:12px;border-radius:12px;border:2px solid #ff8a5b;background:#fff;color:#2a1a33;${kind === 'save' ? '' : 'text-transform:uppercase'}">
       <div style="display:flex;gap:10px"><button type="button" data-close style="flex:1;padding:12px;border-radius:22px;border:0;background:rgba(255,255,255,0.15);color:#fff;font-weight:700">Cancel</button>
-      <button style="flex:1;padding:12px;border-radius:22px;border:0;background:#ffd34d;color:#4a2a00;font-weight:700">${kind === 'save' ? 'Restore' : 'Go'}</button></div>
+      <button style="flex:1;padding:12px;border-radius:22px;border:0;background:#ffd34d;color:#4a2a00;font-weight:700">${kind === 'friend' ? 'Go' : 'Restore'}</button></div>
       <p data-error style="margin:0;color:#ff9a8a;min-height:1em;font-size:13px"></p></form>`;
     document.body.appendChild(wrap);
     const input = wrap.querySelector('input')!;
@@ -1954,6 +2012,18 @@ export const standoutMethods = {
     wrap.querySelector('form')!.addEventListener('submit', (e) => {
       e.preventDefault();
       const value = input.value.trim();
+      if (kind === 'cloud') {
+        const [id, pin] = value.split(/[\s-]+/);
+        if (!id || !/^\d{4}$/.test(pin ?? '')) return error('Enter the ID, a space, then the 4-digit PIN.');
+        error('Restoring…');
+        void cloudRestore(id, pin).then(async (code) => {
+          if (!code) return error(/pin|tries/.test(onlineErrorText) ? `That didn’t work: ${onlineErrorText}.` : 'No backup with that ID, or the server can’t be reached.');
+          if (!(await importSave(code))) return error('That backup is damaged.');
+          track('cloud_restore');
+          location.reload();
+        });
+        return;
+      }
       if (kind === 'save') {
         void importSave(value).then((ok) => {
           if (!ok) return error('That save code is damaged or incomplete.');
@@ -1998,7 +2068,14 @@ export const standoutMethods = {
       if (/^INV-[A-Z0-9]{6}$/i.test(value)) {
         const p = this.progress;
         if (value.toUpperCase() === p.inviteCode) return error('That’s your own invite code. Send it to a friend!');
-        if (p.seen.includes('invite:used')) return error('You’ve already used an invite code on this device.');
+        const added = addFriend(value);
+        if (p.seen.includes('invite:used')) {
+          if (!added) return error('This friend is already on your list.');
+          close();
+          this.showToast('Friend added! Compare Daily Rolls on the Daily screen.');
+          track('friend_added');
+          return;
+        }
         p.seen.push('invite:used');
         p.persist();
         close();
@@ -2101,6 +2178,28 @@ export const standoutMethods = {
     if (this.saveCode) {
       this.fitText(this.saveCode, WORLD_W / 2, y + 6, WORLD_W - 40, 10, 'rgba(255,255,255,0.5)');
       y += 20;
+    }
+    if (isOnline()) {
+      // Cloud backup: the save code kept on the game's server under an ID + PIN.
+      const cb = cloudBackupInfo();
+      this.card(16, y, WORLD_W - 32, 104);
+      this.text('☁️ Cloud backup', 32, y + 20, 13, '#fff', 700, 'left');
+      this.fitText(cb ? `ID ${cb.id} · PIN ${cb.pin} · ${new Date(cb.at).toLocaleDateString()}` : 'Not backed up yet. Write down the ID and PIN you get.', 32, y + 42, WORLD_W - 64, 11, cb ? '#ffd34d' : 'rgba(255,255,255,0.7)', 'left', 700);
+      this.pill(32, y + 60, (WORLD_W - 80) / 2, cb ? 'BACK UP AGAIN' : 'BACK UP NOW', f, () => {
+        this.showToast('Backing up…');
+        void exportSave().then((code) => cloudBackup(code)).then((r) => {
+          this.showToast(r ? `Backed up! ID ${r.id} · PIN ${r.pin}. Keep these safe.` : 'The server can’t be reached. Try again later.');
+          if (r) track('cloud_backup');
+        });
+      }, 'gold');
+      this.pill(48 + (WORLD_W - 80) / 2, y + 60, (WORLD_W - 80) / 2, 'RESTORE', f, () => this.openCodeInput('cloud'), 'quiet');
+      y += 112;
+      this.pill(16, y, WORLD_W - 32, 'DELETE MY ONLINE DATA', f, () => {
+        this.confirmBox = { title: 'Delete online data?', text: 'Your scores, world-tower layers and cloud backup are removed from the server. Progress on this phone stays.', ok: 'DELETE', go: () => {
+          void forgetMe(this.playerId()).then((ok) => this.showToast(ok ? 'Your online data was deleted.' : 'The server can’t be reached. Try again later.'));
+        } };
+      }, 'quiet');
+      y += 44;
     }
 
     header(t('secPrivacy'));
