@@ -77,7 +77,7 @@ export const clarityMethods = {
     if (p.guide >= Game.GUIDE.length) {
       this.bankCoins(150);
       track('first_day');
-      this.celebrate('🎉 FIRST DAY COMPLETE!', 'Grandma’s bar is open again · +150 coins', 3);
+      this.celebrate(t('firstDayDone'), 'Grandma’s bar is open again · +150 coins', 3);
     }
     p.persist();
   },
@@ -88,7 +88,7 @@ export const clarityMethods = {
     if (!step || this.story || this.picker || this.perkChoice) return;
     if (this.mode !== 'title' && this.mode !== 'restaurant') return;
     const { ctx } = this;
-    const text = Game.GUIDE[this.progress.guide].text;
+    const text = t(Game.GUIDE[this.progress.guide].key);
     const r = this.guideRect;
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
     if (r) {
@@ -117,7 +117,7 @@ export const clarityMethods = {
   nextUp(this: Game): { icon: string; title: string; text: string; go: () => void; hot: boolean } {
     const p = this.progress;
     const step = this.guideStep();
-    if (step) return { icon: '👉', title: 'YOUR FIRST DAY', text: Game.GUIDE[p.guide].text, go: () => (step === 'visit' || step === 'build' || step === 'cook' || step === 'plate' || step === 'serve' ? this.openScreen('restaurant') : this.startRun()), hot: true };
+    if (step) return { icon: '👉', title: t('firstDay'), text: t(Game.GUIDE[p.guide].key), go: () => (step === 'visit' || step === 'build' || step === 'cook' || step === 'plate' || step === 'serve' ? this.openScreen('restaurant') : this.startRun()), hot: true };
     if (!this.lockedAt('gift') && this.giftReady()) return { icon: '🎁', title: 'DAILY GIFT', text: 'Your daily gift is ready to open', go: () => this.claimGift(), hot: true };
     const news = this.newsNext();
     if (news) return { icon: news.icon, title: `NEW: ${news.title.toUpperCase()}`, text: news.text, go: () => { p.seen.push(`news:${news.id}`); p.persist(); news.go(this); }, hot: true };
@@ -129,7 +129,7 @@ export const clarityMethods = {
     if (this.lettersUnread()) return { icon: '💌', title: 'A LETTER FROM GRANDMA', text: 'Read it in Grandma’s Book', go: () => this.openScreen('book'), hot: true };
     const event = this.liveEvent();
     if (event) return { icon: event.icon, title: event.name.toUpperCase(), text: event.text, go: () => this.startRun(), hot: true };
-    return { icon: '🍣', title: 'NEXT UP', text: `Beat ${chefFor(p.playLevel).name} at level ${p.playLevel}`, go: () => this.startRun(), hot: false };
+    return { icon: '🍣', title: t('nextUp'), text: `Beat ${chefFor(p.playLevel).name} at level ${p.playLevel}`, go: () => this.startRun(), hot: false };
   },
 
   drawNextUp(this: Game, y: number): void {

@@ -7,7 +7,7 @@ import { save, setHaptics } from '../platform';
 import { TRACKS, babble, setTrack, setVoices, type TrackId } from '../audio';
 import { STICKER_SETS, SET_REWARD, stickerRarity } from '../collect';
 import { CITIES, cupRivals, cupWeekend, currentTour } from '../live';
-import { PRODUCTS, monetize } from '../monetize';
+import { PRODUCTS, adPrivacyOptionsAvailable, monetize, showAdPrivacyOptions } from '../monetize';
 import { REACTIONS, codeEmoji, decodeChallenge, decodeGhost, encodeChallenge, encodeGhost, shareCard, shareClip, sharePhoto } from '../share';
 import { BOARDS, localBoards, online } from '../services';
 import { Progress, RECIPE_GOAL, dayKey, weekKey } from '../progress';
@@ -244,7 +244,7 @@ export const standoutMethods = {
     // Friends.
     const fl = friendList();
     const scores = friendScores(dayKey());
-    this.text('FRIENDS TODAY', 20, y + 12, 12, '#ffd34d', 700, 'left');
+    this.text(t('friendsToday'), 20, y + 12, 12, '#ffd34d', 700, 'left');
     y += 24;
     if (!fl.length) {
       this.wrapLeft('Add friends with their invite code (INV-…) to compare Daily Rolls. Send them yours from the button below.', 16, y + 4, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.7)');
@@ -264,8 +264,8 @@ export const standoutMethods = {
       }
     }
     const half = (WORLD_W - 42) / 2;
-    this.pill(16, y, half, '➕ ADD FRIEND', f, () => this.openCodeInput('friend'), 'quiet');
-    this.pill(26 + half, y, half, '📋 MY CODE', f, () => this.copy(this.progress.inviteCode, `Your code ${this.progress.inviteCode} is copied. Send it to friends!`), 'quiet');
+    this.pill(16, y, half, t('addFriend'), f, () => this.openCodeInput('friend'), 'quiet');
+    this.pill(26 + half, y, half, t('myCode'), f, () => this.copy(this.progress.inviteCode, `Your code ${this.progress.inviteCode} is copied. Send it to friends!`), 'quiet');
     return y + 50;
   },
 
@@ -2131,7 +2131,7 @@ export const standoutMethods = {
     toggle('📳', t('haptics'), 'Every ingredient has its own feel', settings.haptics, () => this.setting('haptics'));
     toggle('🎵', 'Run song notes', 'Each layer plays a note of your run’s tune', settings.songNotes, () => this.setting('songNotes'));
     toggle('📱', 'Tilt the tower', 'Tilting the phone nudges a tall tower’s sway', settings.tilt, () => this.setting('tilt'));
-    toggle('🔋', 'Battery saver', this.lowPower ? 'Already on: this phone runs the light version' : 'Fewer effects, menus at 30 fps', settings.batterySaver, () => this.setting('batterySaver'));
+    toggle('🔋', t('batterySaver'), this.lowPower ? 'Already on: this phone runs the light version' : t('batteryNote'), settings.batterySaver, () => this.setting('batterySaver'));
     header(t('secAccess'));
     toggle('🌙', t('reducedMotion'), 'No screen shake, flashes or confetti', settings.reducedMotion, () => this.setting('reducedMotion'));
     toggle('🔣', t('colorblind'), 'A symbol on every ingredient', settings.colorblind, () => this.setting('colorblind'));
@@ -2203,15 +2203,19 @@ export const standoutMethods = {
     }
 
     header(t('secPrivacy'));
-    toggle('📊', 'Share anonymous stats', 'Helps fix where players get stuck. Off unless you turn it on.', settings.analytics, () => this.setting('analytics'));
+    if (adPrivacyOptionsAvailable()) {
+      this.pill(16, y, WORLD_W - 32, t('adPrivacy'), f, () => void showAdPrivacyOptions(), 'quiet');
+      y += 44;
+    }
+    toggle('📊', t('shareStats'), t('shareStatsNote'), settings.analytics, () => this.setting('analytics'));
     const counts = analyticsSummary();
     this.card(16, y, WORLD_W - 32, 84);
     this.wrapLeft(settings.analytics ? 'Thank you! Gameplay events (no name, no contacts, no location) are sent once analytics is set up for this game. Turn it off any time.' : 'Gameplay stats stay on this device. Nothing is sent anywhere.', 32, y + 18, WORLD_W - 64, 11, 'rgba(255,255,255,0.8)');
     this.fitText(`On-device log: ${counts.reduce((a, b) => a + b[1], 0)} events · ${counts.slice(0, 3).map(([n, c]) => `${n} ${c}`).join(' · ')}`, 32, y + 68, WORLD_W - 64, 10, 'rgba(255,255,255,0.55)', 'left');
     y += 92;
     const hw2 = (WORLD_W - 42) / 2;
-    this.pill(16, y, hw2, '📈 MY FUNNEL', f, () => this.openScreen('funnel', 'settings'), 'quiet');
-    this.pill(26 + hw2, y, hw2, '🩺 DIAGNOSTICS', f, () => this.openScreen('diagnostics', 'settings'), 'quiet');
+    this.pill(16, y, hw2, t('myFunnel'), f, () => this.openScreen('funnel', 'settings'), 'quiet');
+    this.pill(26 + hw2, y, hw2, t('diagnostics'), f, () => this.openScreen('diagnostics', 'settings'), 'quiet');
     y += 48;
     this.text('Sushi Stack · made with Capacitor', WORLD_W / 2, y + 10, 10, 'rgba(255,255,255,0.4)', 600);
     y += 24;

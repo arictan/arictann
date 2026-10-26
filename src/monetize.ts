@@ -8,7 +8,7 @@
 //   labelled as tests, so every flow can be tried without real money.
 
 import { Capacitor } from '@capacitor/core';
-import { AdMob } from '@capacitor-community/admob';
+import { AdMob, AdmobConsentStatus, MaxAdContentRating } from '@capacitor-community/admob';
 import { Purchases } from '@revenuecat/purchases-capacitor';
 
 const native = Capacitor.isNativePlatform();
@@ -17,6 +17,9 @@ const ios = Capacitor.getPlatform() === 'ios';
 // Google's official test rewarded ad units. Swap for your own before publishing.
 const REWARDED_AD_ID = ios ? 'ca-app-pub-3940256099942544/1712485313' : 'ca-app-pub-3940256099942544/5224354917';
 const ADS_TESTING = true;
+// Ads are non-personalized: no advertising ID tracking, so no iOS tracking prompt is needed. Turn
+// this on only together with the iOS App Tracking Transparency prompt and updated privacy forms.
+const PERSONALIZED_ADS = false;
 
 // Paste your RevenueCat public SDK key here to turn on real purchases.
 const REVENUECAT_API_KEY = '';
@@ -44,12 +47,29 @@ export const monetize = {
 };
 
 let adsReady = false;
+let consent = { canRequestAds: true, privacyOptions: false };
+
+/** True in regions (EU/UK…) where players can reopen the ad privacy choices from Settings. */
+export function adPrivacyOptionsAvailable(): boolean {
+  return consent.privacyOptions;
+}
+
+/** Reopens Google's ad consent form (Settings → Ad privacy choices). */
+export async function showAdPrivacyOptions(): Promise<void> {
+  if (!native) return;
+  try { await AdMob.showPrivacyOptionsForm(); } catch { /* not available */ }
+}
 
 export async function initMonetization(): Promise<void> {
   if (!native) return;
   try {
-    await AdMob.initialize({ initializeForTesting: ADS_TESTING });
-    adsReady = true;
+    // Google's consent form (UMP) is shown first where the law requires it (EU, UK, Switzerland).
+    const info = await AdMob.requestConsentInfo();
+    let status = info;
+    if (info.isConsentFormAvailable && info.status === AdmobConsentStatus.REQUIRED) status = await AdMob.showConsentForm();
+    consent = { canRequestAds: status.canRequestAds !== false, privacyOptions: String(status.privacyOptionsRequirementStatus) === 'REQUIRED' };
+    await AdMob.initialize({ initializeForTesting: ADS_TESTING, tagForChildDirectedTreatment: false, tagForUnderAgeOfConsent: false, maxAdContentRating: MaxAdContentRating.General });
+    adsReady = consent.canRequestAds;
   } catch { /* ads unavailable */ }
   if (REVENUECAT_API_KEY) {
     try { await Purchases.configure({ apiKey: REVENUECAT_API_KEY }); } catch { /* store unavailable */ }
@@ -63,7 +83,7 @@ export async function initMonetization(): Promise<void> {
 export async function showRewardedAd(): Promise<boolean> {
   if (!native || !adsReady) return false;
   try {
-    await AdMob.prepareRewardVideoAd({ adId: REWARDED_AD_ID, isTesting: ADS_TESTING });
+    await AdMob.prepareRewardVideoAd({ adId: REWARDED_AD_ID, isTesting: ADS_TESTING, npa: !PERSONALIZED_ADS });
     const reward = await AdMob.showRewardVideoAd();
     return !!reward;
   } catch {

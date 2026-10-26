@@ -4917,13 +4917,13 @@ export class Game {
 
   /** The guided first day: a pointer walks a new player from their first chef to their first dish. */
   static GUIDE = [
-    { id: 'play', text: 'Tap PLAY and beat your first chef' },
-    { id: 'open', text: 'Beat one more chef to open grandma’s restaurant' },
-    { id: 'visit', text: 'Grandma’s restaurant is open! Tap RESTAURANT' },
-    { id: 'build', text: 'Build the Sushi Counter with the ★ you earned' },
-    { id: 'cook', text: 'Cook your first dish: tap the burner' },
-    { id: 'plate', text: 'It’s ready! Tap it to plate it' },
-    { id: 'serve', text: 'Tap a hungry guest to serve your dish' },
+    { id: 'play', key: 'guidePlay' as const, text: 'Tap PLAY and beat your first chef' },
+    { id: 'open', key: 'guideOpen' as const, text: 'Beat one more chef to open grandma’s restaurant' },
+    { id: 'visit', key: 'guideVisit' as const, text: 'Grandma’s restaurant is open! Tap RESTAURANT' },
+    { id: 'build', key: 'guideBuild' as const, text: 'Build the Sushi Counter with the ★ you earned' },
+    { id: 'cook', key: 'guideCook' as const, text: 'Cook your first dish: tap the burner' },
+    { id: 'plate', key: 'guidePlate' as const, text: 'It’s ready! Tap it to plate it' },
+    { id: 'serve', key: 'guideServe' as const, text: 'Tap a hungry guest to serve your dish' },
   ];
 
   guideRect: { x: number; y: number; w: number; h: number } | null = null;

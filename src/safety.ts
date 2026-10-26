@@ -31,9 +31,9 @@ function saveKeys(): string[] {
 
 /** Each step upgrades a save from version n to n + 1. Never edit an old step; add a new one. */
 const MIGRATIONS: Record<number, () => void> = {
-  // 1 → 2: players from before the guided first day skip it.
+  // 1 → 2: players from before the guided first day skip it, once they're past its first steps.
   1: () => {
-    if (get(`${PREFIX}guide`) === null) set(`${PREFIX}guide`, '99');
+    if (get(`${PREFIX}guide`) === null && Number(get(`${PREFIX}journey.unlocked`) ?? 1) > 2) set(`${PREFIX}guide`, '99');
   },
 };
 

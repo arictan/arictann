@@ -468,15 +468,44 @@ All of these sit in the **Share Studio** (📤 on the results card), along with 
 24. **Tower of the World:** everyone's layers stacked into one daily tower, with community milestones and rewards. Other players are **simulated and labelled so** until a server is added; your own layers count for real.
 25. **Country Cup:** a weekly average best height per country, with your country guessed from the device language. Other countries are **simulated (AI)** until online leaderboards exist; your best run counts toward your country.
 
-## Not done yet (needs accounts or a server)
-- **Cloud save:** Game Center / Google Play Games saved games, or a backend. Save-transfer codes cover this for now.
-- **Inviter rewards, live duels and crews with real players:** these need player accounts and a server. Today, duels and ghost races replay a shared seed against the score and shape inside the code, and crew mates and cup rivals are labelled AI.
-- **Rewards for the friend whose restaurant you visit:** these also need accounts.
-- **Online leaderboards:** Game Center and Play Games. Event rivals are clearly labelled AI.
-- **Live analytics and remote config:** set `ANALYTICS_ENDPOINT` / a sink and `REMOTE_CONFIG_URL`, then update the privacy policy and store forms.
-- **A real Tower of the World and Country Cup:** both need a server. Replace `worldSimToday()` and `countryBoard()` in `src/world.ts` with calls to it.
+## Launch readiness (version 1.1.0)
+
+| # | Area | What's in the game |
+|---|---|---|
+| 1 | **Guided first day** | Seven steps (play, open the restaurant, visit, build, cook, plate, serve) with a ring, a pointing finger and a caption on the exact button, scrolled into view. Finishing gives +150 coins. During the first day there are no requests, no golden guests and no critic, so nothing gets in the way. |
+| 2 | **Feature pacing** | Features open as levels are beaten (restaurant at 3, Daily Roll 4, recipe book 6 … Boss Maker 12, Gauntlet 14). Locked modes show only the next two, as "opens at level N". |
+| 3 | **Next up** | One card on the home screen with the single most useful next thing: first-day step, gift, something new, Daily Roll, restaurant, a letter, a live event, or the next chef. |
+| 4 | **Collection hub, What's new** | Albums, gallery, museum, trophies and book under one Collection screen. New features announce themselves once in Next up. |
+| 5 | **Save safety** | Save version with step-by-step migrations, a daily on-device backup (two days kept), recovery of a damaged entry from the backup, and restore in Diagnostics. |
+| 6 | **Error log and Diagnostics** | Errors are kept on the device (the last 30). Settings → Diagnostics shows frame time, quality, saved data, backups, errors and a copyable support report. |
+| 7 | **Device check** | Buttons for each phone feature the game uses: 8 haptic patterns, sounds, music, tilt, camera, a test reminder and the widget. For docs/DEVICE_TEST_PLAN.md. |
+| 8 | **Adaptive quality, Battery saver** | When frames stay slow, the game switches to lite effects (2× resolution, fewer particles, a simpler sky and scene). Battery saver does the same by choice. Calm menus draw at 30 fps. |
+| 9 | **Performance measured** | Under 4× and 6× CPU throttling (docs/PERFORMANCE.md). Drawing pixels, not game logic, is the cost, so resolution is the lever. |
+| 10 | **Code split** | `game.ts` went from 11,300 lines to 5,000; the screens, the diner, the first day and the standout features are in `src/game/`. |
+| 11 | **Stats only with consent** | "Share anonymous stats" is off by default. A funnel (install → first day → first chef → restaurant → day 2 → day 7) and session ends are recorded, and the player can see their own on My funnel. |
+| 12 | **Difficulty simulation** | A bot with human timing error (casual/regular/skilled) played every level. Two spikes were smoothed (levels 28 and 40). See docs/DIFFICULTY.md. |
+| 13 | **Economy model** | Real run income plus every price, over 60 days for three kinds of player. Tips were 70% of income; tips ×0.75 and prices ×1.25 move a regular player's Flagship from day 25 to about day 33. See docs/ECONOMY.md. |
+| 14 | **Remote-config knobs** | Dish price, cooking time, tips, rush, snacks, drop chances, prices, festival, Daily Roll level and live events can all change without an update. |
+| 15 | **Live events calendar** | Sake-chan's Birthday Week, Winter Tuna Week, New Year Feast, First Nori of the Year bundled; more from remote config. |
+| 16 | **Online server** | A small Node server (server/) for the Daily Roll board, friends, the world tower, the country cup, cloud backup and data deletion, with limits and rate limiting. |
+| 17 | **Live screens** | With a server, the Daily Roll shows "you beat 72% of N players", the world tower and country cup use real players; without one they stay simulated and labelled. |
+| 18 | **Friends** | Entering a friend's invite code adds them; the Daily Roll screen compares today's rolls. |
+| 19 | **Cloud backup** | Back up with an ID + PIN, restore on any device, delete from the server any time. |
+| 20 | **Store screenshots and trailer** | 8 screenshots per store and a 29-second trailer rendered from the real game (store/, tools/store/). |
+| 21 | **Store listing** | Name, subtitle, descriptions, keywords and release notes in English and Turkish, within the limits (store/LISTING.md). |
+| 22 | **Soft launch plan** | Countries, metrics with target values, a week-by-week plan and go/no-go rules (docs/SOFT_LAUNCH.md). |
+| 23 | **Translations** | The first-day guide, Next up, Battery saver, stats consent, friends and diagnostics in all 7 languages. |
+| 24 | **Age rating, ads consent** | Questionnaire answers (docs/AGE_RATING.md). Ads are non-personalized, Google's consent form is shown where required, and Ad privacy choices are in Settings. |
+| 25 | **Bug fixes found on the way** | Enter in code boxes was eaten by the drop shortcut; the save migration would have skipped the first day for anyone with only a setting saved. |
+
+## Not done yet (needs accounts, a server deployment or devices)
+- **Deploying the server:** server/ is ready and tested, but it has to be hosted (with HTTPS) and `serverUrl` set. Until then the online screens are simulated and labelled.
+- **Real-device testing:** haptics, sound, camera, notifications, widget, purchases and performance on real phones (docs/DEVICE_TEST_PLAN.md).
+- **Store accounts and products:** AdMob ad units and GDPR message, RevenueCat and store products, Play Console and App Store Connect listings.
+- **An analytics service** behind the "Share anonymous stats" switch (e.g. Firebase), if wanted.
+- **Inviter rewards, live duels and crews with real players:** these need player accounts. Today, duels and ghost races replay a shared seed, and crew mates and cup rivals are labelled AI.
+- **Game Center / Play Games leaderboards:** optional, beside our own server.
 - **World-tracked AR:** Table mode only shows the camera behind the tower. True AR (ARKit/ARCore) needs native work.
-- **A real rival restaurant run by a friend:** this needs accounts. The weekly rival is AI and labelled so.
-- **Real league and quest opponents:** these need a server. Today they are seeded AI, labelled "(AI)".
+- **Real league, quest and rival-restaurant opponents:** these need accounts; today they are seeded AI, labelled "(AI)".
 - **Widget and Live Activity in the native projects:** the code in `native/` hasn't been compiled here. Add it in Xcode and Android Studio (see `native/README.md`) and test it on a device.
-- **Full translation** of chef dialogue, item names, the newest feature screens and store listings.
+- **Full translation** of chef dialogue, item names and the remaining feature screens (the first day and the new settings are translated).

@@ -46,9 +46,12 @@ If you turn on highlight clips, the game records only its own screen while you p
 unless you choose to share one.
 
 ## Ads (Google AdMob)
-Ads only play when you choose to watch one for a reward. Google AdMob may collect device identifiers,
-approximate location (from your IP address), and ad interaction data to show and measure ads. On iOS you can
-limit ad tracking in Settings. See Google's policy: https://policies.google.com/technologies/ads
+Ads only play when you choose to watch one for a reward, and they are **non-personalized**: they are not based
+on your interests or activity in other apps, and the game does not ask to track you. Google AdMob may still use
+device information, approximate location (from your IP address) and ad interaction data to deliver, limit and
+measure ads and to prevent fraud. In the EU, UK and Switzerland, Google's consent form is shown before any ad,
+and you can change your choice any time in Settings → Ad privacy choices.
+See Google's policy: https://policies.google.com/technologies/ads
 
 ## Purchases (Apple / Google, via RevenueCat)
 Payments are handled entirely by the App Store or Google Play. We never see your payment details.
