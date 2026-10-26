@@ -16,6 +16,8 @@ export interface Settings {
   songNotes: boolean; // every layer plays a note of the run's song
   audioOnly: boolean; // play by ear: a panned tone guides each drop
   tilt: boolean; // tilting the phone nudges the tall tower's sway
+  batterySaver: boolean; // fewer effects, menus at 30 fps
+  analytics: boolean; // the player agreed to send anonymous gameplay stats (off by default)
   country: string; // for the country leaderboard
   track: string; // jukebox track
   lang: Lang;
@@ -38,6 +40,8 @@ export const settings: Settings = {
   songNotes: true,
   audioOnly: false,
   tilt: true,
+  batterySaver: false,
+  analytics: false,
   country: '',
   track: 'classic',
   lang: defaultLang(),

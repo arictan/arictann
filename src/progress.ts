@@ -153,6 +153,7 @@ export class Progress {
   country = save.json('country', '');
   countryWeek = save.json('countryWeek', { week: '', best: 0, runs: 0 });
   relayBest = save.json('relayBest', 0);
+  guide = save.json('guide', -1); // guided first day: step, 99 = done, -1 = not decided yet
 
   constructor(private recipes: string[]) {
     if (this.missions.length !== 3) this.missions = this.newMissions();
@@ -252,6 +253,7 @@ export class Progress {
     save.setJson('country', this.country);
     save.setJson('countryWeek', this.countryWeek);
     save.setJson('relayBest', this.relayBest);
+    save.setJson('guide', this.guide);
   }
 
   /** Adds to a lifetime counter, or keeps the best value for per-run records. */

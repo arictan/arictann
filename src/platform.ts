@@ -3,6 +3,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { StatusBar } from '@capacitor/status-bar';
 import { App } from '@capacitor/app';
 import type { Haptic } from './feel';
+import { recoverEntry } from './safety';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 const native = Capacitor.isNativePlatform();
@@ -124,11 +125,16 @@ const store = {
 
 export const save = {
   json: <T,>(key: string, fallback: T): T => {
+    const v = store.get(`sushi-stack.${key}`);
+    if (v === null) return fallback;
     try {
-      const v = store.get(`sushi-stack.${key}`);
-      return v === null ? fallback : (JSON.parse(v) as T);
+      return JSON.parse(v) as T;
     } catch {
-      return fallback;
+      // A damaged entry comes back from the daily backup when it can.
+      const r = recoverEntry(key);
+      if (r === null) return fallback;
+      store.set(`sushi-stack.${key}`, r);
+      return JSON.parse(r) as T;
     }
   },
   setJson: (key: string, value: unknown) => store.set(`sushi-stack.${key}`, JSON.stringify(value)),

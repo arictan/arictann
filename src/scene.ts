@@ -32,6 +32,7 @@ export interface SceneOpts {
   dishes?: string[]; // plated dishes waiting in the display case (ride the belt)
   keepsakes?: string[]; // festival keepsakes on the floor
   cooking?: number; // burners in use (steam from the kitchen)
+  lite?: boolean; // battery saver / slow phone: no drifting particles or steam
 }
 
 const C = { counter: 0, lanterns: 1, aquarium: 2, noren: 3, garden: 4, art: 5, sign: 6, conveyor: 7 };
@@ -128,7 +129,7 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
     for (let i = 0; i < 6; i++) ctx.fillRect(wx + i * 16 + 4, wy + wh - 6 - ((i * 13) % 10), 2, 2);
   }
   // Snow or petals drift past outside too.
-  if (th.particle === 'snow' || th.particle === 'petals') {
+  if (!o.lite && (th.particle === 'snow' || th.particle === 'petals')) {
     for (let i = 0; i < 6; i++) {
       const px = wx + ((i * 29 + t * 14) % ww);
       const py = wy + ((i * 17 + t * 22) % wh);
@@ -373,7 +374,7 @@ export function drawRestaurantScene(ctx: CanvasRenderingContext2D, o: SceneOpts)
   if (o.staff.apprentice) emoji(ctx, '👦', chefX + 48, cy - 18 + Math.abs(Math.sin(t * 3)) * -2, 22);
   if (o.cooking) {
     // Something's on the burners: steam rises behind the chef.
-    for (let i = 0; i < 3 + o.cooking; i++) {
+    for (let i = 0; i < (o.lite ? 1 : 3 + o.cooking); i++) {
       const k = (t * 0.6 + i * 0.37) % 1;
       ctx.fillStyle = `rgba(255,255,255,${0.35 * (1 - k)})`;
       ctx.beginPath();
