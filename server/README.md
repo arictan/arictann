@@ -19,7 +19,8 @@ set, the game runs offline and shows simulated players, always labelled "(AI)" o
 ```
 node server/server.mjs                    # port 8787, data in server/data.json
 PORT=8080 DATA=/var/data/sushi.json ALLOW_ORIGIN=https://yourgame.example node server/server.mjs
-node server/test.mjs                      # 10 tests
+TRUST_PROXY=1 node server/server.mjs           # only behind your own HTTPS proxy (Caddy, nginx, Fly…)
+node server/test.mjs                      # 12 tests
 ```
 
 Then point the game at it, in one of two ways:
@@ -59,7 +60,7 @@ Copy the data file somewhere else daily (cloud backups live in it).
 * Scores have upper limits (a Daily Roll ≤ 400, a country-cup run ≤ 1,500, world layers ≤ 600 per
   post and 6,000 per player per day). See `LIMITS` in `server.mjs`.
 * Days must be today or yesterday in some time zone; a player counts for one country a week.
-* 60 requests per minute per IP. Wrong PINs: 5 per backup per hour, then it locks for an hour.
+* 60 requests per minute per IP. Behind a proxy, set `TRUST_PROXY=1` so the real IP is used; without a proxy leave it off, or anyone could fake their IP. Wrong PINs: 5 per backup per hour, then it locks for an hour.
 * Names are cut to 16 characters with control characters and `<>` removed. There's **no word
   filter**: add one before showing names publicly in a big launch, or show only "Chef #1234".
 

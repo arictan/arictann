@@ -2,8 +2,12 @@
 // It stands in for cloud save until Game Center / Google Play Games saved games (or a backend
 // with accounts) are set up.
 
+import { freezeSaves } from './safety';
+
 const PREFIX = 'sushi-stack.';
 const SKIP = new Set(['sushi-stack.analytics']);
+// This device's own backups and error log (keys starting with "~") never travel in a save code.
+const local = (k: string): boolean => SKIP.has(k) || k.startsWith(`${PREFIX}~`);
 
 function toB64(bytes: Uint8Array): string {
   let s = '';
@@ -32,7 +36,7 @@ export async function exportSave(): Promise<string> {
   const data: Record<string, string> = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i)!;
-    if (k.startsWith(PREFIX) && !SKIP.has(k)) data[k.slice(PREFIX.length)] = localStorage.getItem(k)!;
+    if (k.startsWith(PREFIX) && !local(k)) data[k.slice(PREFIX.length)] = localStorage.getItem(k)!;
   }
   let bytes: Uint8Array = new TextEncoder().encode(JSON.stringify(data));
   let tag = 'SS0';
@@ -53,11 +57,13 @@ export async function importSave(code: string): Promise<boolean> {
     if (tag === 'SS1') bytes = await pipe(bytes, new DecompressionStream('deflate-raw'));
     const data = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, string>;
     if (typeof data !== 'object' || !data) return false;
+    freezeSaves();
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i)!;
-      if (k.startsWith(PREFIX) && !SKIP.has(k)) localStorage.removeItem(k);
+      if (k.startsWith(PREFIX) && !local(k)) localStorage.removeItem(k);
     }
-    for (const [k, v] of Object.entries(data)) localStorage.setItem(PREFIX + k, v);
+    // Codes made before 1.1.0 may still carry another device's backups: skip them.
+    for (const [k, v] of Object.entries(data)) if (!local(PREFIX + k)) localStorage.setItem(PREFIX + k, v);
     return true;
   } catch {
     return false;

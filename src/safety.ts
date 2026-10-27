@@ -8,6 +8,15 @@ export const SAVE_VERSION = 2;
 const PREFIX = 'sushi-stack.';
 const SKIP = new Set([`${PREFIX}analytics`, `${PREFIX}~backup1`, `${PREFIX}~backup2`, `${PREFIX}~errors`]);
 
+/**
+ * Set while a backup or save code is being restored: the game's own saves stop, so a frame drawn
+ * before the reload can't write the old progress back over the restored one.
+ */
+export let savesFrozen = false;
+export function freezeSaves(): void {
+  savesFrozen = true;
+}
+
 function get(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
 }
@@ -83,6 +92,7 @@ export function backupSave(force = false): void {
 export function restoreBackup(n: 1 | 2): boolean {
   const b = readBackup(n);
   if (!b) return false;
+  freezeSaves();
   for (const k of saveKeys()) {
     try { localStorage.removeItem(k); } catch { /* ignore */ }
   }

@@ -36,13 +36,19 @@ export let lastError = '';
 
 const cache = new Map<string, { at: number; v: unknown }>();
 const inflight = new Set<string>();
+const failedAt = new Map<string, number>();
+const RETRY_MS = 30_000; // after a failed request, wait before asking again (screens call this every frame)
 
 /** Returns the cached value right away, and refreshes it in the background when older than maxAge. */
 function cached<T>(key: string, maxAge: number, load: () => Promise<T | null>): T | null {
   const c = cache.get(key);
-  if ((!c || Date.now() - c.at > maxAge) && !inflight.has(key) && isOnline()) {
+  const stale = !c || Date.now() - c.at > maxAge;
+  if (stale && !inflight.has(key) && isOnline() && Date.now() - (failedAt.get(key) ?? 0) > RETRY_MS) {
     inflight.add(key);
-    void load().then((v) => { if (v !== null) cache.set(key, { at: Date.now(), v }); }).finally(() => inflight.delete(key));
+    void load().then((v) => {
+      if (v !== null) cache.set(key, { at: Date.now(), v });
+      else failedAt.set(key, Date.now());
+    }).finally(() => inflight.delete(key));
   }
   return (c?.v as T) ?? null;
 }
@@ -118,18 +124,29 @@ export interface WorldTotal { day: string; total: number; players: number }
 
 /** Layers waiting to be sent (kept if offline, sent with the next run). */
 let pendingLayers: { day: string; n: number } = save.json('worldPending', { day: '', n: 0 });
+let worldSending = false;
 
 export function postWorld(day: string, player: string, layers: number): void {
   if (!isOnline()) return;
   if (pendingLayers.day !== day) pendingLayers = { day, n: 0 };
   pendingLayers.n += layers;
   save.setJson('worldPending', pendingLayers);
+  sendWorld(player);
+}
+
+/** Sends waiting layers, one request at a time, so layers are never counted twice. */
+function sendWorld(player: string): void {
+  if (worldSending || pendingLayers.n <= 0) return;
+  worldSending = true;
+  const { day } = pendingLayers;
   const n = Math.min(600, pendingLayers.n);
   void api<WorldTotal & { counted: number }>('/world', { day, player, layers: n }).then((r) => {
-    if (!r) return;
-    pendingLayers.n = Math.max(0, pendingLayers.n - n);
+    worldSending = false;
+    if (!r) return; // offline: kept for the next run
+    if (pendingLayers.day === day) pendingLayers.n = Math.max(0, pendingLayers.n - n);
     save.setJson('worldPending', pendingLayers);
     cache.set(`world|${day}`, { at: Date.now(), v: r });
+    sendWorld(player); // layers added while this request was on its way
   });
 }
 

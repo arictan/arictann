@@ -315,9 +315,11 @@ export const standoutMethods = {
       await v.play();
       this.video = v;
     } catch {
+      const table = this.tableMode;
       this.tableMode = false;
+      this.diagCamOn = false;
       this.stopCamera();
-      this.showToast('Camera not available. Table mode is off.');
+      this.showToast(table ? 'Camera not available. Table mode is off.' : 'Camera not available (permission refused or no camera).');
     }
   },
 

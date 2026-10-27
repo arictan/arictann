@@ -80,6 +80,8 @@ function allowed(ip) {
   buckets.set(ip, b);
   return b.n <= LIMITS.perMinute;
 }
+/** For tests: forget every IP's request count. */
+export const resetRateLimits = () => buckets.clear();
 const bucketTimer = setInterval(() => { const old = Date.now() - 120_000; for (const [k, b] of buckets) if (b.t < old) buckets.delete(k); }, 60_000);
 
 // ------------------------------------------------------------------ routes
@@ -146,7 +148,8 @@ const routes = {
   // Cloud backup: the save code is stored under a random ID, protected by a 4-digit PIN.
   'POST /backup': ({ body }) => {
     const code = String(body.code ?? '');
-    if (!code.startsWith('SS1.') || code.length > LIMITS.backupBytes) return [400, { error: 'bad save code' }];
+    // SS1 = compressed; SS0 = phones without CompressionStream (iOS before 16.4, old Android WebViews).
+    if (!/^SS[01]\./.test(code) || code.length > LIMITS.backupBytes) return [400, { error: 'bad save code' }];
     // Updating an existing backup needs its PIN; otherwise a new ID and PIN are made.
     if (body.id) {
       const b = db.backups[String(body.id).toUpperCase()];
@@ -231,7 +234,9 @@ export const server = http.createServer(async (req, res) => {
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': ORIGIN, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' };
   const send = (status, obj) => { res.writeHead(status, headers); res.end(JSON.stringify(obj)); };
   if (req.method === 'OPTIONS') return send(204, {});
-  const ip = (req.headers['x-forwarded-for']?.split(',')[0] ?? req.socket.remoteAddress ?? '').trim();
+  // X-Forwarded-For can be typed by anyone: only trust it behind your own proxy (TRUST_PROXY=1).
+  const fwd = process.env.TRUST_PROXY === '1' ? req.headers['x-forwarded-for']?.split(',')[0] : undefined;
+  const ip = (fwd ?? req.socket.remoteAddress ?? '').trim();
   if (!allowed(ip)) return send(429, { error: 'slow down' });
   const url = new URL(req.url ?? '/', 'http://x');
   const route = routes[`${req.method} ${url.pathname}`];

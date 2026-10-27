@@ -94,7 +94,8 @@ export function trackRetention(): void {
   const firstOpen = save.json('firstOpen', 0);
   if (!firstOpen) {
     save.setJson('firstOpen', Date.now());
-    track('install');
+    // Players updating from 1.0 already have progress: they aren't new installs.
+    if (save.json('journey.unlocked', 1) <= 1) track('install');
     return;
   }
   const days = Math.floor((Date.now() - firstOpen) / 86_400_000);

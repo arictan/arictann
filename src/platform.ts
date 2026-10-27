@@ -3,7 +3,7 @@ import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { StatusBar } from '@capacitor/status-bar';
 import { App } from '@capacitor/app';
 import type { Haptic } from './feel';
-import { recoverEntry } from './safety';
+import { recoverEntry, savesFrozen } from './safety';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 const native = Capacitor.isNativePlatform();
@@ -119,6 +119,7 @@ const store = {
     try { return localStorage.getItem(key); } catch { return null; }
   },
   set(key: string, value: string): void {
+    if (savesFrozen) return; // a restore is in progress (see safety.ts)
     try { localStorage.setItem(key, value); } catch { /* storage unavailable */ }
   },
 };

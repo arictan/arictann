@@ -2344,7 +2344,8 @@ export class Game {
         setAsmr(false);
         setMusic(this.musicOn);
       }
-      if (this.camStream) this.stopCamera();
+      if (this.mode !== 'diagnostics') this.diagCamOn = false;
+      if (this.camStream && !this.diagCamOn) this.stopCamera();
     }
     if (this.restSay && (this.restSay.t -= real) <= 0) this.restSay = null;
     if (this.burst) {

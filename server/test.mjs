@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 process.env.DATA = path.join(os.tmpdir(), `sushi-test-${process.pid}.json`);
-const { server, stop, LIMITS } = await import('./server.mjs');
+const { server, stop, LIMITS, resetRateLimits } = await import('./server.mjs');
 await new Promise((r) => server.listen(0, r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const call = async (method, p, body) => {
@@ -71,14 +71,29 @@ await test('forget: removes a player everywhere, and their backup with the PIN',
   assert.ok(!d.top.some((x) => x.name === 'Ana'));
   assert.equal((await call('POST', '/restore', { id: b.id, pin: b.pin }))[0], 404);
 });
+await test('backup: uncompressed SS0 codes from older phones are accepted', async () => {
+  const [s, b] = await call('POST', '/backup', { code: 'SS0.eyJ9.ABCD' });
+  assert.equal(s, 200);
+  assert.match(b.pin, /^\d{4}$/);
+});
 await test('bad requests', async () => {
   assert.equal((await call('GET', '/nope'))[0], 404);
   const res = await fetch(`${base}/daily`, { method: 'POST', body: '{oops' });
   assert.equal(res.status, 400);
 });
 await test('rate limit', async () => {
+  resetRateLimits();
   let last = 200;
   for (let i = 0; i < LIMITS.perMinute + 5; i++) last = (await call('GET', '/health'))[0];
+  assert.equal(last, 429);
+});
+await test('rate limit can’t be dodged with a fake X-Forwarded-For', async () => {
+  resetRateLimits();
+  let last = 200;
+  for (let i = 0; i < LIMITS.perMinute + 5; i++) {
+    const res = await fetch(`${base}/health`, { headers: { 'X-Forwarded-For': `10.0.0.${i}` } });
+    last = res.status;
+  }
   assert.equal(last, 429);
 });
 stop();

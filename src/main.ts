@@ -42,7 +42,8 @@ void fontReady().then(() => {
     }
     // Adaptive quality: if frames stay slow for a few seconds, drop the extra effects.
     work = work * 0.95 + (performance.now() - t0) * 0.05;
-    slowFor = work > 12 ? slowFor + dt : Math.max(0, slowFor - dt);
+    const step = Math.min(dt, 0.1); // after the app was in the background, dt can be minutes
+    slowFor = work > 12 ? slowFor + step : Math.max(0, slowFor - step);
     if (slowFor > 3 && !game.lowPower) game.setLowPower(true);
     perf.work = work;
   }
