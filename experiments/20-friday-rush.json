@@ -1,0 +1,28 @@
+{
+  "plan": {
+    "title": "Triple-tip Friday rush",
+    "idea": 20,
+    "week": 7,
+    "weeks": 3,
+    "question": "Do triple Rush Hour tips on Fridays bring players to the restaurant at rush time?",
+    "metric": "restaurant_enter",
+    "guard": [
+      "guest_served",
+      "sessions"
+    ],
+    "decide": "Make it a weekly feature if Friday restaurant visits rise 15%+. It runs 3 Fridays to see if the effect lasts."
+  },
+  "experiments": [
+    {
+      "id": "friday-rush",
+      "days": [
+        5
+      ],
+      "share": 0.5,
+      "set": {
+        "rushMult": 3,
+        "message": "Friday rush: Rush Hour tips are tripled today! 🔥"
+      }
+    }
+  ]
+}

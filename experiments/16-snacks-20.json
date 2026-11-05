@@ -1,0 +1,24 @@
+{
+  "plan": {
+    "title": "Fewer free snacks",
+    "idea": 16,
+    "week": 3,
+    "weeks": 2,
+    "question": "With the snack bar closing after 20 snacks a day (not 40), do players cook more dishes, or just leave the restaurant sooner?",
+    "metric": "diner_cook",
+    "guard": [
+      "restaurant_enter",
+      "sessions"
+    ],
+    "decide": "Adopt guestSnacks 20 if cooking per player rises and restaurant visits don't fall. If visits fall, keep 40."
+  },
+  "experiments": [
+    {
+      "id": "snacks-20",
+      "share": 0.5,
+      "set": {
+        "guestSnacks": 20
+      }
+    }
+  ]
+}

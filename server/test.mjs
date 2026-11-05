@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 process.env.DATA = path.join(os.tmpdir(), `sushi-test-${process.pid}.json`);
+process.env.CONFIG = path.join(os.tmpdir(), `sushi-config-${process.pid}.json`);
+process.env.EVENTS_DIR = path.join(os.tmpdir(), `sushi-events-${process.pid}/`);
+import fs from 'node:fs';
 const { server, stop, LIMITS, resetRateLimits } = await import('./server.mjs');
 await new Promise((r) => server.listen(0, r));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -76,6 +79,35 @@ await test('backup: uncompressed SS0 codes from older phones are accepted', asyn
   assert.equal(s, 200);
   assert.match(b.pin, /^\d{4}$/);
 });
+await test('config: served from the file, edits show up, a broken file keeps the last good one', async () => {
+  assert.deepEqual(await call('GET', '/config'), [200, {}]);
+  fs.writeFileSync(process.env.CONFIG, JSON.stringify({ coinBoost: 2 }));
+  assert.deepEqual((await call('GET', '/config'))[1], { coinBoost: 2 });
+  await new Promise((r) => setTimeout(r, 20));
+  fs.writeFileSync(process.env.CONFIG, '{ broken');
+  assert.deepEqual((await call('GET', '/config'))[1], { coinBoost: 2 });
+});
+await test('events: cleaned, stored per day, and forgotten with the player', async () => {
+  const pid = 'abcdefghijk2';
+  const [s, r] = await call('POST', '/events', { events: [
+    { name: 'run_end', t: 1, props: { pid, exp: 'coins2x-weekend:test', height: 30, '<bad key>': 1, long: 'x'.repeat(500) } },
+    { name: 'Bad Name', t: 1, props: { pid } },
+    { name: 'app_open', t: 2, props: {} },
+    { name: 'app_open', t: 3, props: { pid: 'zzzzzzzzzzzz' } },
+  ] });
+  assert.equal(s, 200);
+  assert.equal(r.stored, 2);
+  const file = fs.readdirSync(process.env.EVENTS_DIR)[0];
+  const lines = fs.readFileSync(process.env.EVENTS_DIR + file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(lines[0].props.height, 30);
+  assert.equal(lines[0].props.long.length, 200);
+  assert.ok(!('<bad key>' in lines[0].props));
+  assert.equal((await call('POST', '/events', { events: Array(101).fill(lines[0]) }))[0], 400);
+  await call('POST', '/forget', { player: 'BBBBBB', pid });
+  const left = fs.readFileSync(process.env.EVENTS_DIR + file, 'utf8').trim().split('\n');
+  assert.equal(left.length, 1);
+  assert.equal(JSON.parse(left[0]).props.pid, 'zzzzzzzzzzzz');
+});
 await test('bad requests', async () => {
   assert.equal((await call('GET', '/nope'))[0], 404);
   const res = await fetch(`${base}/daily`, { method: 'POST', body: '{oops' });
@@ -97,4 +129,6 @@ await test('rate limit can’t be dodged with a fake X-Forwarded-For', async () 
   assert.equal(last, 429);
 });
 stop();
+fs.rmSync(process.env.EVENTS_DIR, { recursive: true, force: true });
+fs.rmSync(process.env.CONFIG, { force: true });
 console.log(`${n} tests passed`);

@@ -1,0 +1,29 @@
+{
+  "plan": {
+    "title": "Double-coins weekend",
+    "idea": 11,
+    "week": 2,
+    "weeks": 1,
+    "question": "Does a double-coins weekend make people play more sessions, and does it last after the weekend?",
+    "metric": "sessions",
+    "guard": [
+      "runs",
+      "purchases"
+    ],
+    "decide": "Keep running it on chosen weekends if sessions per day rise 10%+ with no drop in purchases. Watch the following Monday too: a drop there means it only moved play around."
+  },
+  "experiments": [
+    {
+      "id": "coins2x-weekend",
+      "days": [
+        6,
+        0
+      ],
+      "share": 0.5,
+      "set": {
+        "coinBoost": 2,
+        "message": "Double coins all weekend! 🍣🍣"
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "plan": {
+    "title": "Leaner restaurant economy in one country",
+    "idea": 12,
+    "week": 5,
+    "weeks": 2,
+    "question": "With tips ×0.6 and prices ×1.5 (docs/ECONOMY.md), do players stay as long, and does the restaurant last longer as a goal?",
+    "metric": "d7",
+    "guard": [
+      "sessions",
+      "restaurant_enter",
+      "purchases"
+    ],
+    "decide": "Adopt it for everyone if day-7 retention is not lower (within 2 points) and restaurant visits per day hold up. If day-7 drops, keep today's values."
+  },
+  "experiments": [
+    {
+      "id": "tips-economy-ph",
+      "countries": [
+        "PH"
+      ],
+      "share": 0.5,
+      "set": {
+        "tipsMult": 0.6,
+        "costScale": 1.5
+      }
+    }
+  ]
+}

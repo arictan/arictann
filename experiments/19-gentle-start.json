@@ -1,0 +1,24 @@
+{
+  "plan": {
+    "title": "Gentler first drops",
+    "idea": 19,
+    "week": 1,
+    "weeks": 4,
+    "question": "Do new players with slower first drops (0.45 instead of 0.6) finish the first day and come back more? Only brand-new players are affected, so it runs 4 weeks to collect enough installs.",
+    "metric": "first_day",
+    "guard": [
+      "d1",
+      "d7"
+    ],
+    "decide": "Adopt 0.45 if more players finish the first day and day-1 retention isn't lower. If it's the same, keep 0.6 (faster feels better)."
+  },
+  "experiments": [
+    {
+      "id": "gentle-start",
+      "share": 0.5,
+      "set": {
+        "tutorialSlowdown": 0.45
+      }
+    }
+  ]
+}

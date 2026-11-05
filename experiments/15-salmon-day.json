@@ -1,0 +1,25 @@
+{
+  "plan": {
+    "title": "Surprise one-day salmon event",
+    "idea": 15,
+    "week": 5,
+    "day": 3,
+    "length_days": 1,
+    "question": "Does a surprise one-day event (salmon PERFECTs pay +2) lift play that day? Compared with the same weekday a week earlier.",
+    "metric": "runs",
+    "guard": [
+      "sessions"
+    ],
+    "decide": "Worth repeating monthly if runs per player that day rise 10%+. Rotate the ingredient."
+  },
+  "events": [
+    {
+      "id": "salmon-day",
+      "name": "Surprise Salmon Day",
+      "icon": "🍣",
+      "text": "Salmon PERFECTs pay +2 coins, today only!",
+      "coinMult": 1,
+      "ingredient": "salmon"
+    }
+  ]
+}

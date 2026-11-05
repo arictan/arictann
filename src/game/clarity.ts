@@ -2,6 +2,7 @@
 // These are methods of Game (see game.ts), kept here to keep that file a readable size.
 
 import { Capacitor } from '@capacitor/core';
+import { activeExperiments, cfg, experimentLive, forceExperiment, forcedGroup } from '../config';
 import { playSong, sfx, unlockAudio } from '../audio';
 import { hapticFeel,  scheduleAt } from '../platform';
 import { COMPANIONS, companionLevel } from '../collect';
@@ -298,6 +299,27 @@ export const clarityMethods = {
       this.fitText(`${new Date(e.t).toLocaleString()} · ${e.where}`, 28, y + 14, WORLD_W - 56, 9.5, 'rgba(255,255,255,0.6)', 'left', 600);
       this.fitText(e.msg, 28, y + 31, WORLD_W - 56, 10.5, '#ffb4a2', 'left', 700);
       y += 50;
+    }
+    // Experiments from remote config: what this phone gets, and a way to try either group.
+    this.text('EXPERIMENTS', 20, y + 12, 12, '#ffd34d', 700, 'left');
+    y += 26;
+    if (!cfg.experiments.length) {
+      this.wrapLeft('None in the remote config yet (see experiments/README.md).', 16, y + 2, WORLD_W - 32, 10.5, 'rgba(255,255,255,0.6)');
+      y += 26;
+    }
+    for (const e of cfg.experiments) {
+      const active = activeExperiments.find((a) => a.id === e.id);
+      const forcedTo = forcedGroup(e.id);
+      const state = active ? (active.group === 'test' ? 'TEST group' : 'control group') : experimentLive(e) ? 'not in it' : 'not running now';
+      this.card(16, y, WORLD_W - 32, 50, active?.group === 'test' ? 'rgba(42,70,60,0.95)' : undefined);
+      this.fitText(e.id, 28, y + 18, 200, 12, '#fff', 'left', 700);
+      this.fitText(`${state}${forcedTo ? ' (forced)' : ''} · ${Object.entries(e.set).map(([k, v]) => `${k} ${v}`).join(', ')}`, 28, y + 36, 230, 9.5, 'rgba(255,255,255,0.65)', 'left', 600);
+      // Tap to cycle: automatic → force test → force control → automatic.
+      this.pill(WORLD_W - 112, y + 9, 82, forcedTo === 'test' ? 'TEST' : forcedTo === 'control' ? 'CONTROL' : 'AUTO', f, () => {
+        forceExperiment(e.id, forcedTo === null ? 'test' : forcedTo === 'test' ? 'control' : null);
+        this.showToast('Experiment changed for this phone only');
+      }, forcedTo ? 'gold' : 'quiet');
+      y += 56;
     }
     // Restoring a backup.
     this.text('SAVE BACKUPS', 20, y + 12, 12, '#ffd34d', 700, 'left');

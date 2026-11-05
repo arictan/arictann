@@ -103,6 +103,7 @@ export const screensMethods = {
     this.screenBack = back;
     this.mode = mode;
     if (mode === 'restaurant' && !funnel().find((s) => s.id === 'restaurant_open')?.at) track('restaurant_open');
+    if (mode === 'restaurant' && back !== 'restaurant') track('restaurant_enter');
     if (mode === 'restaurant') this.dinerVisit();
     this.pageScroll = 0;
     this.listMax = 0;

@@ -1,0 +1,29 @@
+{
+  "plan": {
+    "title": "Tableware rush weekend",
+    "idea": 17,
+    "week": 4,
+    "weeks": 1,
+    "question": "Does doubling tableware drops for a weekend (and saying so) make people play more runs?",
+    "metric": "runs",
+    "guard": [
+      "sessions"
+    ],
+    "decide": "Repeat as an occasional event if runs per day rise 10%+. Don't make it permanent: rare drops are what make sets worth finishing."
+  },
+  "experiments": [
+    {
+      "id": "tableware-rush",
+      "days": [
+        6,
+        0
+      ],
+      "share": 0.5,
+      "set": {
+        "pieceBoss": 0.5,
+        "pieceChef": 0.15,
+        "message": "Tableware rush this weekend: chefs drop twice as many pieces! 🍵"
+      }
+    }
+  ]
+}

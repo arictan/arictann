@@ -1,6 +1,7 @@
 // Sushi Stack reference server: Daily Roll board, Tower of the World, country cup, friends'
-// daily scores and cloud backup with an ID + PIN. Plain Node (18+), no dependencies, data kept
-// in one JSON file. It is meant as a small, readable starting point for a real deployment (see
+// daily scores, cloud backup with an ID + PIN, remote config (experiments) and anonymous stats
+// from players who agreed to share them. Plain Node (18+), no dependencies, data kept in one
+// JSON file (stats in one file per day). It is meant as a small, readable starting point for a real deployment (see
 // README.md for what to harden before a big launch).
 //
 //   PORT=8787 DATA=./data.json node server/server.mjs
@@ -13,6 +14,9 @@ const PORT = +(process.env.PORT ?? 8787);
 const DATA = process.env.DATA ?? new URL('./data.json', import.meta.url).pathname;
 const ORIGIN = process.env.ALLOW_ORIGIN ?? '*';
 const KEEP_DAYS = 14;
+const CONFIG = process.env.CONFIG ?? new URL('./config.json', import.meta.url).pathname;
+const EVENTS_DIR = process.env.EVENTS_DIR ?? new URL('./events/', import.meta.url).pathname;
+const KEEP_EVENT_DAYS = 90;
 
 // ------------------------------------------------------------------ limits (light anti-cheat)
 
@@ -24,6 +28,7 @@ export const LIMITS = {
   backupBytes: 300_000, // a save code is usually 3-30 KB
   pinTries: 5, // wrong PINs per backup per hour before it locks
   perMinute: 60, // requests per minute per IP
+  eventsPerPost: 100, // stats events in one post
 };
 
 // ------------------------------------------------------------------ storage
@@ -46,6 +51,11 @@ function prune() {
   for (const k of ['daily', 'world']) for (const day of Object.keys(db[k])) if (day < cutoff) delete db[k][day];
   const weeks = Object.keys(db.country).sort();
   for (const w of weeks.slice(0, Math.max(0, weeks.length - 4))) delete db.country[w];
+  // Stats files: one per day, kept for KEEP_EVENT_DAYS.
+  const oldest = new Date(Date.now() - KEEP_EVENT_DAYS * 86_400_000).toISOString().slice(0, 10);
+  try {
+    for (const f of fs.readdirSync(EVENTS_DIR)) if (/^events-\d{4}-\d{2}-\d{2}\.ndjson$/.test(f) && f.slice(7, 17) < oldest) fs.unlinkSync(EVENTS_DIR + f);
+  } catch { /* no stats yet */ }
   const yearAgo = Date.now() - 365 * 86_400_000;
   for (const [id, b] of Object.entries(db.backups)) if (b.used < yearAgo) delete db.backups[id];
   dirty = true;
@@ -88,6 +98,26 @@ const bucketTimer = setInterval(() => { const old = Date.now() - 120_000; for (c
 
 const routes = {
   'GET /health': () => ({ ok: true }),
+
+  // Remote config for the game (balance values, live events, experiments). Edit CONFIG and it's
+  // served on the next request; check it first with tools/experiments/check.mjs.
+  'GET /config': () => readConfig(),
+
+  // Anonymous gameplay stats, only sent by players who turned on "Share anonymous stats".
+  'POST /events': ({ body }) => {
+    if (!Array.isArray(body.events) || body.events.length > LIMITS.eventsPerPost) return [400, { error: 'events?' }];
+    const lines = [];
+    const at = Date.now();
+    for (const e of body.events) {
+      const clean = cleanEvent(e);
+      if (clean) lines.push(JSON.stringify({ ...clean, at }));
+    }
+    if (lines.length) {
+      fs.mkdirSync(EVENTS_DIR, { recursive: true });
+      fs.appendFileSync(`${EVENTS_DIR}events-${new Date(at).toISOString().slice(0, 10)}.ndjson`, lines.join('\n') + '\n');
+    }
+    return { stored: lines.length };
+  },
 
   // Daily Roll: everyone plays the same seeded run each day.
   'POST /daily': ({ body }) => {
@@ -175,6 +205,8 @@ const routes = {
     for (const day of Object.values(db.daily)) if (day[player]) { delete day[player]; removed++; }
     for (const w of Object.values(db.world)) if (w.by[player] !== undefined) { delete w.by[player]; removed++; } // the shared total keeps the layers
     for (const wk of Object.values(db.country)) for (const c of Object.values(wk)) if (c[player] !== undefined) { delete c[player]; removed++; }
+    // Their anonymous stats, by the random tag those carry.
+    if (/^[a-z2-9]{12}$/.test(body.pid ?? '')) removed += forgetEvents(body.pid);
     // A cloud backup is deleted with its ID + PIN.
     if (body.backupId) {
       const b = db.backups[String(body.backupId).toUpperCase()];
@@ -198,6 +230,49 @@ const routes = {
     return { code: b.code };
   },
 };
+
+let configCache = { mtime: 0, data: {} };
+function readConfig() {
+  try {
+    const { mtimeMs } = fs.statSync(CONFIG);
+    if (mtimeMs !== configCache.mtime) configCache = { mtime: mtimeMs, data: JSON.parse(fs.readFileSync(CONFIG, 'utf8')) };
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error('config.json:', e.message); // a broken file keeps serving the last good one
+    else configCache = { mtime: 0, data: {} };
+  }
+  return configCache.data;
+}
+
+const EVENT_NAME = /^[a-z0-9_]{1,40}$/;
+const PID = /^[a-z2-9]{12}$/;
+/** Keeps only the expected shape: a name, a time and up to 20 short props, one of them the player tag. */
+function cleanEvent(e) {
+  if (!e || typeof e !== 'object' || !EVENT_NAME.test(e.name ?? '') || typeof e.t !== 'number') return null;
+  const props = {};
+  for (const [k, v] of Object.entries(e.props ?? {}).slice(0, 20)) {
+    if (!/^[a-zA-Z0-9_]{1,24}$/.test(k)) continue;
+    if (typeof v === 'number' && Number.isFinite(v)) props[k] = v;
+    else if (typeof v === 'boolean') props[k] = v;
+    else if (typeof v === 'string') props[k] = v.slice(0, 200);
+  }
+  if (!PID.test(props.pid ?? '')) return null;
+  return { name: e.name, t: e.t, props };
+}
+
+function forgetEvents(pid) {
+  let removed = 0;
+  let files = [];
+  try { files = fs.readdirSync(EVENTS_DIR).filter((f) => f.endsWith('.ndjson')); } catch { return 0; }
+  for (const f of files) {
+    const lines = fs.readFileSync(EVENTS_DIR + f, 'utf8').split('\n').filter(Boolean);
+    const keep = lines.filter((l) => { try { return JSON.parse(l).props?.pid !== pid; } catch { return true; } });
+    if (keep.length !== lines.length) {
+      removed += lines.length - keep.length;
+      fs.writeFileSync(EVENTS_DIR + f, keep.length ? keep.join('\n') + '\n' : '');
+    }
+  }
+  return removed;
+}
 
 function hashPin(id, pin) {
   return crypto.createHash('sha256').update(`${id}:${pin}`).digest('hex');

@@ -1,12 +1,21 @@
 // Gameplay analytics. Events are kept in a small log on the device so the funnel (tutorial steps,
 // level reached, where runs end, which rewards get claimed) can be checked during testing.
-// Nothing leaves the device unless ANALYTICS_ENDPOINT is set or a sink (e.g. Firebase Analytics)
-// is registered with setAnalyticsSink(). If you turn either on, update PRIVACY.md and the store
-// privacy forms first.
+// Nothing leaves the device unless the player turns on "Share anonymous stats" AND there is
+// somewhere to send it: ANALYTICS_ENDPOINT, the game's own server (`<serverUrl>/events`), or a
+// sink registered with setAnalyticsSink() (e.g. Firebase Analytics).
+// Sent events carry a random player tag and the player's experiment groups, so A/B tests can
+// be measured (tools/experiments/analyze.mjs).
 
 import { save } from './platform';
+import { activeExperiments, cfg, experimentTag, playerTag } from './config';
+import { APP_VERSION } from './safety';
 
 export const ANALYTICS_ENDPOINT = '';
+
+/** Where batches go: ANALYTICS_ENDPOINT, else the game's own server, else nowhere. */
+function endpoint(): string {
+  return ANALYTICS_ENDPOINT || (cfg.serverUrl ? `${cfg.serverUrl.replace(/\/$/, '')}/events` : '');
+}
 
 export interface AnalyticsEvent { name: string; t: number; props?: Record<string, string | number | boolean> }
 
@@ -34,19 +43,24 @@ export function track(name: string, props?: AnalyticsEvent['props']): void {
   if (log.length > MAX) log = log.slice(-MAX);
   save.setJson('analytics', log);
   if (!consent) return;
-  sink?.(e);
-  if (ANALYTICS_ENDPOINT) {
-    pending.push(e);
-    if (pending.length >= 10) flush();
+  // What leaves the device: the event plus a random player tag, app version and experiment groups.
+  const sent: AnalyticsEvent = { ...e, props: { ...e.props, pid: playerTag(), v: APP_VERSION, exp: experimentTag() } };
+  sink?.(sent);
+  if (endpoint()) {
+    pending.push(sent);
+    if (pending.length >= 20) flush();
   }
 }
 
-/** Sends queued events to ANALYTICS_ENDPOINT (only when one is configured). */
+/** Sends queued events (called every 20 events, and when the app goes to the background). */
 export function flush(): void {
-  if (!ANALYTICS_ENDPOINT || !pending.length) return;
-  const batch = pending;
-  pending = [];
-  void fetch(ANALYTICS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(batch), keepalive: true }).catch(() => { pending = [...batch, ...pending].slice(-MAX); });
+  const url = endpoint();
+  if (!url || !pending.length) return;
+  const batch = pending.slice(0, 100);
+  pending = pending.slice(100);
+  void fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events: batch }), keepalive: true })
+    .then((r) => { if (!r.ok && r.status !== 400) throw new Error(String(r.status)); })
+    .catch(() => { pending = [...batch, ...pending].slice(-MAX); });
 }
 
 export function analyticsLog(): AnalyticsEvent[] {
@@ -101,4 +115,20 @@ export function trackRetention(): void {
   const days = Math.floor((Date.now() - firstOpen) / 86_400_000);
   if (days >= 1 && !first.day2) track('day2', { days });
   if (days >= 7 && !first.day7) track('day7', { days });
+}
+
+/** Records once a day which experiments this player is in, and in which group (for the A/B analysis). */
+export function trackExposures(): void {
+  const day = new Date().toDateString();
+  const seen = save.json<Record<string, string>>('expSeen', {});
+  let changed = false;
+  for (const a of activeExperiments) {
+    if (a.forced) continue; // set by hand for testing: not a real exposure
+    const key = `${a.id}:${a.group}`;
+    if (seen[key] === day) continue;
+    seen[key] = day;
+    changed = true;
+    track('experiment', { id: a.id, group: a.group });
+  }
+  if (changed) save.setJson('expSeen', seen);
 }

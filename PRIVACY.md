@@ -13,8 +13,17 @@ It is deleted when you uninstall the app. Online events marked "(AI)" use comput
 ## Gameplay statistics
 The game keeps a small log of gameplay events (for example "run ended at level 12") on your device, to show your
 stats, achievements and your own "My funnel" page. **By default it is not sent anywhere.** If you turn on
-Settings → Share anonymous stats, these events (with no name, contacts, location or advertising ID) may be sent to
-help find where players get stuck. You can turn it off at any time.
+Settings → Share anonymous stats, these events are sent to our game server to help find where players get stuck
+and to test changes to the game. Each event carries a random tag made on your device (not linked to your name,
+account, contacts, location or advertising ID), the app version, and which version of a game test you are in
+(for example "double coins this weekend: yes"). We keep these events for 90 days. You can turn sharing off at any
+time, and **Delete my online data** (Settings → Save) removes the events already sent.
+
+## Game tests
+Sometimes some players get a slightly different version of a game setting (for example faster cooking) so we can
+see which version is more fun. Which version you get is picked at random on your device. No personal data is used
+for this, except the country you chose for the Country Cup (or your phone's language region) when a test runs in
+one country only.
 
 > **Developer note:** if you connect an analytics service (for example Firebase Analytics) to the
 > "Share anonymous stats" switch, name it here and list it in the Data safety / App Privacy forms.

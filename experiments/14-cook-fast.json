@@ -1,0 +1,24 @@
+{
+  "plan": {
+    "title": "Faster cooking",
+    "idea": 14,
+    "week": 1,
+    "weeks": 2,
+    "question": "With cooking twice as fast, do players visit the restaurant more often, or less (because there's less to come back for)?",
+    "metric": "restaurant_enter",
+    "guard": [
+      "sessions",
+      "diner_cook"
+    ],
+    "decide": "Adopt cookTime 0.5 if restaurant visits and sessions both go up. If visits drop, the waiting is what brings people back: keep 1."
+  },
+  "experiments": [
+    {
+      "id": "cook-fast",
+      "share": 0.5,
+      "set": {
+        "cookTime": 0.5
+      }
+    }
+  ]
+}

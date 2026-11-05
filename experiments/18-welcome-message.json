@@ -1,0 +1,20 @@
+{
+  "plan": {
+    "title": "Update announcement",
+    "idea": 18,
+    "week": 1,
+    "weeks": 1,
+    "question": "A one-time home-screen message about version 1.1. Not a test, just a message for a week; it's shown once per player.",
+    "metric": "sessions",
+    "guard": [],
+    "decide": "Nothing to decide: change the text for each update."
+  },
+  "experiments": [
+    {
+      "id": "welcome-1-1",
+      "set": {
+        "message": "New in 1.1: a guided first day, Battery saver and daily backups of your progress. Have fun! 🍣"
+      }
+    }
+  ]
+}

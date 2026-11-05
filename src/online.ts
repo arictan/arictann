@@ -3,7 +3,7 @@
 // function returns null and the game keeps using its simulated, clearly labelled players.
 // Results are cached so screens can draw them every frame without waiting.
 
-import { cfg } from './config';
+import { cfg, playerTag } from './config';
 import { save } from './platform';
 
 export const isOnline = (): boolean => !!cfg.serverUrl;
@@ -197,10 +197,10 @@ export async function cloudRestore(id: string, pin: string): Promise<string | nu
   return (await api<{ code: string }>('/restore', { id: id.trim().toUpperCase(), pin: pin.trim() }))?.code ?? null;
 }
 
-/** Deletes this player's scores (and the cloud backup) from the server. */
+/** Deletes this player's scores, anonymous stats and cloud backup from the server. */
 export async function forgetMe(player: string): Promise<boolean> {
   const cb = cloudBackupInfo();
-  const r = await api<{ removed: number }>('/forget', { player, backupId: cb?.id, pin: cb?.pin });
+  const r = await api<{ removed: number }>('/forget', { player, pid: playerTag(), backupId: cb?.id, pin: cb?.pin });
   if (r) save.setJson('cloudBackup', null);
   return !!r;
 }

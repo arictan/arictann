@@ -3,6 +3,8 @@ import { initPlatform } from './platform';
 import { initMonetization } from './monetize';
 import { fontReady } from './font';
 import { backupSave, installErrorLog, logError, migrateSave } from './safety';
+import { applyConfig } from './config';
+import { flush, trackExposures } from './analytics';
 
 // Before anything reads the save: upgrade it, back it up once a day, and log errors on the device.
 installErrorLog();
@@ -15,8 +17,18 @@ const safe = document.getElementById('safe') as HTMLElement;
 // Wait for the bundled font so the first frame never flashes in a fallback face.
 void fontReady().then(() => {
   const game = new Game(canvas, safe);
-  initPlatform(() => game.pause());
+  initPlatform(() => {
+    game.pause();
+    flush();
+  });
   void initMonetization();
+  trackExposures();
+  // Back from the background: weekday/weekend experiments may have started or ended. Never mid-run.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || game.mode === 'playing' || game.mode === 'mini') return;
+    applyConfig();
+    trackExposures();
+  });
 
   let last = performance.now();
   let skip = false;

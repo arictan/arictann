@@ -12,3 +12,5 @@ ios/App/build/
 *.jks
 server/data.json
 server/data.json.tmp
+server/config.json
+server/events/

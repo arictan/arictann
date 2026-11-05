@@ -1,0 +1,22 @@
+{
+  "plan": {
+    "title": "An easier Daily Roll for a week",
+    "idea": 13,
+    "week": 3,
+    "weeks": 1,
+    "question": "Does an easier Daily Roll get shared more? (Everyone gets the same roll, so this is a before/after comparison, not a split: a split would make the shared grids unfair.)",
+    "metric": "daily_share",
+    "guard": [
+      "daily_roll"
+    ],
+    "decide": "Keep dailyLevel 8 if shares per player rise clearly against the week before. If players stop sharing because it's too easy (lots of identical grids), go back to 12 or try 10."
+  },
+  "experiments": [
+    {
+      "id": "daily-easier",
+      "set": {
+        "dailyLevel": 8
+      }
+    }
+  ]
+}
