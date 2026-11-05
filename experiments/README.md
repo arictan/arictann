@@ -58,8 +58,8 @@ game's own server (`server/`) does both.
    the default in `src/config.ts` (next app update), or right away by putting the value at the
    top level of the remote config.
 
-To preview the report before real data exists, make up a season of players with known
-effects:
+[SAMPLE_REPORT.md](SAMPLE_REPORT.md) shows a full report on made-up data. To make your own preview
+before real data exists, simulate a season of players with known effects:
 ```
 node tools/experiments/simulate.mjs server/config.json /tmp/fake-events 150
 node tools/experiments/analyze.mjs --events /tmp/fake-events --config server/config.json experiments/*.json
